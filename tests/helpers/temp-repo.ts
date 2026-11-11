@@ -1,8 +1,15 @@
 import { fixtureEnvironment } from "./fixture-environment";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { GitService } from "@main/git/git-service";
+import {
+  bundledGitBinary,
+  bundledGitEnvironment,
+  bundledGitLocation,
+} from "@main/git/execution/bundled-git";
 import { resolveGitEngine } from "@main/git/execution/git-engine";
 import { NodeProcessRunner } from "@main/git/execution/node-process-runner";
 
@@ -17,9 +24,17 @@ export interface TempRepo {
 }
 
 const runner = new NodeProcessRunner();
+const bundle = bundledGitLocation(false, fileURLToPath(new URL("../../", import.meta.url)), "");
+const bundledPath = bundledGitBinary(bundle);
 
 let enginePromise: ReturnType<typeof resolveGitEngine> | undefined;
-const engine = () => (enginePromise ??= resolveGitEngine(runner));
+export const resolveTestGitEngine = () =>
+  (enginePromise ??= resolveGitEngine(
+    runner,
+    existsSync(bundledPath)
+      ? { bundledPath, bundledEnvironment: bundledGitEnvironment(bundle) }
+      : {},
+  ));
 
 export async function createTempRepo(
   options: { bare?: boolean; init?: boolean } = {},
@@ -50,7 +65,7 @@ export async function createTempRepo(
     GIT_COMMITTER_DATE: "2026-01-01T00:00:00+00:00",
   };
 
-  const git = new GitService(runner, await engine(), sandboxEnv);
+  const git = new GitService(runner, await resolveTestGitEngine(), sandboxEnv);
 
   const run = async (args: string[], cwd = path): Promise<string> => {
     const { stdout } = await git.exec(args, { cwd, operation: "test setup" });

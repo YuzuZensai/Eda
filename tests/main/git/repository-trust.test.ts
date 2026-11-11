@@ -5,9 +5,8 @@ import { join } from "node:path";
 import { openInMemoryDatabase } from "@main/persistence/database";
 import { RepositoryTrust } from "@main/git/security/repository-trust";
 import { NodeProcessRunner } from "@main/git/execution/node-process-runner";
-import { resolveGitEngine } from "@main/git/execution/git-engine";
 import { GitService } from "@main/git/git-service";
-import { createTempRepo } from "../../helpers/temp-repo";
+import { createTempRepo, resolveTestGitEngine } from "../../helpers/temp-repo";
 import { RepositoryVolumeIdentity } from "@main/git/security/repository-volume";
 import { FakeProcessRunner } from "../../helpers/fake-process-runner";
 import type * as Fs from "node:fs/promises";
@@ -86,7 +85,7 @@ it("blocks repository-selected programs before approval, including on background
     const runner = new NodeProcessRunner();
     const git = new GitService(
       runner,
-      await resolveGitEngine(runner),
+      await resolveTestGitEngine(),
       {
         HOME: repo.home,
         GIT_CONFIG_GLOBAL: join(repo.home, ".gitconfig"),

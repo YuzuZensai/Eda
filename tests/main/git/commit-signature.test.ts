@@ -5,13 +5,12 @@ import { GitService } from "@main/git/git-service";
 import { buildGitEnvironment } from "@main/git/execution/environment";
 import { resolveExecutable } from "@main/git/execution/executable";
 import { NodeProcessRunner } from "@main/git/execution/node-process-runner";
-import { resolveGitEngine } from "@main/git/execution/git-engine";
 import {
   commitSignatureFormat,
   parseCommitVerification,
 } from "@main/git/security/commit-signature";
 import { SshService } from "@main/ssh/ssh-service";
-import { createTempRepo } from "../../helpers/temp-repo";
+import { createTempRepo, resolveTestGitEngine } from "../../helpers/temp-repo";
 
 const fingerprint = "A".repeat(40);
 const valid = `[GNUPG:] VALIDSIG ${fingerprint} 2026-11-06 1793923200 0 4 0 22 8 00 ${fingerprint}`;
@@ -225,7 +224,7 @@ it("verifies real GPG signatures and distinguishes missing and untrusted public 
       .find((line) => line.startsWith("fpr:"))!
       .split(":")[9]!;
     const runner = new NodeProcessRunner();
-    const engine = await resolveGitEngine(runner);
+    const engine = await resolveTestGitEngine();
     const service = (home: string) =>
       new GitService(runner, engine, {
         GNUPGHOME: toolPath(home),

@@ -17,7 +17,7 @@
     "bundle:check": "node scripts/check-renderer-bundle.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json && tsc -p tsconfig.tooling.json",
     "lint": "eslint src scripts tests *.ts --max-warnings 0",
-    "test": "node --test tests/tooling/*.test.ts && vitest run",
+    "test": "node scripts/prepare-git.ts && node --test tests/tooling/*.test.ts && vitest run",
     "test:desktop": "node tests/desktop/run.ts",
     "check": "pnpm run format:check && pnpm run typecheck && pnpm run lint && pnpm run test",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html,json}\" \"{scripts,tests}/**/*.{ts,tsx,json}\" \"*.{js,mjs,ts,json}\" \".github/**/*.{yml,yaml}\"",
