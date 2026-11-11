@@ -216,14 +216,9 @@ try {
   assert.equal(git("branch", "--show-current").trim(), "feature/new");
 
   git("commit", "--allow-empty", "-m", "Unmerged fixture commit");
-  await page
-    .getByRole("button", { name: "Inspect branch main", exact: true })
-    .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Check out branch", exact: true }).click();
-  await page
-    .getByRole("menu", { name: "Branch actions", exact: true })
-    .waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Inspect branch main", exact: true }).dblclick();
   await page.getByRole("button", { name: /On branch main/ }).waitFor();
+  assert.equal(git("branch", "--show-current").trim(), "main");
   await command("Create tag at selection or HEAD");
   await page.getByRole("textbox", { name: "Tag name", exact: true }).fill("release/new");
   await page

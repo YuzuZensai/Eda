@@ -42,6 +42,7 @@ const copyText = vi.fn();
 const referenceUrl = vi.fn();
 const inspect = vi.fn();
 const deleteBranch = vi.fn();
+const checkoutBranch = vi.fn();
 const deleteTag = vi.fn();
 const listTags = vi.fn();
 const remoteTags = vi.fn();
@@ -108,6 +109,7 @@ beforeEach(() => {
   listTags.mockReset().mockResolvedValue(ok([{ name: "v1", oid: local.oid }]));
   remoteTags.mockReset().mockResolvedValue(ok([{ name: "v1", oid: local.oid }]));
   deleteBranch.mockReset().mockResolvedValue(ok(undefined));
+  checkoutBranch.mockReset().mockResolvedValue(ok(undefined));
   preparePush.mockReset().mockResolvedValue(ok({ token: "delete-preview" }));
   push.mockReset().mockResolvedValue(ok("Deleted"));
   renameBranch.mockReset().mockResolvedValue(ok(undefined));
@@ -125,6 +127,7 @@ beforeEach(() => {
     repository: {
       referenceUrl,
       deleteBranch,
+      checkoutBranch,
       deleteTag,
       renameBranch,
       listBranches: vi.fn().mockResolvedValue(ok([local, remote])),
@@ -180,6 +183,92 @@ it("opens the shared history menu surface on right-click and keyboard context-me
   );
 
   expect(document.querySelector('[role="menu"][aria-label="Branch actions"]')).not.toBeNull();
+});
+
+it("checks out a local branch on double-click while a single click still inspects it", async () => {
+  const jumpToCommit = vi.fn().mockResolvedValue(undefined);
+  useRepositoryStore.setState({ jumpToCommit });
+  await act(async () => root.render(<ReferenceSidebar repositoryId="repo" />));
+
+  const row = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Inspect branch feature/topic"]',
+  )!;
+
+  await act(async () => row.click());
+  expect(jumpToCommit).toHaveBeenCalledWith(local.oid);
+  expect(checkoutBranch).not.toHaveBeenCalled();
+
+  await act(async () =>
+    row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0 })),
+  );
+
+  expect(checkoutBranch).toHaveBeenCalledOnce();
+  expect(checkoutBranch).toHaveBeenCalledWith({ repositoryId: "repo", name: local.name });
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(vi.mocked(window.eda.repository.listBranches).mock.calls.length).toBeGreaterThan(1);
+});
+
+it.each([
+  { name: "current branch", branch: { ...local, isHead: true } },
+  { name: "branch in another worktree", branch: { ...local, worktreePath: "/elsewhere" } },
+  { name: "remote branch", branch: remote },
+])("does not check out a $name on double-click", async ({ branch }) => {
+  vi.mocked(window.eda.repository.listBranches).mockResolvedValue(ok([branch]));
+  await act(async () => root.render(<ReferenceSidebar repositoryId="repo" />));
+
+  const row = container.querySelector<HTMLButtonElement>(
+    `[aria-label="Inspect branch ${branch.name}"]`,
+  )!;
+
+  await act(async () =>
+    row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0 })),
+  );
+
+  expect(checkoutBranch).not.toHaveBeenCalled();
+});
+
+it("shows a checkout failure and does not refresh the repository", async () => {
+  checkoutBranch.mockResolvedValueOnce(
+    err(errorFixture({ kind: "invalid-input", message: "Branch cannot be checked out" })),
+  );
+
+  await act(async () => root.render(<ReferenceSidebar repositoryId="repo" />));
+  const row = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Inspect branch feature/topic"]',
+  )!;
+
+  await act(async () =>
+    row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0 })),
+  );
+
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Branch cannot be checked out",
+  );
+  expect(refresh).not.toHaveBeenCalled();
+});
+
+it("does not start another checkout while the first double-click checkout is pending", async () => {
+  let finish!: (result: ReturnType<typeof ok<void>>) => void;
+  checkoutBranch.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+
+  await act(async () => root.render(<ReferenceSidebar repositoryId="repo" />));
+  const row = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Inspect branch feature/topic"]',
+  )!;
+
+  await act(async () => {
+    row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0 }));
+    row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0 }));
+  });
+
+  expect(checkoutBranch).toHaveBeenCalledOnce();
+  await act(async () => finish(ok(undefined)));
+  expect(refresh).toHaveBeenCalledOnce();
 });
 
 it.each([
@@ -921,7 +1010,14 @@ it.each(["rejected", "reported"])(
 
     function References({ revision }: { revision: number }) {
       const references = useTagReferences("repo", "profile", tags, revision, false);
-      return <ReferenceRow item={references[0]!} selected={false} onActions={() => {}} />;
+      return (
+        <ReferenceRow
+          item={references[0]!}
+          selected={false}
+          onActions={() => {}}
+          onCheckout={() => {}}
+        />
+      );
     }
 
     remoteTags.mockResolvedValue(ok([]));

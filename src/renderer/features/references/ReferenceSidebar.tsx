@@ -1,5 +1,5 @@
 import { ReferenceRow } from "./ReferenceRow";
-import { errorMessage } from "@shared/errors";
+import { errorAction, errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { BranchSummary, TagSummary } from "@shared/repository/repository-write";
 import {
@@ -11,6 +11,10 @@ import {
 } from "../../components/ui/icons";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useLayoutTransition } from "../../components/layout/hooks/useLayoutTransition";
+import {
+  captureRepositoryCommand,
+  repositoryCommandDispatcher,
+} from "../../commands/repository-commands";
 import { Skeleton, SkeletonRows } from "../../components/ui/feedback/Skeleton";
 import {
   cx,
@@ -66,6 +70,8 @@ export function ReferenceSidebar({
   const [actions, setActions] = useState<ReferenceTarget | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const checkoutPending = useRef(false);
   const [revision, setRevision] = useState(0);
   const tags = useTagReferences(repositoryId, profileId, localTags, revision, pending);
 
@@ -141,6 +147,34 @@ export function ReferenceSidebar({
 
     if (key === "hidden") transition(update);
     else update();
+  };
+
+  const checkout = async (branch: BranchSummary) => {
+    if (checkoutPending.current) return;
+    checkoutPending.current = true;
+    setCheckoutError(null);
+
+    try {
+      const context = captureRepositoryCommand(repositoryId);
+      const result = await repositoryCommandDispatcher(context)("checkoutBranch", {
+        repositoryId,
+        name: branch.name,
+      });
+
+      if (!result.ok) {
+        setCheckoutError(
+          [errorMessage(result.error), errorAction(result.error)].filter(Boolean).join(" "),
+        );
+        return;
+      }
+
+      await useRepositoryStore.getState().refresh();
+      setRevision((value) => value + 1);
+    } catch (failure) {
+      setCheckoutError([errorMessage(failure), errorAction(failure)].filter(Boolean).join(" "));
+    } finally {
+      checkoutPending.current = false;
+    }
   };
 
   const collapsed = !forceExpanded && (saved.hidden || compact);
@@ -275,6 +309,8 @@ export function ReferenceSidebar({
           </Suspense>
         )}
 
+        <ErrorDialog onDismiss={() => setCheckoutError(null)}>{checkoutError}</ErrorDialog>
+
         <SearchField
           className="mx-3 mb-3 bg-bg-base"
           aria-label={t("referenceSidebar.filterBranchesAndTags")}
@@ -340,6 +376,7 @@ export function ReferenceSidebar({
                           item={item}
                           selected={selection?.kind === "commit" && selection.oid === item.oid}
                           onActions={setActions}
+                          onCheckout={(branch) => void checkout(branch)}
                         />
                       ))}
 

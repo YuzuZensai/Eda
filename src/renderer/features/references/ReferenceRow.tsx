@@ -9,10 +9,12 @@ export function ReferenceRow({
   item,
   selected,
   onActions,
+  onCheckout,
 }: {
   item: BranchSummary | TagReference;
   selected: boolean;
   onActions: (target: ReferenceTarget) => void;
+  onCheckout: (branch: BranchSummary) => void;
 }) {
   const tag = "isHead" in item ? null : item;
 
@@ -81,6 +83,10 @@ export function ReferenceRow({
           const bounds = event.currentTarget.getBoundingClientRect();
           openActions({ x: bounds.right, y: bounds.top });
         } else void useRepositoryStore.getState().jumpToCommit(item.oid);
+      }}
+      onDoubleClick={() => {
+        if ("isHead" in item && !item.remote && !item.isHead && !item.worktreePath)
+          onCheckout(item);
       }}
       onMouseEnter={() => useRepositoryStore.setState({ hoveredRefOid: item.oid })}
       onMouseLeave={() => useRepositoryStore.setState({ hoveredRefOid: null })}
