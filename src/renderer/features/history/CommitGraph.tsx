@@ -94,21 +94,6 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
   );
 
   const gutter = useMemo(() => graphColumnWidth(rows), [rows]);
-  const byOid = useMemo(() => new Map(rows.map((row) => [row.commit.oid, row.commit])), [rows]);
-
-  const related = useMemo(() => {
-    const result = new Set<string>();
-    const ancestors = hoveredRefOid ? [hoveredRefOid] : [];
-
-    while (ancestors.length) {
-      const oid = ancestors.pop()!;
-      if (result.has(oid)) continue;
-      result.add(oid);
-      ancestors.push(...(byOid.get(oid)?.parents ?? []));
-    }
-
-    return result;
-  }, [byOid, hoveredRefOid]);
 
   const selectedIndex =
     selection?.kind === "commit" ? rows.findIndex((row) => row.commit.oid === selection.oid) : -1;
@@ -311,7 +296,7 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
                 columns={columns}
                 gutter={gutter}
                 selected={selection?.kind === "commit" && selection.oid === row.commit.oid}
-                related={related.has(row.commit.oid)}
+                related={hoveredRefOid === row.commit.oid}
                 vigilantMode={vigilantMode && shaColumnVisible}
                 onSelect={() => void selectCommit(row.commit.oid)}
                 onContextMenu={(event) => {

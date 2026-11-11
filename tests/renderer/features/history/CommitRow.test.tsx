@@ -6,6 +6,8 @@ import type {
   HistoryCommit,
 } from "@shared/repository/repository-read";
 import { CommitRow } from "@renderer/features/history/CommitRow";
+import { CommitGraph } from "@renderer/features/history/CommitGraph";
+import { ReferenceRow } from "@renderer/features/references/ReferenceRow";
 import { layoutCommitPage } from "@renderer/repository/dag-layout";
 import { cacheCommitSignature } from "@renderer/repository/hooks/useCommitSignature";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
@@ -70,6 +72,47 @@ function row(vigilantMode: boolean, oid = commit.oid, showSha = true) {
     />
   );
 }
+
+it("highlights only the branch tip when hovering its reference row", async () => {
+  const parent = { ...commit, oid: "b".repeat(40), subject: "Parent commit" };
+  const tip = { ...commit, subject: "Branch tip", parents: [parent.oid] };
+
+  useRepositoryStore.setState({
+    pages: [{ commits: [tip, parent], nextOffset: null }],
+    dagBoundary: { lanes: [] },
+    hoveredRefOid: null,
+    baseOffset: 0,
+    nextOffset: null,
+    selection: null,
+  });
+
+  await act(async () =>
+    root.render(
+      <>
+        <ReferenceRow
+          item={{ name: "feature", oid: tip.oid, isHead: false, remote: false }}
+          selected={false}
+          onActions={vi.fn()}
+          onCheckout={vi.fn()}
+        />
+        <CommitGraph />
+      </>,
+    ),
+  );
+
+  const reference = container.querySelector('[aria-label="Inspect branch feature"]')!;
+  const rows = container.querySelectorAll<HTMLElement>('[data-tour="history-commit"]');
+  expect(rows).toHaveLength(2);
+
+  await act(async () => reference.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+
+  expect(rows[0]!.classList.contains("bg-accent-muted")).toBe(true);
+  expect(rows[1]!.classList.contains("bg-accent-muted")).toBe(false);
+
+  await act(async () => reference.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
+
+  expect(rows[0]!.classList.contains("bg-accent-muted")).toBe(false);
+});
 
 it.each([
   ["verified", "Verified signature", "text-git-added"],
