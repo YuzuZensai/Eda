@@ -106,7 +106,7 @@ export function WindowTitlebar({ children }: { children?: ReactNode }) {
           {development && (
             <>
               {" "}
-              <span className="ml-1 text-git-deleted">{t("windowControls.development")}</span>
+              <span className="text-git-deleted">{t("windowControls.development")}</span>
             </>
           )}
         </span>
