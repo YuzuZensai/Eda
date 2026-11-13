@@ -2,19 +2,19 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ok, type Result } from "@shared/errors";
 import type { RemoteState } from "@shared/integrations/remotes";
-import { useRemotesDialog } from "@renderer/features/sync/hooks/useRemotesDialog";
+import { useRepositoryRemotes } from "@renderer/features/sync/hooks/useRepositoryRemotes";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
 
 let root: Root;
 let container: HTMLDivElement;
-let api: ReturnType<typeof useRemotesDialog>;
+let api: ReturnType<typeof useRepositoryRemotes>;
 const state = (branch: string): RemoteState => ({
   remotes: [{ name: "origin", fetchUrls: [], pushUrls: [] }],
   branches: [{ name: branch, oid: "a".repeat(40), remote: false, isHead: true, upstreamState: "" }],
 });
 const inspect = vi.fn();
 function View({ repositoryId }: { repositoryId: string }) {
-  api = useRemotesDialog(repositoryId);
+  api = useRepositoryRemotes(repositoryId);
   return null;
 }
 

@@ -13,7 +13,6 @@ export type RepositorySelection = SavedSelection;
 export interface RepositoryReadState extends HistoryWindow {
   commandDialog: {
     kind:
-      | "repository.remotes"
       | "repository.references"
       | "repository.graph"
       | "repository.recovery"

@@ -1,6 +1,5 @@
 export { CloneRepositoryDialog } from "./repositories/CloneRepositoryDialog";
 export { ConflictDialog } from "./changes/ConflictDialog";
-export { RemotesDialog } from "./sync/RemotesDialog";
 export { ReferenceMenu } from "./references/ReferenceMenu";
 export { ManageReferencesDialog } from "./references/ManageReferencesDialog";
 export { CommitMenu } from "./history/CommitMenu";

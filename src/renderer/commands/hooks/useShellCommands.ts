@@ -2,6 +2,7 @@ import { t } from "@shared/i18n";
 import { hasOpenOverlay } from "../../components/ui/overlays/overlay-presence";
 import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { openSettings } from "../../stores/shell-store";
 import { useAppStore } from "../../stores/app-store";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { useSessionStore } from "../../stores/session-store";
@@ -120,8 +121,10 @@ export function useShellCommands(navigation: ShellNavigation) {
                   if (!result.ok) useAppStore.setState({ error: result.error });
                 });
               break;
-            case "repository.references":
             case "repository.remotes":
+              openSettings("repository-remotes");
+              break;
+            case "repository.references":
             case "repository.graph":
             case "repository.recovery":
             case "repository.historyRecovery":

@@ -5,13 +5,15 @@ import { emptySession } from "@shared/identity/profile-session";
 import { BranchMenu } from "@renderer/features/references/BranchMenu";
 import { useAppStore } from "@renderer/stores/app-store";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
+import { useShellStore } from "@renderer/stores/shell-store";
 import { useSessionStore } from "@renderer/stores/session-store";
 
-it("keeps keyboard checkout within rendered branches and finds omitted branches by search", async () => {
+it("keeps keyboard checkout within rendered branches and opens repository settings for tracking", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const app = useAppStore.getState();
   const repository = useRepositoryStore.getState();
   const session = useSessionStore.getState();
+  const shell = useShellStore.getState();
 
   const branches = Array.from({ length: 205 }, (_, index) => ({
     name: `branch-${index}`,
@@ -115,12 +117,24 @@ it("keeps keyboard checkout within rendered branches and finds omitted branches 
     );
 
     expect(checkoutBranch).toHaveBeenLastCalledWith({ repositoryId: "repo", name: "branch-204" });
+
+    await open();
+    const configure = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent === "Configure upstream...",
+    )!;
+    await act(async () => configure.click());
+    expect(useShellStore.getState().request).toEqual({
+      kind: "settings",
+      section: "repository-remotes",
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
     container.remove();
     useAppStore.setState(app, true);
     useRepositoryStore.setState(repository, true);
     useSessionStore.setState(session, true);
+    useShellStore.setState(shell, true);
     vi.unstubAllGlobals();
   }
 });

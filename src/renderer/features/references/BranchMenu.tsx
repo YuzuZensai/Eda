@@ -3,7 +3,7 @@ import { errorMessage, type Result } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { BranchSummary } from "@shared/repository/repository-write";
 import { CircleIcon as Circle } from "../../components/ui/icons";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   captureRepositoryCommand,
   repositoryCommandDispatcher,
@@ -22,11 +22,8 @@ import {
   AnchoredPopover,
 } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
+import { openSettings } from "../../stores/shell-store";
 import { useRepositoryStore } from "../../stores/repository-store";
-
-const RemotesDialog = lazy(() =>
-  import("../repository-dialogs").then((module) => ({ default: module.RemotesDialog })),
-);
 
 export function BranchMenu({ head }: { head: string }) {
   const repositoryId = useAppStore((state) => state.selectedRepositoryId);
@@ -36,7 +33,6 @@ export function BranchMenu({ head }: { head: string }) {
   const refresh = useRepositoryStore((state) => state.refresh);
   const upstream = useRepositoryStore((state) => state.status?.branch.upstream);
   const [open, setOpen] = useState(false);
-  const [tracking, setTracking] = useState(false);
   const [branches, setBranches] = useState<BranchSummary[]>([]);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -131,12 +127,6 @@ export function BranchMenu({ head }: { head: string }) {
         <BranchIcon size={13} />
         <span className="truncate">{head}</span>
       </ButtonBase>
-
-      {tracking && (
-        <Suspense fallback={null}>
-          <RemotesDialog repositoryId={repositoryId} onClose={() => setTracking(false)} />
-        </Suspense>
-      )}
 
       {open && (
         <AnchoredPopover
@@ -246,7 +236,7 @@ export function BranchMenu({ head }: { head: string }) {
               disabled={!!commandUnavailable || busy}
               onClick={() => {
                 setOpen(false);
-                setTracking(true);
+                openSettings("repository-remotes");
               }}
             >
               {t("branchMenu.configureUpstream")}

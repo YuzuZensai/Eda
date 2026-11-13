@@ -5,7 +5,7 @@ import type { RemoteChange, RemoteState } from "@shared/integrations/remotes";
 import { useEffect, useRef, useState } from "react";
 import { useRepositoryStore } from "../../../stores/repository-store";
 
-export function useRemotesDialog(repositoryId: string) {
+export function useRepositoryRemotes(repositoryId: string) {
   const loadRevision = useRef(0);
   const running = useRef(false);
   const mounted = useRef(false);
@@ -77,7 +77,7 @@ export function useRemotesDialog(repositoryId: string) {
         setError(`${errorMessage(result.error)} ${errorAction(result.error) ?? ""}`);
       } else {
         setMessage(
-          typeof result.value === "string" ? result.value : t("remotes.useRemotesDialog.saved"),
+          typeof result.value === "string" ? result.value : t("remotes.useRepositoryRemotes.saved"),
         );
       }
 

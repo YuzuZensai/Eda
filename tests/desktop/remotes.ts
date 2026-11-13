@@ -267,23 +267,35 @@ try {
     git(source, "rev-parse", "topic"),
   );
   await page.getByRole("button", { name: "Remotes", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Remotes", exact: true });
+  await expect(page.getByRole("dialog", { name: "Remotes", exact: true })).toHaveCount(0);
+  await expect(remoteSettings.getByRole("heading", { name: "Branch tracking" })).toBeVisible();
 
-  await expect(dialog.getByRole("tab")).toHaveCount(0);
-  await expect(dialog.getByRole("button", { name: "Review push", exact: true })).toHaveCount(0);
-  await chooseSelect(dialog.getByLabel("Upstream", { exact: true }), "refs/remotes/origin/topic");
-  await dialog.getByRole("button", { name: "Set upstream", exact: true }).click();
-  await dialog.getByText(/origin\/topic up to date/).waitFor();
+  await chooseSelect(
+    remoteSettings.getByLabel("Upstream", { exact: true }),
+    "refs/remotes/origin/topic",
+  );
+  await remoteSettings.getByRole("button", { name: "Set upstream", exact: true }).click();
+  await remoteSettings.getByText(/origin\/topic up to date/).waitFor();
   assert.equal(git(clientPath, "config", "branch.main.merge"), "refs/heads/topic");
 
-  await chooseSelect(dialog.getByLabel("Upstream", { exact: true }), "refs/remotes/origin/main");
-  await dialog.getByRole("button", { name: "Set upstream", exact: true }).click();
-  await dialog.getByText(/origin\/main up to date/).waitFor();
+  await chooseSelect(
+    remoteSettings.getByLabel("Upstream", { exact: true }),
+    "refs/remotes/origin/main",
+  );
+  await remoteSettings.getByRole("button", { name: "Set upstream", exact: true }).click();
+  await remoteSettings.getByText(/origin\/main up to date/).waitFor();
   assert.equal(git(clientPath, "config", "branch.main.merge"), "refs/heads/main");
 
   git(clientPath, "tag", "-a", "release", "-m", "release notes");
   git(clientPath, "tag", "unpublished");
-  await dialog.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Command palette", exact: true }).click();
+  const palette = page.getByRole("dialog", { name: "Command palette", exact: true });
+  await palette.getByRole("combobox", { name: "Search commands" }).fill("Manage branch tracking");
+  await page.keyboard.press("Enter");
+  await expect(remoteSettings.getByRole("heading", { name: "Branch tracking" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Remotes", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Fetch", exact: true }).click();
   await httpsAuthentication.getByLabel("HTTPS username").fill("fixture");
   await httpsAuthentication.getByLabel("HTTPS token").fill(token);
@@ -304,7 +316,6 @@ try {
   ).toHaveCount(1);
   await page.screenshot({ path: join(tmpdir(), "eda-tag-menu.png") });
   await page.getByRole("menuitem", { name: "Push tag", exact: true }).click();
-  await expect(dialog).toHaveCount(0);
   await httpsAuthentication.getByLabel("Username", { exact: true }).fill("fixture");
   await httpsAuthentication.getByLabel("Access token", { exact: true }).fill(token);
   await httpsAuthentication.getByRole("button", { name: "Retry push", exact: true }).click();

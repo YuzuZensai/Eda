@@ -5,7 +5,6 @@ import {
   GraphFilterDialog,
   HistoryRecoveryDialog,
   ManageReferencesDialog,
-  RemotesDialog,
   UndoRedoDialog,
 } from "../features/repository-dialogs";
 import type { RepositoryReadState } from "../stores/repository-state";
@@ -20,7 +19,6 @@ interface DialogProps {
 const DIALOGS: Partial<Record<CommandDialog["kind"], ComponentType<DialogProps>>> = {
   "repository.graph": GraphFilterDialog,
   "repository.references": ManageReferencesDialog,
-  "repository.remotes": RemotesDialog,
   "repository.historyRecovery": HistoryRecoveryDialog,
   "repository.undoRedo": UndoRedoDialog,
 };
