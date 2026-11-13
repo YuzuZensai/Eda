@@ -1292,7 +1292,6 @@
   "repositoryOverview.noCommitsYet": "No commits yet",
   "repositoryOverview.noUpstreamConfigured": "No upstream configured",
   "repositoryOverview.refreshRepository": "Refresh repository",
-  "repositoryOverview.remotes": "Remotes",
   "repositoryOverview.repositoryActions": "Repository actions",
   "repositoryOverview.repositoryOverview": "Repository overview",
   "repositoryOverview.resolveConflicts": "Resolve {conflicts} conflicts",

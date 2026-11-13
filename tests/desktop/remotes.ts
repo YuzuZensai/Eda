@@ -266,7 +266,9 @@ try {
     git(clientPath, "rev-parse", "refs/remotes/origin/topic"),
     git(source, "rev-parse", "topic"),
   );
-  await page.getByRole("button", { name: "Remotes", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Remotes", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Sync", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Remotes", exact: true })).toHaveCount(0);
   await expect(remoteSettings.getByRole("heading", { name: "Branch tracking" })).toBeVisible();
 

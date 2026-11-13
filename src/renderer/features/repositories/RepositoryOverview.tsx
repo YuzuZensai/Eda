@@ -10,7 +10,6 @@ import { lazy, Suspense, useState } from "react";
 import { Skeleton } from "../../components/ui/feedback/Skeleton";
 import { cx, RefreshButton, TextButton } from "../../components/ui/index";
 import { categorizeChanges } from "../../repository/working-changes";
-import { openSettings } from "../../stores/shell-store";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { BranchMenu } from "../references/BranchMenu";
 import { RepositorySyncActions } from "../sync/RepositorySyncActions";
@@ -125,13 +124,6 @@ export function RepositoryOverview({
         aria-label={t("repositoryOverview.repositoryActions")}
         className="flex min-w-0 flex-1 items-center justify-end gap-4 text-xs"
       >
-        <TextButton
-          className="text-text-secondary hover:text-text-primary"
-          onClick={() => openSettings("repository-remotes")}
-        >
-          {t("repositoryOverview.remotes")}
-        </TextButton>
-
         {onOpenCommit && (
           <TextButton className="text-accent-text" onClick={onOpenCommit}>
             {t("repositoryOverview.commitDraft")}
