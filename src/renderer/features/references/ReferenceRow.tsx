@@ -10,11 +10,13 @@ export function ReferenceRow({
   selected,
   onActions,
   onCheckout,
+  onInspect,
 }: {
   item: BranchSummary | TagReference;
   selected: boolean;
   onActions: (target: ReferenceTarget) => void;
   onCheckout: (branch: BranchSummary) => void;
+  onInspect?: () => void;
 }) {
   const tag = "isHead" in item ? null : item;
 
@@ -82,7 +84,10 @@ export function ReferenceRow({
         if (tagTarget && !tagTarget.local) {
           const bounds = event.currentTarget.getBoundingClientRect();
           openActions({ x: bounds.right, y: bounds.top });
-        } else void useRepositoryStore.getState().jumpToCommit(item.oid);
+        } else {
+          onInspect?.();
+          void useRepositoryStore.getState().jumpToCommit(item.oid);
+        }
       }}
       onDoubleClick={() => {
         if ("isHead" in item && !item.remote && !item.isHead && !item.worktreePath)

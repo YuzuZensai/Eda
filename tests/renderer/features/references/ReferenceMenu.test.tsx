@@ -215,6 +215,34 @@ it("checks out a local branch on double-click while a single click still inspect
   expect(vi.mocked(window.eda.repository.listBranches).mock.calls.length).toBeGreaterThan(1);
 });
 
+it("highlights only the inspected reference when branches and tags share a commit", async () => {
+  const jumpToCommit = vi.fn(async (oid: string) => {
+    useRepositoryStore.setState({ selection: { kind: "commit", oid } });
+  });
+  useRepositoryStore.setState({ jumpToCommit });
+  await act(async () => root.render(<ReferenceSidebar repositoryId="repo" />));
+
+  const localRow = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Inspect branch feature/topic"]',
+  )!;
+  const remoteRow = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Inspect branch upstream/review/topic"]',
+  )!;
+  const tagRow = container.querySelector<HTMLButtonElement>('[aria-label="Inspect tag v1"]')!;
+
+  await act(async () => localRow.click());
+  expect(localRow.getAttribute("aria-pressed")).toBe("true");
+  expect(remoteRow.getAttribute("aria-pressed")).toBe("false");
+  expect(tagRow.getAttribute("aria-pressed")).toBe("false");
+
+  await act(async () => remoteRow.click());
+  expect(localRow.getAttribute("aria-pressed")).toBe("false");
+  expect(remoteRow.getAttribute("aria-pressed")).toBe("true");
+  expect(tagRow.getAttribute("aria-pressed")).toBe("false");
+  expect(jumpToCommit).toHaveBeenCalledTimes(2);
+  expect(jumpToCommit).toHaveBeenCalledWith(local.oid);
+});
+
 it.each([
   { name: "current branch", branch: { ...local, isHead: true } },
   { name: "branch in another worktree", branch: { ...local, worktreePath: "/elsewhere" } },

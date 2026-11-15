@@ -66,6 +66,7 @@ export function ReferenceSidebar({
 
   const [branches, setBranches] = useState<BranchSummary[]>([]);
   const [localTags, setTags] = useState<TagSummary[]>([]);
+  const [inspectedReference, setInspectedReference] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [actions, setActions] = useState<ReferenceTarget | null>(null);
   const [loading, setLoading] = useState(true);
@@ -374,9 +375,16 @@ export function ReferenceSidebar({
                         <ReferenceRow
                           key={item.name}
                           item={item}
-                          selected={selection?.kind === "commit" && selection.oid === item.oid}
+                          selected={
+                            selection?.kind === "commit" &&
+                            selection.oid === item.oid &&
+                            inspectedReference === `${repositoryId}:${group.key}:${item.name}`
+                          }
                           onActions={setActions}
                           onCheckout={(branch) => void checkout(branch)}
+                          onInspect={() =>
+                            setInspectedReference(`${repositoryId}:${group.key}:${item.name}`)
+                          }
                         />
                       ))}
 
