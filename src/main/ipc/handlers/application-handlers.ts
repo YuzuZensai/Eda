@@ -25,6 +25,22 @@ export function registerApplicationHandlers(services: Services): void {
       throw invalidRequest(errorText("main.applicationHandlers.invalidAvatarEmail"));
     return ok(await services.avatars.get(email));
   });
+  handle(IPC_CHANNELS.avatarCommitGet, async (_event, rawId, email) => {
+    const repositoryId = requireId(rawId);
+    if (typeof email !== "string" || email.length > 320)
+      throw invalidRequest(errorText("main.applicationHandlers.invalidAvatarEmail"));
+    const repository = services.repositories.resolveActiveRepository(repositoryId);
+    const gitlabInstances = services.gitlabSelfHosted
+      .status(repository.identityId)
+      .accounts.map((account) => account.baseUrl);
+    return ok(
+      await services.avatars.getCommit(
+        email,
+        await services.remotes.primaryFetchUrl(repositoryId).catch(() => undefined),
+        gitlabInstances,
+      ),
+    );
+  });
 
   handle(IPC_CHANNELS.appGraphicsStatus, async () => ok(graphicsStatus()));
   handle(IPC_CHANNELS.appInstallation, async () => ok(services.installation));

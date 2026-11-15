@@ -5,11 +5,72 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AvatarImage } from "@shared/identity/avatar";
+import { isRecord } from "@shared/validation";
+import { isGitLabInstanceHttps } from "@shared/integrations/gitlab-self-hosted";
+import { ProviderProfileCache } from "../providers/provider-profile-cache";
 
 const DAY = 24 * 60 * 60 * 1000;
 const MAX_ENTRIES = 128;
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_FILE_BYTES = 64 * 1024;
+const MAX_PROFILE_BYTES = 128 * 1024;
+
+type CommitSource =
+  { kind: "github"; owner: string; repo: string } | { kind: "gitlab"; baseUrl: string };
+
+function commitSource(remote: string, gitlabInstances: readonly string[]): CommitSource | null {
+  try {
+    const input = remote.replace(/^git@([^:]+):/, "https://$1/");
+    const url = new URL(input);
+
+    if (
+      !["https:", "ssh:"].includes(url.protocol) ||
+      (url.protocol === "ssh:" && url.username !== "git") ||
+      (url.protocol === "https:" && (url.username || url.password)) ||
+      url.port ||
+      url.search ||
+      url.hash
+    )
+      return null;
+
+    const path = url.pathname.replace(/\.git\/?$/, "").replace(/\/$/, "");
+
+    if (url.hostname === "github.com") {
+      const match = path.match(/^\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
+      return match ? { kind: "github", owner: match[1]!, repo: match[2]! } : null;
+    }
+
+    if (url.hostname === "gitlab.com" && /^\/(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+$/.test(path))
+      return { kind: "gitlab", baseUrl: "https://gitlab.com" };
+
+    const httpsRemote = `https://${url.host}${url.pathname}`;
+    const baseUrl = gitlabInstances.find((base) => isGitLabInstanceHttps(httpsRemote, base));
+    if (baseUrl) return { kind: "gitlab", baseUrl };
+  } catch {}
+
+  return null;
+}
+
+function providerImageUrl(value: unknown, origin: string): string | null {
+  if (typeof value !== "string" || value.length > 4096) return null;
+
+  try {
+    const url = new URL(value);
+    return url.origin === origin && !url.username && !url.password ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function githubAuthorUrl(email: string): string | null {
+  const author = email.match(
+    /^(?:([1-9][0-9]{0,15})\+)?([a-z0-9][a-z0-9-]{0,38})@users\.noreply\.github\.com$/,
+  );
+  if (!author) return null;
+  return author[1]
+    ? `https://avatars.githubusercontent.com/u/${author[1]}?v=4&s=96`
+    : `https://github.com/${author[2]}.png?size=96`;
+}
 
 export class AvatarCache {
   private readonly entries = new Map<string, AvatarImage>();
@@ -21,14 +82,23 @@ export class AvatarCache {
   private saved: Promise<void> = Promise.resolve();
   private revision = 0;
   private persistedRevision = 0;
+  private readonly authorProfiles: ProviderProfileCache<string>;
+  private readonly lookupSlots: Promise<unknown>[] = Array.from({ length: 4 }, () =>
+    Promise.resolve(),
+  );
+  private lookupSlot = 0;
 
   constructor(
     private readonly directory: string,
     private readonly fetchImage: typeof fetch,
     private readonly now = Date.now,
-  ) {}
+  ) {
+    this.authorProfiles = new ProviderProfileCache<string>(now);
+  }
 
   async clear(): Promise<void> {
+    await this.authorProfiles.clear();
+    await Promise.allSettled(this.lookupSlots);
     await this.loaded;
     await Promise.allSettled(this.slots);
     await this.saved;
@@ -48,20 +118,118 @@ export class AvatarCache {
       return { dataUrl: null, expiresAt: this.now() + DAY };
 
     const hash = createHash("sha256").update(normalized).digest("hex");
-    const githubAuthor = normalized.match(
-      /^(?:([1-9][0-9]{0,15})\+)?([a-z0-9][a-z0-9-]{0,38})@users\.noreply\.github\.com$/,
-    );
+    const url = githubAuthorUrl(normalized);
 
-    if (githubAuthor) {
-      const url = githubAuthor[1]
-        ? `https://avatars.githubusercontent.com/u/${githubAuthor[1]}?v=4&s=96`
-        : `https://github.com/${githubAuthor[2]}.png?size=96`;
+    if (url) {
       const image = await this.getImage(`github-author:${hash}`, url, MAX_IMAGE_BYTES);
 
       if (image.dataUrl) return image;
     }
 
+    return this.getGravatar(hash);
+  }
+
+  async getCommit(
+    email: string,
+    remote: string | undefined,
+    gitlabInstances: readonly string[] = [],
+  ): Promise<AvatarImage> {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized || normalized.length > 320 || /[\r\n\0]/.test(normalized))
+      return { dataUrl: null, expiresAt: this.now() + DAY };
+
+    const hash = createHash("sha256").update(normalized).digest("hex");
+    const source = remote ? commitSource(remote, gitlabInstances) : null;
+
+    if (!source) return this.getGravatar(hash);
+
+    if (source.kind === "github" && githubAuthorUrl(normalized)) return this.get(email);
+
+    const key =
+      source.kind === "github"
+        ? `github:${source.owner.toLowerCase()}/${source.repo.toLowerCase()}:${hash}`
+        : `gitlab:${source.baseUrl}:${hash}`;
+    const avatarUrl = await this.authorProfiles.get(key, () =>
+      this.queueLookup(() =>
+        source.kind === "github"
+          ? this.githubCommitAvatar(source, normalized)
+          : this.gitlabAuthorAvatar(source, normalized),
+      ),
+    );
+
+    if (avatarUrl) {
+      const image = await this.getImage(
+        `${source.kind}-commit:${createHash("sha256").update(`${key}:${avatarUrl}`).digest("hex")}`,
+        avatarUrl,
+        MAX_IMAGE_BYTES,
+      );
+      if (image.dataUrl)
+        return { ...image, expiresAt: Math.min(image.expiresAt, this.now() + 5 * 60_000) };
+    }
+
+    const fallback = await this.getGravatar(hash);
+    return { ...fallback, expiresAt: Math.min(fallback.expiresAt, this.now() + 60_000) };
+  }
+
+  private getGravatar(hash: string): Promise<AvatarImage> {
     return this.getImage(hash, `https://www.gravatar.com/avatar/${hash}?s=96&d=404&r=g`);
+  }
+
+  private queueLookup(load: () => Promise<string | null>): Promise<string | null> {
+    const slot = this.lookupSlot++ % this.lookupSlots.length;
+    const work = this.lookupSlots[slot]!.then(load);
+    this.lookupSlots[slot] = work.catch(() => {});
+    return work;
+  }
+
+  private async githubCommitAvatar(
+    source: Extract<CommitSource, { kind: "github" }>,
+    email: string,
+  ): Promise<string | null> {
+    const url = `https://api.github.com/repos/${source.owner}/${source.repo}/commits?author=${encodeURIComponent(email)}&per_page=1`;
+    const result = await this.readProfile(url);
+    const commit = Array.isArray(result) ? result[0] : null;
+    if (!isRecord(commit) || !isRecord(commit["commit"])) return null;
+    const author = commit["commit"]["author"];
+    if (!isRecord(author) || String(author["email"]).toLowerCase() !== email) return null;
+    const account = commit["author"];
+    return isRecord(account)
+      ? providerImageUrl(account["avatar_url"], "https://avatars.githubusercontent.com")
+      : null;
+  }
+
+  private async gitlabAuthorAvatar(
+    source: Extract<CommitSource, { kind: "gitlab" }>,
+    email: string,
+  ): Promise<string | null> {
+    const url = `${source.baseUrl}/api/v4/avatar?email=${encodeURIComponent(email)}&size=96`;
+    const result = await this.readProfile(url);
+    return isRecord(result)
+      ? providerImageUrl(result["avatar_url"], new URL(source.baseUrl).origin)
+      : null;
+  }
+
+  private async readProfile(url: string): Promise<unknown> {
+    try {
+      const response = await this.fetchImage(url, {
+        signal: AbortSignal.timeout(8000),
+        redirect: "error",
+        credentials: "omit",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok || !response.body) {
+        await response.body?.cancel();
+        return null;
+      }
+      const bytes = await readResponseBytes(
+        response.body,
+        MAX_PROFILE_BYTES,
+        () => new AppError(errorText("main.avatarCache.imageExceedsSizeLimit")),
+      );
+      return JSON.parse(bytes.toString("utf8")) as unknown;
+    } catch {
+      return null;
+    }
   }
 
   getGitHub(accountId: string, avatarUrl: string | null): Promise<AvatarImage> {
@@ -199,7 +367,7 @@ export class AvatarCache {
 
         if (
           typeof hash !== "string" ||
-          !/^(?:[a-f0-9]{64}|github-author:[a-f0-9]{64}|github:[1-9][0-9]{0,15}|(?:github|gitlab):[1-9][0-9]{0,15}:[a-f0-9]{64})$/.test(
+          !/^(?:[a-f0-9]{64}|github-author:[a-f0-9]{64}|(?:github|gitlab)-commit:[a-f0-9]{64}|github:[1-9][0-9]{0,15}|(?:github|gitlab):[1-9][0-9]{0,15}:[a-f0-9]{64})$/.test(
             hash,
           ) ||
           !image ||
@@ -213,7 +381,13 @@ export class AvatarCache {
         )
           continue;
 
-        if (image.type === null && hash.includes(":") && !hash.startsWith("github-author:"))
+        if (
+          image.type === null &&
+          hash.includes(":") &&
+          !hash.startsWith("github-author:") &&
+          !hash.startsWith("github-commit:") &&
+          !hash.startsWith("gitlab-commit:")
+        )
           continue;
 
         try {

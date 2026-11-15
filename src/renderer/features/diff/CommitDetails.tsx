@@ -36,12 +36,14 @@ export function CommitDetails({
   onSelectParent,
   onVerify,
   verifying = false,
+  repositoryId,
 }: {
   commit: HistoryCommit;
   inspection: CommitInspection | null;
   onSelectParent: (oid: string) => void;
   onVerify?: () => void;
   verifying?: boolean;
+  repositoryId?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
@@ -77,7 +79,13 @@ export function CommitDetails({
       </p>
 
       <div className="my-1.5 flex min-w-0 items-center gap-2">
-        <ProfileAvatar name={commit.author.name} email={commit.author.email} hue={210} small />
+        <ProfileAvatar
+          name={commit.author.name}
+          email={commit.author.email}
+          {...(repositoryId && { repositoryId })}
+          hue={210}
+          small
+        />
 
         <div className="min-w-0 flex-1 text-xs">
           <p

@@ -198,7 +198,6 @@ function setup() {
 
   const mocks = {
     git: { history: vi.fn(async () => ({ commits: [], nextOffset: null })) },
-    repositories: { resolveActiveRepository: vi.fn(() => ({ path: "/repo" })) },
     repositoryReader: {
       referenceUrl: vi.fn(async () => null),
       ignoredFiles: vi.fn(async () => ({ paths: [], truncated: false })),
@@ -277,8 +276,19 @@ function setup() {
       verifyPending: vi.fn(() => "ABCD-EFGH"),
     },
     avatars: {
+      getCommit: vi.fn(async () => ({ dataUrl: "data:image/png;base64,AQID", expiresAt: 123 })),
       getGitHub: vi.fn(async () => ({ dataUrl: "data:image/png;base64,AQID" })),
       getGitLab: vi.fn(async () => ({ dataUrl: "data:image/png;base64,AQID" })),
+    },
+    remotes: {
+      primaryFetchUrl: vi.fn(async () => "https://github.com/team/project.git"),
+    },
+    repositories: {
+      resolveActiveRepository: vi.fn(() => ({
+        id: repositoryId,
+        identityId: profile.id,
+        path: "/repo",
+      })),
     },
     navigation: { onChange: vi.fn(), take: vi.fn(() => []) },
     operations: { onChange: vi.fn(), list: vi.fn(() => []), cancel: vi.fn(), retry: vi.fn() },
@@ -392,6 +402,26 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("IPC registration", () => {
+  it("resolves the active repository's remote for commit avatars and validates requests", async () => {
+    const { avatars, remotes, repositories } = setup();
+    expect(
+      await invoke(IPC_CHANNELS.avatarCommitGet, repositoryId, "author@example.test"),
+    ).toMatchObject({ ok: true, value: { dataUrl: "data:image/png;base64,AQID" } });
+    expect(repositories.resolveActiveRepository).toHaveBeenCalledWith(repositoryId);
+    expect(remotes.primaryFetchUrl).toHaveBeenCalledExactlyOnceWith(repositoryId);
+    expect(avatars.getCommit).toHaveBeenCalledExactlyOnceWith(
+      "author@example.test",
+      "https://github.com/team/project.git",
+      [],
+    );
+
+    expect(await invoke(IPC_CHANNELS.avatarCommitGet, repositoryId, 123)).toMatchObject({
+      ok: false,
+      error: { kind: "invalid-input" },
+    });
+    expect(avatars.getCommit).toHaveBeenCalledOnce();
+  });
+
   it("copies text through the native clipboard and rejects invalid requests", async () => {
     setup();
 

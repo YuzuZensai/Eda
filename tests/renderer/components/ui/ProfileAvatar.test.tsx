@@ -105,6 +105,45 @@ it("shares cached lookups and rejects late avatar results after an author change
   }
 });
 
+it("requests commit avatars within the selected repository", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const getCommit = vi.fn(async (repositoryId: string) => ({
+    ok: true as const,
+    value: {
+      dataUrl:
+        repositoryId === "github-repo"
+          ? "data:image/png;base64,AQ=="
+          : "data:image/png;base64,Ag==",
+      expiresAt: Date.now() + 60_000,
+    },
+  }));
+  vi.stubGlobal("eda", { avatars: { getCommit } });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const email = "same-author@example.test";
+
+  try {
+    await act(async () =>
+      root.render(
+        <ProfileAvatar name="Author" hue={210} email={email} repositoryId="github-repo" />,
+      ),
+    );
+    expect(container.querySelector("img")?.src).toBe("data:image/png;base64,AQ==");
+
+    await act(async () =>
+      root.render(
+        <ProfileAvatar name="Author" hue={210} email={email} repositoryId="gitlab-repo" />,
+      ),
+    );
+    expect(container.querySelector("img")?.src).toBe("data:image/png;base64,Ag==");
+    expect(getCommit).toHaveBeenNthCalledWith(1, "github-repo", email);
+    expect(getCommit).toHaveBeenNthCalledWith(2, "gitlab-repo", email);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
 it.each([{}, { small: true }, { compact: true }])(
   "keeps the same avatar element while loading with size %j",
   async (size) => {

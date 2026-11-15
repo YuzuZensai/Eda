@@ -3,8 +3,8 @@ import type { AvatarImage } from "@shared/identity/avatar";
 
 const requests = new Map<string, { expiresAt: number; result: Promise<AvatarImage> }>();
 
-function request(email: string): Promise<AvatarImage> {
-  const existing = requests.get(email);
+function request(key: string, email: string, repositoryId?: string): Promise<AvatarImage> {
+  const existing = requests.get(key);
 
   if (existing && existing.expiresAt > Date.now()) return existing.result;
 
@@ -16,7 +16,9 @@ function request(email: string): Promise<AvatarImage> {
   entry.result = Promise.resolve()
     .then(async () => {
       try {
-        const result = await window.eda.avatars.get(email);
+        const result = repositoryId
+          ? await window.eda.avatars.getCommit(repositoryId, email)
+          : await window.eda.avatars.get(email);
         if (result.ok) return result.value;
       } catch {}
 
@@ -26,25 +28,26 @@ function request(email: string): Promise<AvatarImage> {
       entry.expiresAt = image.expiresAt;
       return image;
     });
-  requests.delete(email);
-  requests.set(email, entry);
+  requests.delete(key);
+  requests.set(key, entry);
 
   while (requests.size > 128) requests.delete(requests.keys().next().value!);
 
   return entry.result;
 }
 
-export function useAvatar(email?: string): string | undefined {
-  const key = email?.trim().toLowerCase() ?? "";
+export function useAvatar(email?: string, repositoryId?: string): string | undefined {
+  const normalized = email?.trim().toLowerCase() ?? "";
+  const key = repositoryId ? `${repositoryId}:${normalized}` : normalized;
   const [image, setImage] = useState<{ key: string; url: string | null } | null>(null);
 
   useEffect(() => {
-    if (!key) return;
+    if (!normalized) return;
 
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
     const load = async () => {
-      const result = await request(key);
+      const result = await request(key, normalized, repositoryId);
       if (!alive) return;
       setImage({ key, url: result.dataUrl });
       timer = setTimeout(() => void load(), Math.max(1000, result.expiresAt - Date.now()));
@@ -56,7 +59,7 @@ export function useAvatar(email?: string): string | undefined {
       alive = false;
       clearTimeout(timer);
     };
-  }, [key]);
+  }, [key, normalized, repositoryId]);
 
   return image?.key === key ? (image.url ?? undefined) : undefined;
 }

@@ -350,6 +350,7 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
               <CommitRow
                 key={row.commit.oid}
                 row={row}
+                {...(repositoryId && { repositoryId })}
                 columns={columns}
                 gutter={gutter}
                 selected={selection?.kind === "commit" && selection.oid === row.commit.oid}

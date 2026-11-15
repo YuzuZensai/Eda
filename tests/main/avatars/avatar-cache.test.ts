@@ -8,6 +8,135 @@ import { deferred } from "../../helpers/deferred";
 const githubAvatar = "https://avatars.githubusercontent.com/u/7?v=4";
 const githubNoreplyDomain = "users.noreply.github.com";
 
+it("uses a GitHub repository's linked commit author photo for a regular email", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "eda-github-commit-avatar-"));
+  const email = "author@example.test";
+  const avatarUrl = "https://avatars.githubusercontent.com/u/123?v=4";
+  const fetchImage = vi.fn<typeof fetch>(async (input) => {
+    const url = String(input);
+    if (url.startsWith("https://api.github.com/"))
+      return Response.json([
+        {
+          commit: { author: { email } },
+          author: { avatar_url: avatarUrl },
+        },
+      ]);
+    return new Response(new Uint8Array([1]), { headers: { "content-type": "image/png" } });
+  });
+
+  try {
+    const cache = new AvatarCache(directory, fetchImage);
+    const first = await cache.getCommit(email, "git@github.com:team/project.git");
+    const second = await cache.getCommit(email, "git@github.com:team/project.git");
+
+    expect(first.dataUrl).toBe("data:image/png;base64,AQ==");
+    expect(second).toEqual(first);
+    expect(fetchImage.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://api.github.com/repos/team/project/commits?author=author%40example.test&per_page=1",
+      avatarUrl,
+    ]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("refreshes a commit avatar when the provider reports a new image URL", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "eda-updated-commit-avatar-"));
+  let now = 1_000_000;
+  let version = 1;
+  const fetchImage = vi.fn<typeof fetch>(async (input) =>
+    String(input).startsWith("https://gitlab.com/api/v4/avatar?")
+      ? Response.json({ avatar_url: `https://gitlab.com/uploads/avatar-${version}.png` })
+      : new Response(new Uint8Array([version]), { headers: { "content-type": "image/png" } }),
+  );
+
+  try {
+    const cache = new AvatarCache(directory, fetchImage, () => now);
+    const first = await cache.getCommit("author@example.test", "https://gitlab.com/team/repo.git");
+    expect(first.dataUrl).toBe("data:image/png;base64,AQ==");
+
+    version = 2;
+    now = first.expiresAt + 1;
+    const second = await cache.getCommit("author@example.test", "https://gitlab.com/team/repo.git");
+    expect(second.dataUrl).toBe("data:image/png;base64,Ag==");
+    expect(fetchImage).toHaveBeenCalledTimes(4);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("uses GitLab's uploaded author photo for a GitLab repository", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "eda-gitlab-commit-avatar-"));
+  const avatarUrl = "https://gitlab.com/uploads/-/system/user/avatar/7/photo.png";
+  const fetchImage = vi.fn<typeof fetch>(async (input) =>
+    String(input).startsWith("https://gitlab.com/api/v4/avatar?")
+      ? Response.json({ avatar_url: avatarUrl })
+      : new Response(new Uint8Array([2]), { headers: { "content-type": "image/png" } }),
+  );
+
+  try {
+    const image = await new AvatarCache(directory, fetchImage).getCommit(
+      `123+author@${githubNoreplyDomain}`,
+      "https://gitlab.com/team/project.git",
+    );
+
+    expect(image.dataUrl).toBe("data:image/png;base64,Ag==");
+    expect(String(fetchImage.mock.calls[0]![0])).toContain(
+      "https://gitlab.com/api/v4/avatar?email=123%2Bauthor%40users.noreply.github.com",
+    );
+    expect(String(fetchImage.mock.calls[1]![0])).toBe(avatarUrl);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("uses a registered self-hosted GitLab instance for commit avatars", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "eda-self-hosted-commit-avatar-"));
+  const baseUrl = "https://git.company.test/gitlab";
+  const avatarUrl = "https://git.company.test/uploads/avatar/7/photo.png";
+  const fetchImage = vi.fn<typeof fetch>(async (input) =>
+    String(input).startsWith(`${baseUrl}/api/v4/avatar?`)
+      ? Response.json({ avatar_url: avatarUrl })
+      : new Response(new Uint8Array([4]), { headers: { "content-type": "image/png" } }),
+  );
+
+  try {
+    const image = await new AvatarCache(directory, fetchImage).getCommit(
+      "author@example.test",
+      "git@git.company.test:gitlab/team/project.git",
+      [baseUrl],
+    );
+    expect(image.dataUrl).toBe("data:image/png;base64,BA==");
+    expect(String(fetchImage.mock.calls[0]![0])).toContain(`${baseUrl}/api/v4/avatar?`);
+    expect(String(fetchImage.mock.calls[1]![0])).toBe(avatarUrl);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("falls back to Gravatar when the repository provider cannot identify the author", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "eda-commit-avatar-fallback-"));
+  const fetchImage = vi.fn<typeof fetch>(async (input) =>
+    String(input).startsWith("https://api.github.com/")
+      ? Response.json([{ commit: { author: { email: "other@example.test" } } }])
+      : new Response(new Uint8Array([3]), { headers: { "content-type": "image/png" } }),
+  );
+
+  try {
+    const cache = new AvatarCache(directory, fetchImage);
+    const image = await cache.getCommit(
+      "author@example.test",
+      "https://github.com/team/project.git",
+    );
+    expect(image.dataUrl).toBe("data:image/png;base64,Aw==");
+    expect(String(fetchImage.mock.calls[1]![0])).toMatch(/^https:\/\/www\.gravatar\.com\/avatar\//);
+    await cache.getCommit("other@example.test", "https://github.com.evil.test/repo");
+    expect(String(fetchImage.mock.calls[2]![0])).toMatch(/^https:\/\/www\.gravatar\.com\/avatar\//);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 it.each([
   [
     `123+Example-User@${githubNoreplyDomain}`,
@@ -216,6 +345,33 @@ it("clears persisted and in-memory avatars before accepting fresh requests", asy
     await expect(readFile(file)).rejects.toMatchObject({ code: "ENOENT" });
     await cache.getGitHub("7", githubAvatar);
     expect(fetchImage).toHaveBeenCalledTimes(2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("clears repository author lookups before accepting fresh requests", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "eda-commit-avatar-reset-"));
+  const email = "author@example.test";
+  const avatarUrl = "https://avatars.githubusercontent.com/u/123?v=4";
+  const fetchImage = vi.fn<typeof fetch>(async (input) =>
+    String(input).startsWith("https://api.github.com/")
+      ? Response.json([{ commit: { author: { email } }, author: { avatar_url: avatarUrl } }])
+      : new Response(new Uint8Array([1]), { headers: { "content-type": "image/png" } }),
+  );
+
+  try {
+    const cache = new AvatarCache(directory, fetchImage);
+    await cache.getCommit(email, "https://github.com/team/project.git");
+    await cache.clear();
+    await cache.getCommit(email, "https://github.com/team/project.git");
+
+    expect(fetchImage.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://api.github.com/repos/team/project/commits?author=author%40example.test&per_page=1",
+      avatarUrl,
+      "https://api.github.com/repos/team/project/commits?author=author%40example.test&per_page=1",
+      avatarUrl,
+    ]);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

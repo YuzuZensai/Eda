@@ -153,6 +153,27 @@ async function setup(
   };
 }
 
+it("uses origin for commit avatars and switches to another remote after origin is removed", async () => {
+  const { service, client, server } = await setup();
+
+  expect(await service.primaryFetchUrl(client.id)).toBe(server.path);
+  await service.change(client.id, {
+    kind: "url",
+    name: "origin",
+    url: "https://github.com/team/project.git",
+    push: false,
+  });
+  expect(await service.primaryFetchUrl(client.id)).toBe("https://github.com/team/project.git");
+
+  await service.change(client.id, { kind: "remove", name: "origin" });
+  await service.change(client.id, {
+    kind: "add",
+    name: "backup",
+    url: "https://gitlab.com/team/project.git",
+  });
+  expect(await service.primaryFetchUrl(client.id)).toBe("https://gitlab.com/team/project.git");
+});
+
 it("schedules only open repositories, pauses when offline or suspended, backs off failures and refreshes refs without changing local work", async () => {
   const { service, source, server, client, run, profile, identity, repositories, db, identities } =
     await setup();

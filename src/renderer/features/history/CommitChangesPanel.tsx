@@ -155,6 +155,7 @@ export function CommitChangesPanel() {
         {commit && (
           <CommitDetails
             commit={commit}
+            {...(repositoryId && { repositoryId })}
             inspection={inspection}
             verifying={details?.oid !== oid}
             onVerify={() => setVerificationRevision((revision) => revision + 1)}

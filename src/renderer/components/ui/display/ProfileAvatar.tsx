@@ -8,6 +8,7 @@ export function ProfileAvatar({
   hue,
   imageUrl: providedUrl,
   email,
+  repositoryId,
   compact = false,
   small = false,
   loading = false,
@@ -16,11 +17,12 @@ export function ProfileAvatar({
   hue: AccentColor;
   imageUrl?: string | undefined;
   email?: string | undefined;
+  repositoryId?: string;
   compact?: boolean;
   small?: boolean;
   loading?: boolean;
 }) {
-  const cachedUrl = useAvatar(email);
+  const cachedUrl = useAvatar(email, repositoryId);
   const imageUrl = email ? cachedUrl : providedUrl;
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);

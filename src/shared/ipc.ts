@@ -142,7 +142,10 @@ import type {
 } from "./workflows/workflow";
 
 export interface EdaApi {
-  avatars: { get(email: string): Promise<Result<AvatarImage>> };
+  avatars: {
+    get(email: string): Promise<Result<AvatarImage>>;
+    getCommit(repositoryId: string, email: string): Promise<Result<AvatarImage>>;
+  };
 
   backgroundFetch: {
     inspect(id: string): Promise<Result<BackgroundFetchState>>;
@@ -567,6 +570,7 @@ export const IPC_CHANNELS = {
   githubOpenVerification: "github:open-verification",
   githubDisconnect: "github:disconnect",
   avatarGet: "avatar:get",
+  avatarCommitGet: "avatar:commit-get",
   identityListGpgSigningKeys: "identity:listGpgSigningKeys",
   backgroundFetchInspect: "background-fetch:inspect",
   backgroundFetchConfigure: "background-fetch:configure",

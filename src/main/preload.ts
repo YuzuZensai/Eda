@@ -58,7 +58,11 @@ const api: EdaApi = {
       ipcRenderer.invoke(IPC_CHANNELS.githubOpenVerification, profileId, id),
     disconnect: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.githubDisconnect, profileId),
   },
-  avatars: { get: (email) => ipcRenderer.invoke(IPC_CHANNELS.avatarGet, email) },
+  avatars: {
+    get: (email) => ipcRenderer.invoke(IPC_CHANNELS.avatarGet, email),
+    getCommit: (repositoryId, email) =>
+      ipcRenderer.invoke(IPC_CHANNELS.avatarCommitGet, repositoryId, email),
+  },
   backgroundFetch: {
     inspect: (id) => ipcRenderer.invoke(IPC_CHANNELS.backgroundFetchInspect, id),
     configure: (id, minutes) =>

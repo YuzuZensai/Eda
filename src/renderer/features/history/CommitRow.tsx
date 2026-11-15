@@ -22,6 +22,7 @@ export function CommitRow({
   related,
   vigilantMode = false,
   signature,
+  repositoryId,
   onSelect,
   onContextMenu,
 }: {
@@ -32,6 +33,7 @@ export function CommitRow({
   related: boolean;
   vigilantMode?: boolean;
   signature?: CommitSignatureVerification;
+  repositoryId?: string;
   onSelect: () => void;
   onContextMenu: (event: ReactMouseEvent) => void;
 }) {
@@ -122,6 +124,7 @@ export function CommitRow({
                   <ProfileAvatar
                     name={row.commit.author.name}
                     email={row.commit.author.email}
+                    {...(repositoryId && { repositoryId })}
                     hue={210}
                     compact
                   />

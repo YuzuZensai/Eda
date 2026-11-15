@@ -49,6 +49,10 @@ interface PreparedPush {
 export class RemoteService {
   private readonly remotes: GitRemotes;
   private readonly pushes = new PreviewStore<PreparedPush>(20);
+  private readonly primaryFetchUrls = new Map<
+    string,
+    { expiresAt: number; value: Promise<string | undefined> }
+  >();
 
   constructor(
     private readonly git: GitService,
@@ -134,6 +138,32 @@ export class RemoteService {
     };
   }
 
+  primaryFetchUrl(id: string): Promise<string | undefined> {
+    const repository = this.repositories.resolveActiveRepository(id);
+    const key = `${repository.identityId}:${repository.id}:${repository.path}`;
+    const cached = this.primaryFetchUrls.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+    const value = (async () => {
+      const origin = await this.git.readConfig("remote.origin.url", { cwd: repository.path });
+      if (origin) return origin;
+
+      const result = await this.git.exec(["remote"], {
+        cwd: repository.path,
+        operation: t("operations.readRemoteNames"),
+        maxStdoutBytes: 64 * 1024,
+      });
+      const name = result.stdout.trim().split("\n").find(Boolean);
+      return name ? this.git.readConfig(`remote.${name}.url`, { cwd: repository.path }) : undefined;
+    })();
+
+    this.primaryFetchUrls.delete(key);
+    this.primaryFetchUrls.set(key, { expiresAt: Date.now() + 60_000, value });
+    while (this.primaryFetchUrls.size > 128)
+      this.primaryFetchUrls.delete(this.primaryFetchUrls.keys().next().value!);
+    return value;
+  }
+
   async listTags(request: RemoteTagsRequest): Promise<RemoteTagSummary[]> {
     remoteName(request.remote);
     const { path, identityId } = this.repositories.resolveActiveRepository(request.repositoryId);
@@ -183,12 +213,14 @@ export class RemoteService {
   }
 
   change(id: string, change: RemoteChange): Promise<void> {
-    return this.writer.remoteOperation(
-      id,
-      t("main.remoteService.configureRemote"),
-      (path) => this.remotes.change(path, change),
-      "main.remoteService.configureRemote",
-    );
+    return this.writer
+      .remoteOperation(
+        id,
+        t("main.remoteService.configureRemote"),
+        (path) => this.remotes.change(path, change),
+        "main.remoteService.configureRemote",
+      )
+      .then(() => this.primaryFetchUrls.clear());
   }
 
   track(id: string, branch: string, upstream: string | null): Promise<void> {
