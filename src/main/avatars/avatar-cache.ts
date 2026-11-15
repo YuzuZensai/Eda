@@ -48,6 +48,18 @@ export class AvatarCache {
       return { dataUrl: null, expiresAt: this.now() + DAY };
 
     const hash = createHash("sha256").update(normalized).digest("hex");
+    const githubAuthor = normalized.match(
+      /^(?:([1-9][0-9]{0,15})\+)?([a-z0-9][a-z0-9-]{0,38})@users\.noreply\.github\.com$/,
+    );
+
+    if (githubAuthor) {
+      const url = githubAuthor[1]
+        ? `https://avatars.githubusercontent.com/u/${githubAuthor[1]}?v=4&s=96`
+        : `https://github.com/${githubAuthor[2]}.png?size=96`;
+      const image = await this.getImage(`github-author:${hash}`, url, MAX_IMAGE_BYTES);
+
+      if (image.dataUrl) return image;
+    }
 
     return this.getImage(hash, `https://www.gravatar.com/avatar/${hash}?s=96&d=404&r=g`);
   }
@@ -187,7 +199,7 @@ export class AvatarCache {
 
         if (
           typeof hash !== "string" ||
-          !/^(?:[a-f0-9]{64}|github:[1-9][0-9]{0,15}|(?:github|gitlab):[1-9][0-9]{0,15}:[a-f0-9]{64})$/.test(
+          !/^(?:[a-f0-9]{64}|github-author:[a-f0-9]{64}|github:[1-9][0-9]{0,15}|(?:github|gitlab):[1-9][0-9]{0,15}:[a-f0-9]{64})$/.test(
             hash,
           ) ||
           !image ||
@@ -201,7 +213,8 @@ export class AvatarCache {
         )
           continue;
 
-        if (image.type === null && hash.includes(":")) continue;
+        if (image.type === null && hash.includes(":") && !hash.startsWith("github-author:"))
+          continue;
 
         try {
           let dataUrl: string | null = null;

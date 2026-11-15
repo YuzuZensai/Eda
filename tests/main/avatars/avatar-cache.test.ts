@@ -6,6 +6,59 @@ import { tmpdir } from "node:os";
 import { AvatarCache } from "@main/avatars/avatar-cache";
 import { deferred } from "../../helpers/deferred";
 const githubAvatar = "https://avatars.githubusercontent.com/u/7?v=4";
+const githubNoreplyDomain = "users.noreply.github.com";
+
+it.each([
+  [
+    `123+Example-User@${githubNoreplyDomain}`,
+    "https://avatars.githubusercontent.com/u/123?v=4&s=96",
+  ],
+  [`Example-User@${githubNoreplyDomain}`, "https://github.com/example-user.png?size=96"],
+])("loads GitHub commit author avatars for %s before Gravatar", async (email, url) => {
+  const directory = await mkdtemp(join(tmpdir(), "eda-github-author-avatar-"));
+  const fetchImage = vi.fn<typeof fetch>(
+    async () =>
+      new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png" } }),
+  );
+
+  try {
+    const cache = new AvatarCache(directory, fetchImage);
+    const image = await cache.get(email);
+
+    expect(image.dataUrl).toBe("data:image/png;base64,AQID");
+    expect(fetchImage).toHaveBeenCalledExactlyOnceWith(
+      url,
+      expect.objectContaining({ credentials: "omit" }),
+    );
+    expect(await new AvatarCache(directory, fetchImage).get(email)).toEqual(image);
+    expect(fetchImage).toHaveBeenCalledOnce();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("falls back to Gravatar when a GitHub commit author has no profile image", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "eda-github-author-fallback-"));
+  const fetchImage = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(null, { status: 404 }))
+    .mockResolvedValueOnce(
+      new Response(new Uint8Array([4]), { headers: { "content-type": "image/png" } }),
+    );
+  const email = `123+example@${githubNoreplyDomain}`;
+
+  try {
+    const image = await new AvatarCache(directory, fetchImage).get(email);
+
+    expect(image.dataUrl).toBe("data:image/png;base64,BA==");
+    expect(String(fetchImage.mock.calls[0]![0])).toContain("avatars.githubusercontent.com/u/123");
+    expect(String(fetchImage.mock.calls[1]![0])).toMatch(/^https:\/\/www\.gravatar\.com\/avatar\//);
+    expect(await new AvatarCache(directory, fetchImage).get(email)).toEqual(image);
+    expect(fetchImage).toHaveBeenCalledTimes(2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 it("caches GitHub avatars by durable account ID across restarts using the provider’s returned URL", async () => {
   const directory = await mkdtemp(join(tmpdir(), "eda-github-avatar-"));
