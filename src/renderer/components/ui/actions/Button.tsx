@@ -42,6 +42,7 @@ export interface ButtonProps extends Omit<ComponentPropsWithRef<"button">, "clas
   size?: ButtonSize;
   block?: boolean;
   icon?: ReactNode;
+  iconPosition?: "start" | "end";
   busy?: boolean;
   busyIndicator?: boolean;
   feedback?: ActionOutcome;
@@ -55,6 +56,7 @@ export function Button({
   size = "md",
   block = false,
   icon,
+  iconPosition = "start",
   busy = false,
   busyIndicator = true,
   feedback,
@@ -93,6 +95,16 @@ export function Button({
       <ActionIndicator state={busy ? "pending" : outcome} idleIcon={icon} />
     );
   const accent = hue === undefined ? null : accentComponents(hue);
+  const iconSlot = displayedIcon ? (
+    <span className="relative inline-flex shrink-0 items-center justify-center">
+      <span className={cx("inline-flex", spinning && "opacity-0")}>{displayedIcon}</span>
+      {spinning && (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <ActionIndicator state="pending" />
+        </span>
+      )}
+    </span>
+  ) : null;
 
   return (
     <ButtonBase
@@ -121,16 +133,7 @@ export function Button({
         className,
       )}
     >
-      {displayedIcon ? (
-        <span className="relative inline-flex shrink-0 items-center justify-center">
-          <span className={cx("inline-flex", spinning && "opacity-0")}>{displayedIcon}</span>
-          {spinning && (
-            <span className="absolute inset-0 flex items-center justify-center">
-              <ActionIndicator state="pending" />
-            </span>
-          )}
-        </span>
-      ) : null}
+      {iconPosition === "start" && iconSlot}
       {children != null && (
         <span
           className={cx(
@@ -141,6 +144,7 @@ export function Button({
           {children}
         </span>
       )}
+      {iconPosition === "end" && iconSlot}
       {spinning && !icon && (
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <ActionIndicator state="pending" />

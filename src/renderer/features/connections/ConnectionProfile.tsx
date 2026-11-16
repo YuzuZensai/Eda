@@ -1,3 +1,4 @@
+import type { ExternalLinkTarget } from "../../components/ui/actions/ExternalLinkButton";
 import type { ReactNode } from "react";
 import { GlobeIcon, MapPinIcon } from "../../components/ui/icons";
 import type { AccentColor } from "@shared/preferences/accent";
@@ -24,7 +25,7 @@ export function ConnectionProfile({
   avatarDataUrl,
   hue,
   profileLabel,
-  onOpenProfile,
+  profileLink,
   children,
   connected = true,
   disabled = false,
@@ -38,7 +39,7 @@ export function ConnectionProfile({
   avatarDataUrl?: string | null | undefined;
   hue: AccentColor;
   profileLabel: string;
-  onOpenProfile: () => void;
+  profileLink: ExternalLinkTarget;
   children?: ReactNode;
   connected?: boolean;
   disabled?: boolean;
@@ -55,7 +56,7 @@ export function ConnectionProfile({
         connected={connected}
         disabled={disabled}
         profileLabel={profileLabel}
-        onOpen={onOpenProfile}
+        profileLink={profileLink}
       />
 
       {(loading || bio || location) && (

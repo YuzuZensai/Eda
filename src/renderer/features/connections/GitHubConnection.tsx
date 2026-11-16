@@ -1,14 +1,16 @@
 import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { GitHubAccountProfile, GitHubSignIn, GitHubStatus } from "@shared/integrations/github";
-import {
-  CopyIcon as Copy,
-  ExternalLinkIcon as ExternalLink,
-  UnplugIcon as Unplug,
-} from "../../components/ui/icons";
+import { CopyIcon as Copy, UnplugIcon as Unplug } from "../../components/ui/icons";
 import { useEffect, useState } from "react";
 import { ConnectionProfile } from "./ConnectionProfile";
-import { Button, CodeBlock, CopyButton, ActionsMenu } from "../../components/ui/index";
+import {
+  ExternalLinkButton,
+  Button,
+  CodeBlock,
+  CopyButton,
+  ActionsMenu,
+} from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
 import { ServiceAccountCard } from "./ServiceAccountCard";
 import { ConnectionActionSkeleton } from "./ConnectionSkeleton";
@@ -97,18 +99,22 @@ function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps
     };
   }, [pending, profileId]);
 
-  const openBrowser = async (signIn: GitHubSignIn) => {
+  const openBrowser = async (signIn: GitHubSignIn, copyUrl = false) => {
     setError(null);
 
     try {
-      const result = await window.eda.github.openVerification(profileId, signIn.id);
-      if (!alive.current || current.current?.id !== signIn.id) return;
-      if (result.ok) setCopiedSignIn(signIn.id);
-      else setError(errorMessage(result.error));
+      const result = await (copyUrl
+        ? window.eda.github.openVerification(profileId, signIn.id, true)
+        : window.eda.github.openVerification(profileId, signIn.id));
+      if (!alive.current || current.current?.id !== signIn.id) return false;
+      if (result.ok && !copyUrl) setCopiedSignIn(signIn.id);
+      else if (!result.ok) setError(errorMessage(result.error));
+      return result.ok;
     } catch {
       if (alive.current && current.current?.id === signIn.id)
         setError(t("settings.gitHubConnection.couldNotCopyTheCodeAndOpenGitHubTryAgain"));
     }
+    return false;
   };
 
   const begin = async () => {
@@ -173,14 +179,18 @@ function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps
     }
   };
 
-  const openProfile = async () => {
+  const openProfile = async (copyUrl = false) => {
     try {
-      const result = await window.eda.github.openProfile(profileId);
+      const result = await (copyUrl
+        ? window.eda.github.openProfile(profileId, true)
+        : window.eda.github.openProfile(profileId));
       if (alive.current && !result.ok) setError(errorMessage(result.error));
+      return result.ok;
     } catch {
       if (alive.current)
         setError(t("settings.gitHubConnection.couldNotOpenTheGitHubProfileTryAgain"));
     }
+    return false;
   };
 
   const account = status?.account;
@@ -222,7 +232,10 @@ function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps
             connected={isConnected}
             bio={details?.bio}
             location={details?.location}
-            onOpenProfile={() => void openProfile()}
+            profileLink={{
+              onOpen: () => void openProfile(),
+              onCopy: () => openProfile(true),
+            }}
           />
         ) : null
       }
@@ -238,14 +251,15 @@ function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps
       actions={
         pending || starting ? (
           <>
-            <Button
+            <ExternalLinkButton
               size="sm"
-              icon={<ExternalLink size={13} />}
+              variant="secondary"
               disabled={!pending}
-              onClick={() => pending && void openBrowser(pending)}
+              onOpen={() => pending && void openBrowser(pending)}
+              onCopy={() => (pending ? openBrowser(pending, true) : Promise.resolve(false))}
             >
               {t("settings.gitHubConnection.openGitHub")}
-            </Button>
+            </ExternalLinkButton>
 
             <Button size="sm" variant="ghost" disabled={starting} onClick={cancel}>
               {t("common.cancel")}
@@ -327,7 +341,10 @@ function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps
             profileLabel={t("settings.gitHubConnection.viewOnGitHub", {
               login: login ?? account.login,
             })}
-            onOpenProfile={() => void openProfile()}
+            profileLink={{
+              onOpen: () => void openProfile(),
+              onCopy: () => openProfile(true),
+            }}
           />
         </div>
       ) : null}

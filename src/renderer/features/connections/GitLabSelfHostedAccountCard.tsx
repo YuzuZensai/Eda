@@ -16,7 +16,7 @@ interface Props {
   busy: boolean;
   secureStorage: boolean;
   showActions?: boolean;
-  onOpen(baseUrl: string): void;
+  onOpen(baseUrl: string, copyUrl?: boolean): Promise<boolean>;
   onEdit(baseUrl: string): void;
   onDisconnect(baseUrl: string): void;
 }
@@ -85,7 +85,7 @@ export function GitLabSelfHostedAccountCard({
           disabled={busy}
           connected={state === "connected"}
           profileLabel={t("settings.gitLabSelfHosted.viewProfile", { login, instance: baseUrl })}
-          onOpenProfile={() => onOpen(baseUrl)}
+          profileLink={{ onOpen: () => void onOpen(baseUrl), onCopy: () => onOpen(baseUrl, true) }}
         />
       </div>
 

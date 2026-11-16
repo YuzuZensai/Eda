@@ -2,7 +2,7 @@ import { electron } from "../helpers/fixture-electron.ts";
 import { fixtureEnvironment } from "../helpers/fixture-environment.ts";
 import { finishOnboarding } from "./helpers/onboarding.ts";
 import assert from "node:assert/strict";
-import { type ElectronApplication } from "playwright";
+import { expect, type ElectronApplication } from "playwright/test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -40,6 +40,46 @@ try {
   await mkdir("screenshots", { recursive: true });
   await page.keyboard.press(`${modifier}+,`);
   await page.getByRole("button", { name: "About", exact: true }).click();
+
+  const previousClipboard = await app.evaluate(({ clipboard }) => clipboard.readText());
+  try {
+    for (const [label, icon, url] of [
+      ["@YuzuZensai", null, "https://github.com/YuzuZensai"],
+      ["Sponsor on GitHub", "heart", "https://github.com/sponsors/YuzuZensai"],
+      ["Star the repo", "star", "https://github.com/YuzuZensai/Eda"],
+    ] as const) {
+      const button = page.locator("button").filter({ hasText: label });
+      await expect(button).toBeEnabled();
+      const originalBounds = await button.boundingBox();
+      await button.focus();
+      await page.keyboard.down(modifier);
+
+      try {
+        await expect(button).toHaveText(label);
+        if (icon) await expect(button.locator(`.lucide-${icon}`)).toBeVisible();
+        await expect(button.locator(".ui-action-visible .lucide-copy")).toBeVisible();
+        const textBounds = await button.getByText(label, { exact: true }).boundingBox();
+        const iconBounds = await button.locator(".ui-action-visible").boundingBox();
+        assert.ok(textBounds && iconBounds);
+        assert.ok(iconBounds.x >= textBounds.x + textBounds.width, `${label}: icon follows text`);
+        await expect(button.locator(".lucide-external-link")).toHaveCount(0);
+        assert.deepEqual(await button.boundingBox(), originalBounds);
+
+        if (icon === "heart") await page.keyboard.press("Enter");
+        else await button.click();
+        await expect(button.locator(".ui-action-visible .lucide-check")).toBeVisible();
+        assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), url);
+        await expect(button.locator(".ui-action-visible .lucide-copy")).toBeVisible();
+      } finally {
+        await page.keyboard.up(modifier);
+      }
+
+      await expect(button.locator(".ui-action-visible .lucide-external-link")).toBeVisible();
+    }
+  } finally {
+    await app.evaluate(({ clipboard }, value) => clipboard.writeText(value), previousClipboard);
+  }
+
   await page.getByRole("checkbox", { name: "Enable developer settings", exact: true }).check();
   await page.getByRole("button", { name: "Components", exact: true }).click();
   await page.locator("#gallery-identity .profile-avatar").last().waitFor();

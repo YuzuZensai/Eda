@@ -2,8 +2,8 @@ import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { GitLabSignIn, GitLabStatus, GitLabAccountProfile } from "@shared/integrations/gitlab";
 import { useEffect, useState } from "react";
-import { ExternalLinkIcon as ExternalLink, UnplugIcon as Unplug } from "../../components/ui/icons";
-import { Button, ActionsMenu } from "../../components/ui/index";
+import { UnplugIcon as Unplug } from "../../components/ui/icons";
+import { ExternalLinkButton, Button, ActionsMenu } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
 import { ServiceAccountCard } from "./ServiceAccountCard";
 import { ConnectionProfile } from "./ConnectionProfile";
@@ -80,15 +80,19 @@ function GitLabConnectionSession({ profileId, compact = false }: ConnectionProps
     };
   }, [pending, profileId, compact]);
 
-  const openBrowser = async (signIn: GitLabSignIn) => {
+  const openBrowser = async (signIn: GitLabSignIn, copyUrl = false) => {
     try {
-      const result = await window.eda.gitlab.openAuthorization(profileId, signIn.id);
+      const result = await (copyUrl
+        ? window.eda.gitlab.openAuthorization(profileId, signIn.id, true)
+        : window.eda.gitlab.openAuthorization(profileId, signIn.id));
       if (alive.current && current.current?.id === signIn.id && !result.ok)
         setError(errorMessage(result.error));
+      return result.ok;
     } catch {
       if (alive.current && current.current?.id === signIn.id)
         setError(t("settings.gitLabConnection.openFailed"));
     }
+    return false;
   };
 
   const begin = async () => {
@@ -156,13 +160,17 @@ function GitLabConnectionSession({ profileId, compact = false }: ConnectionProps
     }
   };
 
-  const openProfile = async () => {
+  const openProfile = async (copyUrl = false) => {
     try {
-      const result = await window.eda.gitlab.openProfile(profileId);
+      const result = await (copyUrl
+        ? window.eda.gitlab.openProfile(profileId, true)
+        : window.eda.gitlab.openProfile(profileId));
       if (alive.current && !result.ok) setError(errorMessage(result.error));
+      return result.ok;
     } catch {
       if (alive.current) setError(t("settings.gitLabConnection.openFailed"));
     }
+    return false;
   };
 
   const account = status?.account;
@@ -178,7 +186,10 @@ function GitLabConnectionSession({ profileId, compact = false }: ConnectionProps
       hue={hue}
       connected={connected}
       profileLabel={t("settings.gitLabConnection.viewProfile", { login: account.login })}
-      onOpenProfile={() => void openProfile()}
+      profileLink={{
+        onOpen: () => void openProfile(),
+        onCopy: () => openProfile(true),
+      }}
     />
   ) : null;
 
@@ -201,13 +212,14 @@ function GitLabConnectionSession({ profileId, compact = false }: ConnectionProps
       actions={
         pending ? (
           <>
-            <Button
+            <ExternalLinkButton
               size="sm"
-              icon={<ExternalLink size={13} />}
-              onClick={() => void openBrowser(pending)}
+              variant="secondary"
+              onOpen={() => void openBrowser(pending)}
+              onCopy={() => openBrowser(pending, true)}
             >
               {t("settings.gitLabConnection.openGitLab")}
-            </Button>
+            </ExternalLinkButton>
 
             <Button size="sm" variant="ghost" onClick={cancel}>
               {t("common.cancel")}

@@ -116,20 +116,21 @@ export function GitLabSelfHostedConnection({
     setError(null);
   };
 
-  const openProfile = (instanceUrl: string) =>
+  const openProfile = (instanceUrl: string, copyUrl = false) =>
     action(async () => {
-      const result = await window.eda.gitlabSelfHosted.openProfile(profileId, instanceUrl);
+      const result = await (copyUrl
+        ? window.eda.gitlabSelfHosted.openProfile(profileId, instanceUrl, true)
+        : window.eda.gitlabSelfHosted.openProfile(profileId, instanceUrl));
 
       if (alive.current && !result.ok) setError(errorMessage(result.error));
+      return result.ok;
     });
 
-  const openTokenSettings = (instanceUrl: string, form: GitLabTokenForm) =>
+  const openTokenSettings = (instanceUrl: string, form: GitLabTokenForm, copyUrl = false) =>
     action(async () => {
-      const result = await window.eda.gitlabSelfHosted.openTokenSettings(
-        profileId,
-        instanceUrl,
-        form,
-      );
+      const result = await (copyUrl
+        ? window.eda.gitlabSelfHosted.openTokenSettings(profileId, instanceUrl, form, true)
+        : window.eda.gitlabSelfHosted.openTokenSettings(profileId, instanceUrl, form));
 
       if (alive.current && !result.ok) setError(errorMessage(result.error));
 
@@ -172,7 +173,7 @@ export function GitLabSelfHostedConnection({
             busy={busy}
             secureStorage={status?.secureStorage ?? false}
             showActions={false}
-            onOpen={(value) => void openProfile(value)}
+            onOpen={openProfile}
             onEdit={openSetup}
             onDisconnect={(value) => void disconnect(value)}
           />
@@ -228,7 +229,7 @@ export function GitLabSelfHostedConnection({
                   account={account}
                   busy={busy}
                   secureStorage={status.secureStorage}
-                  onOpen={(value) => void openProfile(value)}
+                  onOpen={openProfile}
                   onEdit={openSetup}
                   onDisconnect={(value) => void disconnect(value)}
                 />

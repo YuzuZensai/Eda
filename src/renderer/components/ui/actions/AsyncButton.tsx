@@ -12,8 +12,9 @@ export function AsyncButton({
   icon = <RefreshCw size={16} aria-hidden="true" />,
   completed = false,
   children,
+  onClick,
   ...props
-}: Omit<ButtonProps, "onClick" | "busy" | "busyIndicator"> & {
+}: Omit<ButtonProps, "busy" | "busyIndicator"> & {
   label: string;
   onAction: () => Promise<boolean>;
   completed?: boolean;
@@ -68,7 +69,10 @@ export function AsyncButton({
         aria-label={label}
         busy={state === "pending"}
         busyIndicator={false}
-        onClick={() => void refresh()}
+        onClick={(event) => {
+          onClick?.(event);
+          if (!event.defaultPrevented) void refresh();
+        }}
         icon={<ActionIndicator state={state} idleIcon={icon} />}
       >
         {children}

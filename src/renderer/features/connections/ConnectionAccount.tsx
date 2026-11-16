@@ -1,7 +1,8 @@
+import type { ExternalLinkTarget } from "../../components/ui/actions/ExternalLinkButton";
 import { t } from "@shared/i18n";
 import type { AccentColor } from "@shared/preferences/accent";
 import { ProfileAvatar } from "../../components/ui/display/ProfileAvatar";
-import { TextButton } from "../../components/ui/index";
+import { ExternalLinkButton } from "../../components/ui/index";
 import { cx } from "../../components/ui/cx";
 
 export function ConnectionAccount({
@@ -14,7 +15,7 @@ export function ConnectionAccount({
   avatarName,
   disabled = false,
   loading = false,
-  onOpen,
+  profileLink,
 }: {
   login: string;
   name?: string | null | undefined;
@@ -25,7 +26,7 @@ export function ConnectionAccount({
   avatarName?: string;
   disabled?: boolean;
   loading?: boolean;
-  onOpen(): void;
+  profileLink: ExternalLinkTarget;
 }) {
   return (
     <div aria-busy={loading} className="flex min-w-0 items-center gap-2.5">
@@ -50,18 +51,19 @@ export function ConnectionAccount({
         )}
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-          <TextButton
-            onClick={onOpen}
+          <ExternalLinkButton
+            {...profileLink}
+            trailingIcon
             aria-label={profileLabel}
             disabled={disabled || loading}
             className={cx(
-              "max-w-full truncate text-left",
+              "min-h-6 max-w-full truncate border-0 p-0 text-left",
               loading && "ui-skeleton rounded-sm",
               !name && "text-sm font-medium text-text-primary",
             )}
           >
             <span className={loading ? "invisible" : undefined}>@{login}</span>
-          </TextButton>
+          </ExternalLinkButton>
 
           {!connected && (
             <p role="status" className="text-xs text-git-modified">

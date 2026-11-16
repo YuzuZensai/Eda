@@ -1,7 +1,6 @@
 import { t } from "@shared/i18n";
 import type { GitLabTokenForm } from "@shared/integrations/gitlab-self-hosted";
-import { ExternalLinkIcon as ExternalLink } from "../../components/ui/icons";
-import { Button, Field, Input } from "../../components/ui/index";
+import { ExternalLinkButton, Field, Input } from "../../components/ui/index";
 
 interface Props {
   step: number;
@@ -10,7 +9,7 @@ interface Props {
   busy: boolean;
   onBaseUrlChange(value: string): void;
   onTokenChange(value: string): void;
-  onOpenTokenSettings(form: GitLabTokenForm): void;
+  onOpenTokenSettings(form: GitLabTokenForm, copyUrl?: boolean): Promise<boolean>;
 }
 
 export function GitLabSelfHostedSetupStep({
@@ -58,36 +57,36 @@ export function GitLabSelfHostedSetupStep({
       </Field>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button
+        <ExternalLinkButton
           size="sm"
           variant="ghost"
           disabled={busy}
-          icon={<ExternalLink size={13} />}
-          onClick={() => onOpenTokenSettings("legacy")}
+          onOpen={() => void onOpenTokenSettings("legacy")}
+          onCopy={() => onOpenTokenSettings("legacy", true)}
         >
           {t("settings.gitLabSelfHosted.legacyToken")}
-        </Button>
+        </ExternalLinkButton>
 
-        <Button
+        <ExternalLinkButton
           size="sm"
           variant="quiet"
           disabled={busy}
-          icon={<ExternalLink size={13} />}
-          onClick={() => onOpenTokenSettings("granular")}
+          onOpen={() => void onOpenTokenSettings("granular")}
+          onCopy={() => onOpenTokenSettings("granular", true)}
         >
           {t("settings.gitLabSelfHosted.chooseTokenType")}
-        </Button>
+        </ExternalLinkButton>
       </div>
 
-      <Button
+      <ExternalLinkButton
         size="sm"
         variant="quiet"
         disabled={busy}
-        icon={<ExternalLink size={13} />}
-        onClick={() => onOpenTokenSettings("older")}
+        onOpen={() => void onOpenTokenSettings("older")}
+        onCopy={() => onOpenTokenSettings("older", true)}
       >
         {t("settings.gitLabSelfHosted.olderGitLab")}
-      </Button>
+      </ExternalLinkButton>
     </div>
   );
 }

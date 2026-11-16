@@ -1,7 +1,8 @@
 import { t } from "@shared/i18n";
 import type { AccentColor } from "@shared/preferences/accent";
-import { useRef, useState } from "react";
+import { useRef, useState, type MouseEvent } from "react";
 import { ProfileAvatar } from "../../components/ui/display/ProfileAvatar";
+import { StarIcon } from "../../components/ui/icons";
 import {
   AsyncButton,
   Button,
@@ -35,6 +36,12 @@ export function GalleryActions({
   const exampleTabs = useRef(new Map<string, HTMLButtonElement>());
   const [tab, setTab] = useState("first");
   const [list, setList] = useState("changes");
+  const previewExternalLink = (event: MouseEvent<HTMLButtonElement>) => {
+    if (window.eda.app.platform === "mac" ? event.metaKey : event.ctrlKey) return;
+
+    event.preventDefault();
+    setFeedback(t("settings.componentGallery.externalLinkPreviewClickedTheBrowserStaysClosed"));
+  };
 
   return (
     <>
@@ -101,17 +108,17 @@ export function GalleryActions({
           </PreviewRow>
 
           <PreviewRow label={t("settings.componentGallery.compactActions")}>
+            <ExternalLinkButton href="https://example.com" onClick={previewExternalLink}>
+              {t("settings.componentGallery.externalLink")}
+            </ExternalLinkButton>
+
             <ExternalLinkButton
               href="https://example.com"
-              onClick={(event) => {
-                event.preventDefault();
-
-                setFeedback(
-                  t("settings.componentGallery.externalLinkPreviewClickedTheBrowserStaysClosed"),
-                );
-              }}
+              trailingIcon
+              icon={<StarIcon size={16} aria-hidden="true" />}
+              onClick={previewExternalLink}
             >
-              {t("settings.componentGallery.externalLink")}
+              {t("settings.aboutSettings.starTheRepo")}
             </ExternalLinkButton>
 
             <RefreshButton

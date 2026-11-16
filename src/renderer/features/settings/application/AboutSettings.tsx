@@ -8,7 +8,6 @@ import {
 } from "@shared/integrations/github";
 import { UPDATE_DOWNLOAD_PAGE } from "@shared/updates";
 import {
-  ExternalLinkIcon as ExternalLink,
   HeartIcon as Heart,
   MailIcon as Mail,
   RotateCcwIcon as RotateCcw,
@@ -193,9 +192,7 @@ export function AboutSettings() {
                 profileLabel={t("settings.gitHubConnection.viewOnGitHub", {
                   login: profile?.login ?? maintainer,
                 })}
-                onOpenProfile={() =>
-                  window.open(`https://github.com/${maintainer}`, "_blank", "noopener,noreferrer")
-                }
+                profileLink={{ href: `https://github.com/${maintainer}` }}
               >
                 <div className="flex items-center gap-1.5 text-xs text-text-tertiary">
                   <Mail size={14} aria-hidden="true" className="shrink-0" />
@@ -233,11 +230,11 @@ export function AboutSettings() {
                 variant="primary"
                 size="md"
                 block
+                trailingIcon
                 className="bg-[var(--sponsor-bg)]! text-white!"
                 icon={<Heart size={16} aria-hidden="true" className="ui-heartbeat fill-current" />}
               >
                 {t("settings.aboutSettings.sponsorOnGitHub")}
-                <ExternalLink size={12} aria-hidden="true" />
               </ExternalLinkButton>
 
               <ExternalLinkButton
@@ -245,10 +242,10 @@ export function AboutSettings() {
                 variant="secondary"
                 size="md"
                 block
+                trailingIcon
                 icon={<Star size={16} aria-hidden="true" />}
               >
                 {t("settings.aboutSettings.starTheRepo")}
-                <ExternalLink size={12} aria-hidden="true" />
               </ExternalLinkButton>
             </div>
           </div>

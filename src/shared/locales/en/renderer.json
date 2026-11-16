@@ -1,4 +1,5 @@
 {
+  "externalLinkButton.copyHint": "Open in browser · Hold {modifier} to copy URL",
   "profilesSettings.moveUp": "Move {name} up",
   "profilesSettings.moveDown": "Move {name} down",
   "aboutSettings.clean": "Clean",

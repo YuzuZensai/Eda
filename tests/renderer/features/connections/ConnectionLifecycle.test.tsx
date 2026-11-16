@@ -94,6 +94,33 @@ describe.each([
     expect(api.profile).not.toHaveBeenCalled();
   });
 
+  it("copies sign-in and profile URLs through the guarded provider actions", async () => {
+    vi.stubGlobal("eda", { [apiName]: api, app: { platform: "linux" } });
+    await render("work");
+    await click(`Sign in with ${provider}`);
+    const open = provider === "GitHub" ? api.openVerification : api.openAuthorization;
+    open.mockClear();
+
+    await act(async () => {
+      const button = [...container.querySelectorAll("button")].find(
+        (item) => item.textContent === `Open ${provider}`,
+      )!;
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    });
+    expect(open).toHaveBeenCalledExactlyOnceWith("work", "session", true);
+
+    await render("personal");
+    api.status.mockResolvedValue(ok(connected));
+    await render("connected");
+    await act(async () => {
+      const button = [...container.querySelectorAll("button")].find(
+        (item) => item.textContent === "@work.user",
+      )!;
+      button.dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true }));
+    });
+    expect(api.openProfile).toHaveBeenCalledExactlyOnceWith("connected", true);
+  });
+
   it("clears profile details and waits for the new profile even when account IDs match", async () => {
     api.status.mockResolvedValue(ok(connected));
     await render("work");

@@ -14,7 +14,7 @@ interface Props {
   busy: boolean;
   error: string | null;
   onConnect(baseUrl: string, token: string, ignoreTlsErrors: boolean): Promise<void>;
-  onOpenTokenSettings(baseUrl: string, form: GitLabTokenForm): Promise<boolean>;
+  onOpenTokenSettings(baseUrl: string, form: GitLabTokenForm, copyUrl?: boolean): Promise<boolean>;
   onClose(): void;
   onClearError(): void;
 }
@@ -84,7 +84,9 @@ export function GitLabSelfHostedSetup({
             setIgnoreTlsErrors(false);
           }}
           onTokenChange={setToken}
-          onOpenTokenSettings={(form) => void onOpenTokenSettings(baseUrl.trim(), form)}
+          onOpenTokenSettings={(form, copyUrl) =>
+            onOpenTokenSettings(baseUrl.trim(), form, copyUrl)
+          }
         />
 
         <Checkbox

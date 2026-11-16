@@ -141,7 +141,9 @@ it("opens GitHub with the displayed verification code, honors polling intervals,
   expect(github.profile).toHaveBeenCalledWith("work");
   await click("@work-user");
   expect(github.openProfile).toHaveBeenCalledWith("work");
-  expect(container.querySelector('[role="status"]')).toBeNull();
+  expect(
+    [...container.querySelectorAll('[role="status"]')].map((status) => status.textContent),
+  ).not.toContain("Reconnect required");
   expect(button("Reconnect GitHub")).toBeUndefined();
   expect(container.textContent).not.toContain("ABCD-EFGH");
   github.status.mockResolvedValue(ok(status));
