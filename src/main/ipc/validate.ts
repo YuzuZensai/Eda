@@ -145,6 +145,16 @@ export function optionalInteger(
   return value;
 }
 
+export function requireBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    reject(
+      errorText("main.validate.isInvalid", { label: field }),
+      errorText("main.validate.thisIsABugInEdaPleaseReportIt"),
+    );
+  }
+  return value;
+}
+
 export function requireRecord(value: unknown, label: string): Record<string, unknown> {
   if (!isRecord(value)) {
     reject(

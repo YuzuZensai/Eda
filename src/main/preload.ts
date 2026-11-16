@@ -24,10 +24,16 @@ const api: EdaApi = {
     cancel: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.gitlabSelfHostedCancel, profileId),
     disconnect: (profileId, baseUrl) =>
       ipcRenderer.invoke(IPC_CHANNELS.gitlabSelfHostedDisconnect, profileId, baseUrl),
-    openTokenSettings: (profileId, baseUrl, form) =>
-      ipcRenderer.invoke(IPC_CHANNELS.gitlabSelfHostedOpenTokenSettings, profileId, baseUrl, form),
-    openProfile: (profileId, baseUrl) =>
-      ipcRenderer.invoke(IPC_CHANNELS.gitlabSelfHostedOpenProfile, profileId, baseUrl),
+    openTokenSettings: (profileId, baseUrl, form, copyUrl) =>
+      ipcRenderer.invoke(
+        IPC_CHANNELS.gitlabSelfHostedOpenTokenSettings,
+        profileId,
+        baseUrl,
+        form,
+        copyUrl,
+      ),
+    openProfile: (profileId, baseUrl, copyUrl) =>
+      ipcRenderer.invoke(IPC_CHANNELS.gitlabSelfHostedOpenProfile, profileId, baseUrl, copyUrl),
     repositories: (profileId, baseUrl, page) =>
       ipcRenderer.invoke(IPC_CHANNELS.gitlabSelfHostedRepositories, profileId, baseUrl, page),
   },
@@ -39,9 +45,10 @@ const api: EdaApi = {
     begin: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.gitlabBegin, profileId),
     poll: (profileId, id) => ipcRenderer.invoke(IPC_CHANNELS.gitlabPoll, profileId, id),
     cancel: (profileId, id) => ipcRenderer.invoke(IPC_CHANNELS.gitlabCancel, profileId, id),
-    openAuthorization: (profileId, id) =>
-      ipcRenderer.invoke(IPC_CHANNELS.gitlabOpenAuthorization, profileId, id),
-    openProfile: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.gitlabOpenProfile, profileId),
+    openAuthorization: (profileId, id, copyUrl) =>
+      ipcRenderer.invoke(IPC_CHANNELS.gitlabOpenAuthorization, profileId, id, copyUrl),
+    openProfile: (profileId, copyUrl) =>
+      ipcRenderer.invoke(IPC_CHANNELS.gitlabOpenProfile, profileId, copyUrl),
     disconnect: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.gitlabDisconnect, profileId),
   },
   github: {
@@ -50,12 +57,13 @@ const api: EdaApi = {
     maintainerProfile: () => ipcRenderer.invoke(IPC_CHANNELS.githubMaintainerProfile),
     status: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.githubStatus, profileId),
     profile: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.githubProfile, profileId),
-    openProfile: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.githubOpenProfile, profileId),
+    openProfile: (profileId, copyUrl) =>
+      ipcRenderer.invoke(IPC_CHANNELS.githubOpenProfile, profileId, copyUrl),
     begin: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.githubBegin, profileId),
     poll: (profileId, id) => ipcRenderer.invoke(IPC_CHANNELS.githubPoll, profileId, id),
     cancel: (profileId, id) => ipcRenderer.invoke(IPC_CHANNELS.githubCancel, profileId, id),
-    openVerification: (profileId, id) =>
-      ipcRenderer.invoke(IPC_CHANNELS.githubOpenVerification, profileId, id),
+    openVerification: (profileId, id, copyUrl) =>
+      ipcRenderer.invoke(IPC_CHANNELS.githubOpenVerification, profileId, id, copyUrl),
     disconnect: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.githubDisconnect, profileId),
   },
   avatars: {

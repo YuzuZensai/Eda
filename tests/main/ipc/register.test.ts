@@ -1003,6 +1003,53 @@ it("requires native approval of executable settings even from the main document"
   expect(mocks.preferences.set).not.toHaveBeenCalled();
 });
 
+it.each([
+  [IPC_CHANNELS.githubOpenProfile, [], "https://github.com/work-user"],
+  [IPC_CHANNELS.githubOpenVerification, [repositoryId], "https://github.com/login/device"],
+  [IPC_CHANNELS.gitlabOpenProfile, [], "https://gitlab.com/work-user"],
+  [
+    IPC_CHANNELS.gitlabOpenAuthorization,
+    [repositoryId],
+    "https://gitlab.com/oauth/authorize?client_id=eda",
+  ],
+  [
+    IPC_CHANNELS.gitlabSelfHostedOpenProfile,
+    ["https://git.company.test"],
+    "https://git.company.test/work-user",
+  ],
+  [
+    IPC_CHANNELS.gitlabSelfHostedOpenTokenSettings,
+    ["https://git.company.test", "legacy"],
+    "https://git.company.test/-/user_settings/personal_access_tokens?name=Eda",
+  ],
+] as const)(
+  "copies %s's validated URL without opening a browser and rejects stale owners and invalid modes",
+  async (channel, args, url) => {
+    setup();
+    expect(await invoke(channel, repositoryId, ...args, true)).toMatchObject({ ok: false });
+    expect(await invoke(channel, profile.id, ...args, "true")).toMatchObject({ ok: false });
+    expect(electron.writeText).not.toHaveBeenCalled();
+    expect(electron.openExternal).not.toHaveBeenCalled();
+
+    expect(await invoke(channel, profile.id, ...args, true)).toMatchObject({ ok: true });
+    expect(electron.writeText).toHaveBeenCalledExactlyOnceWith(url);
+    expect(electron.openExternal).not.toHaveBeenCalled();
+  },
+);
+
+it("rejects copying an expired GitHub verification URL before touching the clipboard", async () => {
+  const { github } = setup();
+  github.verifyPending.mockImplementationOnce(() => {
+    throw new Error("expired");
+  });
+
+  expect(
+    await invoke(IPC_CHANNELS.githubOpenVerification, profile.id, repositoryId, true),
+  ).toMatchObject({ ok: false });
+  expect(electron.writeText).not.toHaveBeenCalled();
+  expect(electron.openExternal).not.toHaveBeenCalled();
+});
+
 it("guards GitLab authorization and cancellation with active profile ownership", async () => {
   const { gitlab } = setup();
   expect(await invoke(IPC_CHANNELS.gitlabBegin, repositoryId)).toMatchObject({ ok: false });

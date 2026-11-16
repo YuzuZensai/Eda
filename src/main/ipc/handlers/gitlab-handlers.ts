@@ -1,11 +1,11 @@
 import { t } from "@shared/i18n";
-import { shell } from "electron";
+import { clipboard, shell } from "electron";
 import { ok } from "@shared/errors";
 import { IPC_CHANNELS } from "@shared/ipc";
 import type { Services } from "../../services";
 import { handle } from "../transport";
 import { captureProfile, profileOperation } from "../profile-context";
-import { optionalInteger, requireId } from "../validate";
+import { optionalInteger, requireBoolean, requireId } from "../validate";
 
 export function registerGitLabHandlers(services: Services): void {
   const { identity, gitlab } = services;
@@ -50,17 +50,26 @@ export function registerGitLabHandlers(services: Services): void {
     work(profile, (id) => gitlab.disconnect(id)),
   );
 
-  handle(IPC_CHANNELS.gitlabOpenAuthorization, async (_event, profile, rawId) => {
-    const id = requireId(rawId);
+  handle(
+    IPC_CHANNELS.gitlabOpenAuthorization,
+    async (_event, profile, rawId, rawCopyUrl = false) => {
+      const id = requireId(rawId);
+      const copyUrl = requireBoolean(rawCopyUrl, t("common.copyUrl"));
 
-    return work(profile, async (owner) => {
-      await shell.openExternal(gitlab.authorizationUrl(owner, id));
+      return work(profile, async (owner) => {
+        const url = gitlab.authorizationUrl(owner, id);
+        if (copyUrl) clipboard.writeText(url);
+        else await shell.openExternal(url);
+      });
+    },
+  );
+
+  handle(IPC_CHANNELS.gitlabOpenProfile, async (_event, profile, rawCopyUrl = false) => {
+    const copyUrl = requireBoolean(rawCopyUrl, t("common.copyUrl"));
+    return work(profile, async (id) => {
+      const url = gitlab.profileUrl(id);
+      if (copyUrl) clipboard.writeText(url);
+      else await shell.openExternal(url);
     });
   });
-
-  handle(IPC_CHANNELS.gitlabOpenProfile, async (_event, profile) =>
-    work(profile, async (id) => {
-      await shell.openExternal(gitlab.profileUrl(id));
-    }),
-  );
 }

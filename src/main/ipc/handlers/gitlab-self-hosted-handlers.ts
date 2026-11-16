@@ -1,12 +1,12 @@
 import { errorText } from "@shared/error-codes";
-import { shell } from "electron";
+import { clipboard, shell } from "electron";
 import { ok } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { IPC_CHANNELS } from "@shared/ipc";
 import type { Services } from "../../services";
 import { handle } from "../transport";
 import { captureProfile, profileOperation } from "../profile-context";
-import { optionalInteger, requireId, requireString } from "../validate";
+import { optionalInteger, requireBoolean, requireId, requireString } from "../validate";
 import { invalidRequest } from "../request-errors";
 
 export function registerGitLabSelfHostedHandlers(services: Services): void {
@@ -58,25 +58,37 @@ export function registerGitLabSelfHostedHandlers(services: Services): void {
     return work(profile, (id) => gitlab.disconnect(id, baseUrl));
   });
 
-  handle(IPC_CHANNELS.gitlabSelfHostedOpenTokenSettings, async (_event, profile, url, rawForm) => {
-    const baseUrl = instance(url);
-    const form = rawForm === undefined ? "legacy" : rawForm;
+  handle(
+    IPC_CHANNELS.gitlabSelfHostedOpenTokenSettings,
+    async (_event, profile, url, rawForm, rawCopyUrl = false) => {
+      const copyUrl = requireBoolean(rawCopyUrl, t("common.copyUrl"));
+      const baseUrl = instance(url);
+      const form = rawForm === undefined ? "legacy" : rawForm;
 
-    if (form !== "legacy" && form !== "granular" && form !== "older")
-      throw invalidRequest(errorText("main.providers.gitlabSelfHosted.invalidUrl"));
+      if (form !== "legacy" && form !== "granular" && form !== "older")
+        throw invalidRequest(errorText("main.providers.gitlabSelfHosted.invalidUrl"));
 
-    return work(profile, async () => {
-      await shell.openExternal(gitlab.tokenSettingsUrl(baseUrl, form));
-    });
-  });
+      return work(profile, async () => {
+        const url = gitlab.tokenSettingsUrl(baseUrl, form);
+        if (copyUrl) clipboard.writeText(url);
+        else await shell.openExternal(url);
+      });
+    },
+  );
 
-  handle(IPC_CHANNELS.gitlabSelfHostedOpenProfile, async (_event, profile, url) => {
-    const baseUrl = instance(url);
+  handle(
+    IPC_CHANNELS.gitlabSelfHostedOpenProfile,
+    async (_event, profile, url, rawCopyUrl = false) => {
+      const baseUrl = instance(url);
+      const copyUrl = requireBoolean(rawCopyUrl, t("common.copyUrl"));
 
-    return work(profile, async (id) => {
-      await shell.openExternal(gitlab.profileUrl(id, baseUrl));
-    });
-  });
+      return work(profile, async (id) => {
+        const url = gitlab.profileUrl(id, baseUrl);
+        if (copyUrl) clipboard.writeText(url);
+        else await shell.openExternal(url);
+      });
+    },
+  );
 
   handle(IPC_CHANNELS.gitlabSelfHostedRepositories, async (_event, profile, url, rawPage) => {
     const baseUrl = instance(url);

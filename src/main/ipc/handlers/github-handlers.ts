@@ -6,7 +6,7 @@ import type { Services } from "../../services";
 import { GITHUB_VERIFICATION_URL } from "../../providers/github-auth";
 import { handle } from "../transport";
 import { captureProfile, profileOperation } from "../profile-context";
-import { optionalInteger, requireId } from "../validate";
+import { optionalInteger, requireBoolean, requireId } from "../validate";
 
 export function registerGitHubHandlers(services: Services): void {
   const { identity, github } = services;
@@ -43,11 +43,14 @@ export function registerGitHubHandlers(services: Services): void {
     }),
   );
 
-  handle(IPC_CHANNELS.githubOpenProfile, async (_event, profile) =>
-    work(profile, async (id) => {
-      await shell.openExternal(github.profileUrl(id));
-    }),
-  );
+  handle(IPC_CHANNELS.githubOpenProfile, async (_event, profile, rawCopyUrl = false) => {
+    const copyUrl = requireBoolean(rawCopyUrl, t("common.copyUrl"));
+    return work(profile, async (id) => {
+      const url = github.profileUrl(id);
+      if (copyUrl) clipboard.writeText(url);
+      else await shell.openExternal(url);
+    });
+  });
 
   handle(IPC_CHANNELS.githubBegin, async (_event, profile) =>
     work(profile, (id) => github.begin(id)),
@@ -69,13 +72,20 @@ export function registerGitHubHandlers(services: Services): void {
     work(profile, (id) => github.disconnect(id)),
   );
 
-  handle(IPC_CHANNELS.githubOpenVerification, async (_event, profile, rawId) => {
-    const id = requireId(rawId);
+  handle(
+    IPC_CHANNELS.githubOpenVerification,
+    async (_event, profile, rawId, rawCopyUrl = false) => {
+      const id = requireId(rawId);
+      const copyUrl = requireBoolean(rawCopyUrl, t("common.copyUrl"));
 
-    return work(profile, async (owner) => {
-      const userCode = github.verifyPending(owner, id);
-      clipboard.writeText(userCode);
-      await shell.openExternal(GITHUB_VERIFICATION_URL);
-    });
-  });
+      return work(profile, async (owner) => {
+        const userCode = github.verifyPending(owner, id);
+        if (copyUrl) clipboard.writeText(GITHUB_VERIFICATION_URL);
+        else {
+          clipboard.writeText(userCode);
+          await shell.openExternal(GITHUB_VERIFICATION_URL);
+        }
+      });
+    },
+  );
 }

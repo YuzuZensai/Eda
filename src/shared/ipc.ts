@@ -307,11 +307,11 @@ export interface EdaApi {
     maintainerProfile(): Promise<Result<GitHubAccountProfile | null>>;
     status(profileId: string): Promise<Result<GitHubStatus>>;
     profile(profileId: string): Promise<Result<GitHubAccountProfile | null>>;
-    openProfile(profileId: string): Promise<Result<void>>;
+    openProfile(profileId: string, copyUrl?: boolean): Promise<Result<void>>;
     begin(profileId: string): Promise<Result<GitHubSignIn>>;
     poll(profileId: string, id: string): Promise<Result<GitHubSignInResult>>;
     cancel(profileId: string, id: string): Promise<Result<void>>;
-    openVerification(profileId: string, id: string): Promise<Result<void>>;
+    openVerification(profileId: string, id: string, copyUrl?: boolean): Promise<Result<void>>;
     disconnect(profileId: string): Promise<Result<void>>;
   };
 
@@ -333,8 +333,9 @@ export interface EdaApi {
       profileId: string,
       baseUrl: string,
       form?: GitLabTokenForm,
+      copyUrl?: boolean,
     ): Promise<Result<void>>;
-    openProfile(profileId: string, baseUrl: string): Promise<Result<void>>;
+    openProfile(profileId: string, baseUrl: string, copyUrl?: boolean): Promise<Result<void>>;
     repositories(
       profileId: string,
       baseUrl: string,
@@ -349,8 +350,8 @@ export interface EdaApi {
     begin(profileId: string): Promise<Result<GitLabSignIn>>;
     poll(profileId: string, id: string): Promise<Result<GitLabSignInResult>>;
     cancel(profileId: string, id: string): Promise<Result<void>>;
-    openAuthorization(profileId: string, id: string): Promise<Result<void>>;
-    openProfile(profileId: string): Promise<Result<void>>;
+    openAuthorization(profileId: string, id: string, copyUrl?: boolean): Promise<Result<void>>;
+    openProfile(profileId: string, copyUrl?: boolean): Promise<Result<void>>;
     disconnect(profileId: string): Promise<Result<void>>;
   };
 
