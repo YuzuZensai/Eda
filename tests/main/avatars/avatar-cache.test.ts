@@ -10,6 +10,7 @@ const githubNoreplyDomain = "users.noreply.github.com";
 
 it("uses a GitHub repository's linked commit author photo for a regular email", async () => {
   const directory = await mkdtemp(join(tmpdir(), "eda-github-commit-avatar-"));
+  const now = 1_000_000;
   const email = "author@example.test";
   const avatarUrl = "https://avatars.githubusercontent.com/u/123?v=4";
   const fetchImage = vi.fn<typeof fetch>(async (input) => {
@@ -25,7 +26,7 @@ it("uses a GitHub repository's linked commit author photo for a regular email", 
   });
 
   try {
-    const cache = new AvatarCache(directory, fetchImage);
+    const cache = new AvatarCache(directory, fetchImage, () => now);
     const first = await cache.getCommit(email, "git@github.com:team/project.git");
     const second = await cache.getCommit(email, "git@github.com:team/project.git");
 
