@@ -332,6 +332,14 @@ try {
       document.querySelector('[data-testid="commit-graph"] [data-virtual-list]')?.scrollTop === 120,
   );
 
+  await overview.getByRole("button", { name: "Refresh repository", exact: true }).click();
+  await overview.getByRole("status").filter({ hasText: "Refresh repository: completed" }).waitFor();
+  assert.equal(
+    await graphList.evaluate((element) => element.scrollTop),
+    120,
+    "Refreshing history preserves graph scroll",
+  );
+
   await page
     .getByRole("button", { name: "View commit diff for image file.bin", exact: true })
     .click();
@@ -370,6 +378,29 @@ try {
 
   await page.getByText("selected file line 0", { exact: true }).waitFor();
   await page.getByText("selected file line 37", { exact: true }).waitFor();
+
+  const selectedLine = await page
+    .getByText("selected file line 0", { exact: true })
+    .elementHandle();
+  assert.ok(selectedLine);
+  const commitFileFilter = commitFiles.getByLabel("Filter commit files", { exact: true });
+  await commitFileFilter.fill("zz-small");
+  const graphScrollBeforeRefresh = await graphList.evaluate((element) => element.scrollTop);
+  await overview.getByRole("button", { name: "Refresh repository", exact: true }).click();
+  await overview.getByRole("status").filter({ hasText: "Refresh repository: completed" }).waitFor();
+
+  assert.equal(
+    await selectedLine.evaluate((element) => element.isConnected),
+    true,
+    "Refreshing keeps the selected diff mounted",
+  );
+  assert.equal(await commitFileFilter.inputValue(), "zz-small", "Refresh preserves file filters");
+  assert.equal(
+    await graphList.evaluate((element) => element.scrollTop),
+    graphScrollBeforeRefresh,
+    "Refresh preserves graph scroll",
+  );
+  await commitFileFilter.fill("");
 
   assert.equal(
     await page

@@ -1,6 +1,7 @@
 import { emptySession, emptyView } from "@shared/identity/profile-session";
 import { useSessionStore } from "@renderer/stores/session-store";
 import { errorFixture } from "../../helpers/error";
+import { deferred } from "../../helpers/deferred";
 import type { EdaApi } from "@shared/ipc";
 import type { HistoryCommit, UnifiedDiff } from "@shared/repository/repository-read";
 import type { Result } from "@shared/errors";
@@ -38,6 +39,101 @@ function api(history: EdaApi["repository"]["history"]): EdaApi {
 
 describe("repository read store", () => {
   beforeEach(() => useRepositoryStore.getState().clear());
+
+  it("refreshes in place while keeping the current view and diff visible", async () => {
+    const bridge = api(async () => ok({ commits: [makeCommit(0)], nextOffset: null }));
+    vi.stubGlobal("eda", bridge);
+    const store = useRepositoryStore.getState();
+    await store.open("repo", "identity", true);
+    await store.selectChange(
+      { kind: "ordinary", path: "file.txt", index: ".", worktree: "M", submodule: "N..." },
+      "unstaged",
+    );
+    const before = useRepositoryStore.getState();
+    const status = deferred<Awaited<ReturnType<typeof bridge.repository.status>>>();
+    const diff = deferred<Awaited<ReturnType<typeof bridge.repository.workingDiff>>>();
+    const readDiff = vi.spyOn(bridge.repository, "workingDiff").mockReturnValueOnce(diff.promise);
+    vi.spyOn(bridge.repository, "status").mockReturnValueOnce(status.promise);
+
+    const refresh = store.refresh();
+
+    expect(useRepositoryStore.getState()).toMatchObject({
+      phase: "ready",
+      generation: before.generation,
+      status: before.status,
+      pages: before.pages,
+      selection: before.selection,
+      contentView: "diff",
+      diff: before.diff,
+      diffLoading: false,
+      navigation: before.navigation,
+    });
+
+    status.resolve(
+      ok({ ...before.status!, branch: { ...before.status!.branch, head: "updated" } }),
+    );
+    await vi.waitFor(() => expect(readDiff).toHaveBeenCalled());
+
+    expect(useRepositoryStore.getState().diff).toBe(before.diff);
+    expect(useRepositoryStore.getState().diffLoading).toBe(false);
+    const updatedDiff: UnifiedDiff = {
+      files: [{ newPath: "file.txt", status: "modified", binary: false, hunks: [] }],
+    };
+    diff.resolve(ok(updatedDiff));
+    await refresh;
+
+    expect(useRepositoryStore.getState()).toMatchObject({
+      phase: "ready",
+      generation: before.generation,
+      status: { branch: { head: "updated" } },
+      selection: before.selection,
+      contentView: "diff",
+      diff: updatedDiff,
+      diffLoading: false,
+      navigation: before.navigation,
+    });
+  });
+
+  it("keeps an inspected commit file selected when refreshing", async () => {
+    const bridge = api(async () => ok({ commits: [makeCommit(0)], nextOffset: null }));
+    bridge.repository.commitDiff = async () =>
+      ok({ files: [{ newPath: "file.txt", status: "added", binary: false, hunks: [] }] });
+    vi.stubGlobal("eda", bridge);
+    const store = useRepositoryStore.getState();
+    await store.open("repo", "identity", true);
+    await store.selectCommit("oid-0");
+    await store.selectCommitFile("file.txt");
+    const before = useRepositoryStore.getState();
+
+    await store.refresh();
+
+    expect(useRepositoryStore.getState()).toMatchObject({
+      generation: before.generation,
+      selection: before.selection,
+      contentView: "diff",
+      commitFilePath: "file.txt",
+      commitFileDiff: before.commitFileDiff,
+      commitFileLoading: false,
+      navigation: before.navigation,
+    });
+  });
+
+  it("discards an in-place refresh after switching profiles", async () => {
+    const bridge = api(async () => ok({ commits: [makeCommit(0)], nextOffset: null }));
+    vi.stubGlobal("eda", bridge);
+    const store = useRepositoryStore.getState();
+    await store.open("repo", "identity", true);
+    const status = deferred<Awaited<ReturnType<typeof bridge.repository.status>>>();
+    vi.spyOn(bridge.repository, "status").mockReturnValueOnce(status.promise);
+    const refresh = store.refresh();
+
+    await store.open("repo", "other-profile", true);
+    const current = useRepositoryStore.getState();
+    status.resolve(err(errorFixture({ message: "Stale refresh failure" })));
+    await refresh;
+
+    expect(useRepositoryStore.getState()).toBe(current);
+  });
 
   it("preserves topology after evicting and reloading a page with parallel ancestry", async () => {
     const commits = Array.from({ length: 600 }, (_, index) => ({

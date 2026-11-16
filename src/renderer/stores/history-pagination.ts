@@ -26,8 +26,7 @@ export function createHistoryPagination(
   let firstPageKey = "";
   let pending: { offset: number; request: Promise<void> } | null = null;
 
-  function query(repositoryId: string) {
-    const tip = get().historyTip;
+  function query(repositoryId: string, tip = get().historyTip) {
     if (tip) return { refs: [tip] };
     const filter = useSessionStore.getState().snapshot?.session.views[repositoryId]?.graphFilter;
     return {

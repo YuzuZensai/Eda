@@ -85,14 +85,14 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
   const loadDiff = diff.load;
   const history = createHistoryPagination(get, set);
 
-  const readFirstPage = (repositoryId: string) =>
+  const readFirstPage = (repositoryId: string, resetHistory = false) =>
     Promise.all([
       window.eda.repository.status(repositoryId),
       window.eda.repository.history({
         repositoryId,
         offset: 0,
         limit: HISTORY_PAGE_SIZE,
-        ...history.query(repositoryId),
+        ...history.query(repositoryId, resetHistory ? null : undefined),
       }),
     ]);
 
@@ -208,11 +208,11 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     });
   };
 
-  const reloadAfterWrite = async (repositoryId: string): Promise<boolean> => {
+  const reload = async (repositoryId: string, resetHistory = false): Promise<boolean> => {
     const { generation } = get();
     const revision = history.invalidate();
 
-    const [statusResult, historyResult] = await readFirstPage(repositoryId);
+    const [statusResult, historyResult] = await readFirstPage(repositoryId, resetHistory);
 
     if (
       get().generation !== generation ||
@@ -227,7 +227,8 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
       return false;
     }
 
-    const replaceHistory = historyResult.ok && history.firstPageChanged(historyResult.value);
+    const replaceHistory =
+      historyResult.ok && (resetHistory || history.firstPageChanged(historyResult.value));
 
     if (replaceHistory) {
       history.replaceFirst(historyResult.value);
@@ -242,7 +243,8 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
         replaceHistory && {
           pages: [boundedHistory(historyResult.value)],
           baseOffset: 0,
-          dagBoundary: history.firstBoundary(repositoryId),
+          historyTip: resetHistory ? null : get().historyTip,
+          dagBoundary: history.firstBoundary(repositoryId, resetHistory ? null : undefined),
           nextOffset: historyResult.value.nextOffset,
           historyError: null,
         }),
@@ -252,7 +254,7 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
 
     if (selected && !get().writing) {
       diff.invalidate();
-      await loadDiff({ ...selected });
+      await loadDiff({ ...selected }, { background: resetHistory });
     }
 
     return true;
@@ -324,7 +326,7 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
         return false;
       }
 
-      const refreshed = await reloadAfterWrite(repositoryId);
+      const refreshed = await reload(repositoryId);
 
       if (
         refreshed &&
@@ -437,12 +439,14 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     open: load,
     async refresh() {
       const { repositoryId, identityId, phase } = get();
-      if (repositoryId && identityId)
-        await load(repositoryId, identityId, phase !== "missing", true);
+      if (!repositoryId || !identityId) return;
+
+      if (phase === "ready") await reload(repositoryId, true);
+      else await load(repositoryId, identityId, phase !== "missing", true);
     },
     async syncFromDisk() {
       const { repositoryId, phase } = get();
-      if (repositoryId && phase === "ready") await reloadAfterWrite(repositoryId);
+      if (repositoryId && phase === "ready") await reload(repositoryId);
     },
     loadMore: history.loadMore,
     loadPrevious: history.loadPrevious,

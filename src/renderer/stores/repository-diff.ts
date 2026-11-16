@@ -13,7 +13,10 @@ export function createRepositoryDiff(
   let diffRequestKey: string | null = null;
   let commitFileRevision = 0;
 
-  const loadDiff = async (selection: Exclude<RepositorySelection, null>) => {
+  const loadDiff = async (
+    selection: Exclude<RepositorySelection, null>,
+    { background = false } = {},
+  ) => {
     const { repositoryId, generation } = get();
 
     if (!repositoryId) return;
@@ -23,11 +26,12 @@ export function createRepositoryDiff(
     if (diffRequestKey === key && diffRequest) return diffRequest;
 
     const changed = JSON.stringify(get().selection) !== JSON.stringify(selection);
+    const keepDiff = background && !changed && get().diff !== null;
 
     set({
       selection,
-      diff: null,
-      diffLoading: true,
+      ...(!keepDiff && { diff: null }),
+      diffLoading: !keepDiff,
       error: null,
       ...(changed && {
         contentView: selection.kind === "change" ? "diff" : "history",
