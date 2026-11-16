@@ -108,7 +108,10 @@ export class BackgroundFetchService {
         profileId: this.repositories.resolveActiveRepository(repositoryId).identityId,
         repositoryId,
       }).value,
-      tags: false,
+      tags: this.settings.resolve("fetchTags", {
+        profileId: this.repositories.resolveActiveRepository(repositoryId).identityId,
+        repositoryId,
+      }).value,
     });
     this.changed(repositoryId);
   }
@@ -159,7 +162,10 @@ export class BackgroundFetchService {
                     profileId: profile.id,
                     repositoryId,
                   }).value,
-                  tags: false,
+                  tags: this.settings.resolve("fetchTags", {
+                    profileId: profile.id,
+                    repositoryId,
+                  }).value,
                 },
                 t("main.backgroundFetchService.backgroundFetch"),
                 "main.backgroundFetchService.backgroundFetch",

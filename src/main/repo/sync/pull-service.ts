@@ -114,7 +114,10 @@ export class PullService {
               profileId: identity.id,
               repositoryId: request.repositoryId,
             }).value,
-            tags: false,
+            tags: this.settings.resolve("fetchTags", {
+              profileId: identity.id,
+              repositoryId: request.repositoryId,
+            }).value,
             ...(request.credentials ? { credentials: request.credentials } : {}),
           },
           `+${remoteRef}:${upstream}`,

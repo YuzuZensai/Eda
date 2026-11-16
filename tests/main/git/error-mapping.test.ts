@@ -6,6 +6,19 @@ const map = (stderr: string, overrides: Partial<Parameters<typeof mapGitError>[0
   mapGitError({ operation: "push", exitCode: 128, stderr, ...overrides });
 
 describe("mapGitError", () => {
+  it("explains rejected tag replacement without exposing Git output or suggesting a force fetch", () => {
+    const error = map(" ! [rejected] v1 -> v1 (would clobber existing tag)", {
+      operation: "fetch origin",
+    });
+    expect(error).toMatchObject({
+      kind: "non-fast-forward",
+      isExpected: true,
+      message: "A local tag differs from the remote tag. Eda did not overwrite it.",
+      suggestedAction: "Inspect the local and remote tags before deciding which to keep.",
+    });
+    expect(error.toData()).not.toHaveProperty("rawStderr");
+  });
+
   it.each(["protectedBranch", "hookRejected", "policyMentionsHistory"] as const)(
     "maps %s to an actionable server rejection before history patterns",
     (fixture) => {

@@ -79,6 +79,12 @@ const PATTERNS: readonly Pattern[] = [
   },
   {
     kind: "non-fast-forward",
+    test: /would clobber existing tag/i,
+    message: () => errorText("main.git.errorMapping.localTagDiffersFromRemote"),
+    suggestedAction: () => errorText("main.git.errorMapping.inspectConflictingTags"),
+  },
+  {
+    kind: "non-fast-forward",
     test: /\[rejected\][^\r\n]*\((?:non-fast-forward|fetch first|stale info)\)|tip of your current branch is behind/i,
     message: () =>
       errorText("main.git.errorMapping.theRemoteRejectedThisUpdateItsHistoryOrLeaseMayHaveChanged"),

@@ -66,6 +66,9 @@ export function FetchSettings({ repositoryId }: { repositoryId?: string }) {
             label={t("settings.fetchSettings.fetchAllTags")}
           />
           <p className="text-xs text-text-tertiary">
+            {t("settings.fetchSettings.tagFetchDescription")}
+          </p>
+          <p className="text-xs text-text-tertiary">
             {t(
               "settings.fetchSettings.pruningRemovesStaleTrackingReferencesLocalBranchesArePreserved",
             )}

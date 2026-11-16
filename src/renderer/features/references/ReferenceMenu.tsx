@@ -3,6 +3,7 @@ import type { Result } from "@shared/errors";
 import { AppError, errorAction, errorMessage, GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { referenceLink } from "@shared/repository/reference-link";
+import type { TransportCredentials } from "@shared/integrations/remotes";
 import type {
   BranchSummary,
   TagSummary,
@@ -10,6 +11,7 @@ import type {
 } from "@shared/repository/repository-write";
 import {
   CopyIcon as Copy,
+  DownloadIcon as Download,
   BranchIcon as GitBranch,
   GitMergeIcon as GitMerge,
   GitPullRequestArrowIcon as GitPullRequestArrow,
@@ -37,6 +39,9 @@ import {
 import { useRepositoryStore } from "../../stores/repository-store";
 import { copyText } from "../../utils/clipboard";
 import { DirectPush } from "../sync/DirectPush";
+import { useDirectFetch } from "../sync/hooks/useDirectFetch";
+import { HttpsAuthenticationDialog } from "../sync/HttpsAuthenticationDialog";
+import { GitHubSignInDialog } from "../connections/GitHubSignInDialog";
 import { MergeStartDialog } from "../workflows/MergeStartDialog";
 import { RebaseDialog } from "../workflows/RebaseDialog";
 import { BranchDeletePanel } from "./BranchDeletePanel";
@@ -87,7 +92,9 @@ export function ReferenceMenu({
 
   const [name, setName] = useState(target.ref.name);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [working, setBusy] = useState(false);
+  const tagFetch = useDirectFetch(repositoryId);
+  const busy = working || tagFetch.busy;
   const running = useRef(false);
   const deleteRunning = useRef(false);
   const [verification, setVerification] = useState<TagVerification | null>(null);
@@ -99,7 +106,7 @@ export function ReferenceMenu({
 
   const blocked = target.kind === "branch" && !!target.ref.worktreePath && !target.ref.isHead;
   const close = () => {
-    if (!running.current && !deleteRunning.current) onClose();
+    if (!running.current && !deleteRunning.current && !tagFetch.busy) onClose();
   };
 
   const assertContext = () => {
@@ -146,6 +153,32 @@ export function ReferenceMenu({
   const refresh = async () => {
     if (!repositoryCommandReason(context)) await useRepositoryStore.getState().refresh();
   };
+
+  const fetchTag = async (credentials?: TransportCredentials) => {
+    if (repositoryCommandReason(context) || target.kind !== "tag" || !target.remoteName) return;
+    if (await tagFetch.fetch(target.remoteName, credentials, { tag: target.ref.name })) {
+      onChanged?.();
+      onClose();
+    }
+  };
+
+  if (tagFetch.authentication)
+    return (
+      <HttpsAuthenticationDialog
+        title={t("referenceMenu.fetchTag")}
+        description={t("directFetchActions.signInToFetchCredentialsAreUsedForThisActionOnly", {
+          authentication: tagFetch.authentication,
+        })}
+        submitLabel={t("directFetchActions.retryFetch")}
+        error={tagFetch.error}
+        busy={tagFetch.busy}
+        onClose={close}
+        onSubmit={(credentials) => void fetchTag(credentials)}
+      />
+    );
+
+  if (tagFetch.githubAuthentication)
+    return <GitHubSignInDialog accessDenied={tagFetch.githubAccessDenied} onClose={close} />;
 
   if (mode === "push" && target.kind === "tag")
     return (
@@ -316,6 +349,13 @@ export function ReferenceMenu({
 
           {target.kind === "tag" && (
             <>
+              {target.local === false && target.remoteName && (
+                <MenuItem disabled={busy || !!unavailable} onClick={() => void fetchTag()}>
+                  <Download size={13} />
+                  {t("referenceMenu.fetchTag")}
+                </MenuItem>
+              )}
+
               <MenuItem
                 disabled={busy || !!unavailable || target.local === false}
                 onClick={() => setMode("push")}
@@ -504,7 +544,16 @@ export function ReferenceMenu({
       )}
 
       {unavailable && <p className="px-2 py-1 text-xs text-text-tertiary">{unavailable}</p>}
-      {error && <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>}
+      {(error || tagFetch.error) && (
+        <ErrorDialog
+          onDismiss={() => {
+            setError(null);
+            tagFetch.setError(null);
+          }}
+        >
+          {error ?? tagFetch.error}
+        </ErrorDialog>
+      )}
     </ContextPopover>
   );
 }

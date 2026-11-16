@@ -12,6 +12,7 @@ import { useAppStore } from "@renderer/stores/app-store";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
 import { useSessionStore } from "@renderer/stores/session-store";
 import { ACTION_FEEDBACK } from "@renderer/motion";
+import { builtInSetting, type SettingKey } from "@shared/preferences/settings";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -47,6 +48,7 @@ const checkoutBranch = vi.fn();
 const deleteTag = vi.fn();
 const listTags = vi.fn();
 const remoteTags = vi.fn();
+const fetchRemote = vi.fn();
 const preparePush = vi.fn();
 const push = vi.fn();
 const renameBranch = vi.fn();
@@ -114,6 +116,7 @@ beforeEach(() => {
   deleteTag.mockReset().mockResolvedValue(ok(undefined));
   listTags.mockReset().mockResolvedValue(ok([{ name: "v1", oid: local.oid }]));
   remoteTags.mockReset().mockResolvedValue(ok([{ name: "v1", oid: local.oid }]));
+  fetchRemote.mockReset().mockResolvedValue(ok("Fetched."));
   deleteBranch.mockReset().mockResolvedValue(ok(undefined));
   checkoutBranch.mockReset().mockResolvedValue(ok(undefined));
   preparePush.mockReset().mockResolvedValue(ok({ token: "delete-preview" }));
@@ -139,7 +142,8 @@ beforeEach(() => {
       listBranches: vi.fn().mockResolvedValue(ok([local, remote])),
       listTags,
     },
-    remotes: { inspect, preparePush, push, listTags: remoteTags },
+    remotes: { inspect, preparePush, push, listTags: remoteTags, fetch: fetchRemote },
+    settings: { resolve: vi.fn(async (key: SettingKey) => ok(builtInSetting(key))) },
   });
 
   container = document.createElement("div");
@@ -947,6 +951,70 @@ it("does not push a tag if the active repository changes during preparation", as
   await finishPush();
   expect(push).not.toHaveBeenCalled();
   expect(changed).not.toHaveBeenCalled();
+});
+
+it("fetches a remote-only tag without checking it out and refreshes its location", async () => {
+  vi.useFakeTimers();
+  await renderTag({ remoteName: "upstream", local: false });
+  await click("Fetch tag");
+  await finishPush();
+  expect(fetchRemote).toHaveBeenCalledExactlyOnceWith({
+    repositoryId: "repo",
+    remote: "upstream",
+    tag: "v1",
+    prune: false,
+    tags: false,
+  });
+  expect(checkoutBranch).not.toHaveBeenCalled();
+  expect(syncFromDisk).toHaveBeenCalledOnce();
+  expect(changed).toHaveBeenCalledOnce();
+  expect(close).toHaveBeenCalledOnce();
+});
+
+it("keeps a failed tag fetch open with an error instead of reporting success", async () => {
+  vi.useFakeTimers();
+  fetchRemote.mockResolvedValueOnce(
+    err(errorFixture({ kind: "non-fast-forward", message: "would clobber existing tag" })),
+  );
+  await renderTag({ remoteName: "upstream", local: false });
+  await click("Fetch tag");
+  await finishPush();
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "would clobber existing tag",
+  );
+  expect(changed).not.toHaveBeenCalled();
+  expect(close).not.toHaveBeenCalled();
+});
+
+it("retries fetching the same remote-only tag after HTTPS authentication", async () => {
+  vi.useFakeTimers();
+  fetchRemote.mockResolvedValueOnce(
+    err(errorFixture({ kind: "auth-failed", message: "Authentication failed" })),
+  );
+  await renderTag({ remoteName: "upstream", local: false });
+  await click("Fetch tag");
+  await finishPush();
+  const dialog = document.querySelector('[role="dialog"]')!;
+  await act(async () => {
+    for (const [index, field] of [...dialog.querySelectorAll("input")].entries()) {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        field,
+        index === 0 ? "user" : "token",
+      );
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
+  await click("Retry fetch");
+  await finishPush();
+  expect(fetchRemote).toHaveBeenLastCalledWith({
+    repositoryId: "repo",
+    remote: "upstream",
+    tag: "v1",
+    prune: false,
+    tags: false,
+    credentials: { username: "user", password: "token" },
+  });
+  expect(close).toHaveBeenCalledOnce();
 });
 
 it("disables actions requiring a local copy for remote-only tags and deletes remotely", async () => {

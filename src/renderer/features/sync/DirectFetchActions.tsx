@@ -7,12 +7,13 @@ import {
   GlobeIcon as Globe,
   RefreshIcon as RefreshCw,
   SettingsIcon as Settings,
+  TagIcon as Tag,
 } from "../../components/ui/icons";
 import { useRef, useState } from "react";
 import { openSettings } from "../../stores/shell-store";
 import { Button, ErrorDialog, MenuItem, AnchoredPopover } from "../../components/ui/index";
 import { GitHubSignInDialog } from "../connections/GitHubSignInDialog";
-import { useDirectFetch } from "./hooks/useDirectFetch";
+import { useDirectFetch, type FetchOptions } from "./hooks/useDirectFetch";
 
 export function DirectFetchActions({
   repositoryId,
@@ -28,11 +29,15 @@ export function DirectFetchActions({
   const [showError, setShowError] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
 
-  const fetch = async (remote?: string | null, credentials?: TransportCredentials) => {
+  const fetch = async (
+    remote?: string | null,
+    credentials?: TransportCredentials,
+    options?: FetchOptions,
+  ) => {
     onBusyChange(true);
 
     try {
-      await action.fetch(remote, credentials);
+      await action.fetch(remote, credentials, options);
     } finally {
       onBusyChange(false);
     }
@@ -118,6 +123,16 @@ export function DirectFetchActions({
             <MenuItem
               onClick={() => {
                 setMenu(false);
+                void fetch(undefined, undefined, { allTags: true });
+              }}
+            >
+              <Tag size={13} className="shrink-0" aria-hidden="true" />
+              {t("directFetchActions.fetchAllTags")}
+            </MenuItem>
+
+            <MenuItem
+              onClick={() => {
+                setMenu(false);
                 openSettings("repository-fetch");
               }}
             >
@@ -153,7 +168,9 @@ export function DirectFetchActions({
           busy={action.busy}
           error={action.error}
           onClose={closeAuth}
-          onSubmit={(credentials) => void fetch(action.authentication, credentials)}
+          onSubmit={(credentials) =>
+            void fetch(action.authentication, credentials, action.retryOptions)
+          }
         />
       )}
 

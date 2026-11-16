@@ -480,6 +480,145 @@ it.each(["scheduled", "retry"] as const)(
   },
 );
 
+it.each(["manual", "pull", "scheduled", "retry"] as const)(
+  "%s fetch follows relevant tags by default and honors the all-tags setting without changing local work",
+  async (mode) => {
+    const { service, source, client, run, profile, identity, repositories, db, pull } =
+      await setup();
+    const settings = new SettingsRepository(db);
+    const sessions = new ProfileSessionRepository(db);
+    let now = Date.now() + 10 * 60_000;
+    const scheduler = new BackgroundFetchService(
+      identity,
+      sessions,
+      settings,
+      repositories,
+      service,
+      () => ({ online: true, suspended: false }),
+      () => {},
+      () => now,
+    );
+    sessions.change(profile.id, "main", {
+      kind: "tabs",
+      tabs: [client.id],
+      selectedRepositoryId: client.id,
+    });
+    await source.writeFile("release.txt", "new release\n");
+    await source.commit("release");
+    await source.run(["tag", "release"]);
+    await source.run(["tag", "-a", "annotated", "-m", "annotated release"]);
+    const unrelated = (await source.run(["commit-tree", "HEAD^{tree}", "-m", "unrelated"])).trim();
+    await source.run(["tag", "unrelated", unrelated]);
+    await source.run(["push", "origin", "main", "--tags"]);
+    const head = await run(["rev-parse", "HEAD"]);
+    await writeFile(join(client.path, "file.txt"), "local work\n");
+    const scope = { kind: "repository", profileId: profile.id, repositoryId: client.id } as const;
+    const fetch = async () => {
+      now += 10 * 60_000;
+      if (mode === "pull") await pull.prepare({ repositoryId: client.id, strategy: "ff" });
+      else if (mode === "scheduled") await scheduler.tick();
+      else if (mode === "retry") await scheduler.retry(client.id, "origin");
+      else
+        await service.fetch({
+          repositoryId: client.id,
+          remote: "origin",
+          prune: true,
+          tags: settings.resolve("fetchTags", scope).value,
+        });
+    };
+
+    await fetch();
+    expect(await run(["tag", "--list"])).toBe("annotated\nrelease\n");
+    settings.set("fetchTags", scope, true);
+    await fetch();
+    expect(await run(["tag", "--list"])).toBe("annotated\nrelease\nunrelated\n");
+    expect(await run(["rev-parse", "HEAD"])).toBe(head);
+    expect(await readFile(join(client.path, "file.txt"), "utf8")).toBe("local work\n");
+    await scheduler.stop();
+  },
+);
+
+it("fetches only the selected annotated tag from its advertised destination without refreshing branches, pruning tags, or delaying background fetch", async () => {
+  const { service, source, client, run } = await setup();
+  await source.writeFile("release.txt", "release\n");
+  await source.commit("release");
+  await source.run(["tag", "-a", "release", "-m", "release notes"]);
+  await source.run(["tag", "other-release"]);
+  await service.change(client.id, {
+    kind: "url",
+    name: "origin",
+    url: source.path,
+    push: true,
+  });
+  await run(["tag", "local-only"]);
+  await run(["config", "fetch.pruneTags", "true"]);
+  const refs = await run(["show-ref", "--heads"]);
+  const tracking = await run(["rev-parse", "origin/main"]);
+  const history = (await service.fetchStates(client.id))[0]!.history;
+  await writeFile(join(client.path, "file.txt"), "local work\n");
+
+  expect(
+    await service.fetch({
+      repositoryId: client.id,
+      remote: "origin",
+      prune: true,
+      tags: true,
+      tag: "release",
+    }),
+  ).toContain("Fetched tag release from origin");
+  expect(await run(["tag", "--list"])).toBe("local-only\nrelease\n");
+  expect(await run(["rev-parse", "refs/tags/release"])).toBe(
+    await source.run(["rev-parse", "refs/tags/release"]),
+  );
+  expect(await run(["cat-file", "-t", "refs/tags/release"])).toBe("tag\n");
+  expect(await run(["show-ref", "--heads"])).toBe(refs);
+  expect(await run(["rev-parse", "origin/main"])).toBe(tracking);
+  expect(await readFile(join(client.path, "file.txt"), "utf8")).toBe("local work\n");
+  expect((await service.fetchStates(client.id))[0]!.history).toEqual(history);
+});
+
+it.each(["all", "single"] as const)(
+  "rejects conflicting tags during %s-tag fetch without replacing or pruning local tags",
+  async (mode) => {
+    const { service, source, client, run } = await setup();
+    await run(["tag", "release"]);
+    await run(["tag", "local-only"]);
+    const original = await run(["rev-parse", "refs/tags/release"]);
+    await source.writeFile("release.txt", "replacement\n");
+    await source.commit("replacement release");
+    await source.run(["tag", "release"]);
+    await source.run(["push", "origin", "main", "--tags"]);
+    await run(["config", "fetch.pruneTags", "true"]);
+    await expect(
+      service.fetch({
+        repositoryId: client.id,
+        remote: "origin",
+        prune: true,
+        tags: mode === "all",
+        ...(mode === "single" ? { tag: "release" } : {}),
+      }),
+    ).rejects.toMatchObject({
+      kind: "non-fast-forward",
+      message: "A local tag differs from the remote tag. Eda did not overwrite it.",
+    });
+    expect(await run(["rev-parse", "refs/tags/release"])).toBe(original);
+    expect(await run(["tag", "--list"])).toBe("local-only\nrelease\n");
+  },
+);
+
+it.each([
+  { remote: "origin", tag: "bad:refs/heads/main" },
+  { remote: "origin", tag: "" },
+  { remote: null, tag: "release" },
+])("rejects invalid tag fetch targets: %j", async (target) => {
+  const { service, client, run } = await setup();
+  const refs = await run(["show-ref"]);
+  await expect(
+    service.fetch({ repositoryId: client.id, prune: false, tags: false, ...target }),
+  ).rejects.toMatchObject({ kind: "invalid-input" });
+  expect(await run(["show-ref"])).toBe(refs);
+});
+
 it("clones, configures multiple remotes, fetches/prunes and changes tracking without altering local work", async () => {
   const { service, source, server, client, run } = await setup();
 

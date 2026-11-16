@@ -308,7 +308,14 @@ try {
     .filter({ hasText: /Fetched origin/ })
     .first()
     .waitFor();
-  git(remote, "tag", "server-only", "refs/heads/main");
+  const tagOnlyCommit = git(
+    remote,
+    "commit-tree",
+    "refs/heads/main^{tree}",
+    "-m",
+    "Tag-only history",
+  );
+  git(remote, "tag", "server-only", tagOnlyCommit);
   git(clientPath, "branch", "release");
   await page
     .getByRole("button", { name: "Inspect tag release", exact: true })
@@ -363,7 +370,14 @@ try {
   await expect(
     page.getByRole("menuitem", { name: "Verify tag signature...", exact: true }),
   ).toBeDisabled();
-  await page.keyboard.press("Escape");
+  const beforeTagFetch = git(clientPath, "rev-parse", "HEAD");
+  await page.getByRole("menuitem", { name: "Fetch tag", exact: true }).click();
+  await expect(remoteOnlyTag).toHaveText("server-only");
+  assert.equal(
+    git(clientPath, "rev-parse", "refs/tags/server-only"),
+    git(remote, "rev-parse", "refs/tags/server-only"),
+  );
+  assert.equal(git(clientPath, "rev-parse", "HEAD"), beforeTagFetch);
   await page
     .getByRole("button", { name: "Inspect tag unpublished", exact: true })
     .click({ button: "right" });
@@ -587,6 +601,12 @@ try {
   await page.getByRole("button", { name: "Fetch options", exact: true }).click();
   await page.getByRole("menuitem", { name: "Fetch settings...", exact: true }).click();
   const fetchSettings = page.locator("#settings-repository-fetch");
+  const allTags = fetchSettings.getByRole("checkbox", { name: "Fetch all tags", exact: true });
+  await expect(allTags).not.toBeChecked();
+  await allTags.check();
+  await expect(allTags).toBeChecked();
+  await allTags.uncheck();
+  await expect(allTags).not.toBeChecked();
   await chooseSelect(
     fetchSettings.getByRole("combobox", { name: "Background fetch interval" }),
     "1",

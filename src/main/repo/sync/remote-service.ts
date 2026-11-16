@@ -262,10 +262,20 @@ export class RemoteService {
     request: FetchRequest,
     refspec?: string,
   ): Promise<string> {
+    if (request.tag !== undefined) {
+      assertValidRefName(request.tag, t("operations.fetch", { name: request.remote }));
+      if (request.remote === null)
+        throw remoteError(errorText("main.remoteService.chooseOneRemoteToFetchATag"));
+    }
+
     if (request.remote === null && request.credentials)
       throw remoteError(
         errorText("main.remoteService.fetchOneRemoteWhenSupplyingHttpsCredentials"),
       );
+
+    const tagOptions: string[] = [];
+    if (request.tag) tagOptions.push("--no-tags");
+    else if (request.tags) tagOptions.push("--tags");
 
     const names =
       request.remote === null
@@ -277,7 +287,7 @@ export class RemoteService {
     const completed: string[] = [];
 
     for (const name of names) {
-      const url = await this.remotes.destination(path, name, false);
+      const url = await this.remotes.destination(path, name, request.tag !== undefined);
 
       this.operations.progress(
         t("main.remoteService.fetching", {
@@ -295,12 +305,14 @@ export class RemoteService {
             "--upload-pack=git-upload-pack",
             "--progress",
             "--no-recurse-submodules",
-            request.prune ? "--prune" : "--no-prune",
+            request.prune && !request.tag ? "--prune" : "--no-prune",
             "--no-prune-tags",
-            ...(request.tags ? ["--tags"] : ["--no-tags"]),
+            ...tagOptions,
             "--",
             url,
-            `+refs/heads/*:refs/remotes/${name}/*`,
+            request.tag
+              ? `refs/tags/${request.tag}:refs/tags/${request.tag}`
+              : `+refs/heads/*:refs/remotes/${name}/*`,
             ...(refspec ? [refspec] : []),
           ],
           {
@@ -318,22 +330,27 @@ export class RemoteService {
         );
 
         completed.push(name);
-        this.fetchHistory.record(identity.id, request.repositoryId, name, url, Date.now(), null);
+        if (!request.tag)
+          this.fetchHistory.record(identity.id, request.repositoryId, name, url, Date.now(), null);
       } catch (error) {
         const failure = this.githubFailure(error, url, !!request.credentials);
 
-        this.fetchHistory.record(
-          identity.id,
-          request.repositoryId,
-          name,
-          url,
-          Date.now(),
-          errorMessage(failure, errorText("main.remoteService.fetchFailed")),
-        );
+        if (!request.tag)
+          this.fetchHistory.record(
+            identity.id,
+            request.repositoryId,
+            name,
+            url,
+            Date.now(),
+            errorMessage(failure, errorText("main.remoteService.fetchFailed")),
+          );
 
         throw failure;
       }
     }
+
+    if (request.tag)
+      return t("main.remoteService.fetchedTag", { tag: request.tag, remote: request.remote });
 
     return t("main.remoteService.fetchedLocalBranchesAndFilesWereNotChanged", {
       completed: completed.join(", "),

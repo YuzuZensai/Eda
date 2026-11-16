@@ -165,6 +165,9 @@ export function registerRemoteHandlers({ remotes, pull, backgroundFetch }: Servi
             input["remote"] === null ? null : requireString(input["remote"], t("fields.remote")),
           prune: boolean(input["prune"]),
           tags: boolean(input["tags"]),
+          ...(input["tag"] !== undefined
+            ? { tag: requireString(input["tag"], t("fields.tagName"), 255) }
+            : {}),
           ...(auth ? { credentials: auth } : {}),
         }),
       );

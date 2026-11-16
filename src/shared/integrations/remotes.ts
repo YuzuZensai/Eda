@@ -27,6 +27,7 @@ export interface FetchRequest {
   remote: string | null;
   prune: boolean;
   tags: boolean;
+  tag?: string;
   credentials?: TransportCredentials;
 }
 

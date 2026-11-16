@@ -282,6 +282,7 @@ function setup() {
     },
     remotes: {
       primaryFetchUrl: vi.fn(async () => "https://github.com/team/project.git"),
+      fetch: vi.fn(async () => "Fetched."),
     },
     repositories: {
       resolveActiveRepository: vi.fn(() => ({
@@ -352,6 +353,31 @@ it("validates repository reads before forwarding them to the reader", async () =
   });
   expect(repositoryReader.commitTemplate).toHaveBeenCalledWith(repositoryId);
 });
+
+it("forwards a validated single-tag fetch through the repository change notification path", async () => {
+  const { remotes } = setup();
+  const request = { repositoryId, remote: "origin", prune: false, tags: false, tag: "v1" };
+  expect(await invoke(IPC_CHANNELS.remotesFetch, request)).toEqual({ ok: true, value: "Fetched." });
+  expect(remotes.fetch).toHaveBeenCalledExactlyOnceWith(request);
+  expect(electron.send).toHaveBeenCalledWith(IPC_EVENTS.repositoryChanged, repositoryId);
+});
+
+it.each([null, 42, "", "x".repeat(256)])(
+  "rejects malformed tag fetch input before calling the service: %j",
+  async (tag) => {
+    const { remotes } = setup();
+    expect(
+      await invoke(IPC_CHANNELS.remotesFetch, {
+        repositoryId,
+        remote: "origin",
+        prune: false,
+        tags: false,
+        tag,
+      }),
+    ).toMatchObject({ ok: false, error: { kind: "invalid-input" } });
+    expect(remotes.fetch).not.toHaveBeenCalled();
+  },
+);
 
 it("uses the global history visibility unless a view explicitly overrides it", async () => {
   const mocks = setup();

@@ -90,6 +90,46 @@ it("fetches all remotes sequentially", async () => {
   expect(fetchRemote.mock.calls.map(([request]) => request.remote)).toEqual(["origin", "team"]);
   expect(api.message).toBe("Fetched all remotes.");
 });
+it("honors the saved all-tags preference", async () => {
+  resolve.mockImplementation(async (key: SettingKey) =>
+    ok(key === "fetchTags" ? { value: true } : builtInSetting(key)),
+  );
+  await perform(() => api.fetch());
+  expect(fetchRemote).toHaveBeenCalledWith(expect.objectContaining({ tags: true }));
+});
+it("fetches all tags once without changing the next fetch's repository defaults", async () => {
+  await perform(() => api.fetch(undefined, undefined, { allTags: true }));
+  expect(fetchRemote).toHaveBeenLastCalledWith(expect.objectContaining({ tags: true }));
+  await perform(() => api.fetch());
+  expect(fetchRemote).toHaveBeenLastCalledWith(expect.objectContaining({ tags: false }));
+});
+it("preserves the all-tags override when retrying an HTTPS authentication failure", async () => {
+  fetchRemote.mockResolvedValueOnce(
+    err(errorFixture({ kind: "auth-failed", message: "Authentication failed." })),
+  );
+  await perform(() => api.fetch(undefined, undefined, { allTags: true }));
+  await perform(() =>
+    api.fetch(api.authentication!, { username: "user", password: "token" }, api.retryOptions),
+  );
+  expect(fetchRemote).toHaveBeenLastCalledWith({
+    repositoryId: "repo",
+    remote: "team",
+    prune: true,
+    tags: true,
+    credentials: { username: "user", password: "token" },
+  });
+});
+it("fetches only a selected tag regardless of the all-tags and pruning defaults", async () => {
+  resolve.mockImplementation(async () => ok({ value: true }));
+  await perform(() => api.fetch("origin", undefined, { tag: "v1" }));
+  expect(fetchRemote).toHaveBeenCalledExactlyOnceWith({
+    repositoryId: "repo",
+    remote: "origin",
+    prune: false,
+    tags: false,
+    tag: "v1",
+  });
+});
 it("honors the repository setting when pruning is disabled", async () => {
   resolve.mockImplementation(async () => ok({ value: false }));
   await perform(() => api.fetch());
@@ -167,6 +207,26 @@ it("clicking the toolbar Fetch starts a transfer without opening a modal", async
   });
   expect(fetchRemote).toHaveBeenCalledOnce();
   expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it("offers a one-shot all-tags fetch in the toolbar menu", async () => {
+  await act(async () => root.render(<RepositorySyncActions />));
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Fetch options"]')!.click(),
+  );
+  const fetchTags = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (item) => item.textContent === "Fetch all tags",
+  )!;
+  await act(async () => {
+    fetchTags.click();
+    await vi.advanceTimersByTimeAsync(ACTION_FEEDBACK.minimumPending);
+  });
+  expect(fetchRemote).toHaveBeenCalledExactlyOnceWith({
+    repositoryId: "repo",
+    remote: "team",
+    prune: true,
+    tags: true,
+  });
 });
 
 it.each(["github-auth-required", "github-access-required"] as const)(
