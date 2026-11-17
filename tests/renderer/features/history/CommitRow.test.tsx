@@ -118,7 +118,7 @@ it.each([
   ["verified", "Verified signature", "text-git-added"],
   ["invalid", "Invalid signature", "text-git-deleted"],
   ["unverified", "Signature could not be verified", "text-git-modified"],
-  ["unsigned", "Unsigned", "text-text-tertiary"],
+  ["unsigned", "Unsigned", "text-git-modified"],
 ] as const)(
   "shows %s signing status beside the SHA only in vigilant mode",
   async (status, label, tone) => {

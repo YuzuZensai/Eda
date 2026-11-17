@@ -133,6 +133,7 @@ export const FEATURE_COMPONENTS = [
       "features/diff/DiffRows.tsx",
       "features/diff/DiffViewer.tsx",
       "features/diff/ImageDiff.tsx",
+      "features/diff/SignerDialog.tsx",
     ],
   },
   {
@@ -370,6 +371,7 @@ export const COMPONENT_EXPORTS: Record<string, readonly string[]> = {
   "components/ui/forms/SegmentedControl.tsx": ["SegmentedControl"],
   "components/ui/forms/Slider.tsx": ["Slider"],
   "components/ui/icons.tsx": [
+    "GitHubIcon",
     "IconDefaults",
     "ActivityIcon",
     "ArchiveIcon",
@@ -391,6 +393,9 @@ export const COMPONENT_EXPORTS: Record<string, readonly string[]> = {
     "CircleIcon",
     "CircleAlertIcon",
     "CircleCheckIcon",
+    "CircleDashedIcon",
+    "CircleHelpIcon",
+    "CircleXIcon",
     "Columns2Icon",
     "CopyIcon",
     "DatabaseIcon",
@@ -533,6 +538,7 @@ export const COMPONENT_EXPORTS: Record<string, readonly string[]> = {
   "features/diff/DiffRows.tsx": ["DiffSummaryRow", "UnifiedDiffRow", "DiffCell"],
   "features/diff/DiffViewer.tsx": ["DiffViewer"],
   "features/diff/ImageDiff.tsx": ["ImageDiff"],
+  "features/diff/SignerDialog.tsx": ["SignerDialog"],
   "features/history/CommitChangesPanel.tsx": ["CommitChangesPanel"],
   "features/history/CommitGraph.tsx": ["CommitGraph"],
   "features/history/CommitMenu.tsx": ["CommitMenu"],

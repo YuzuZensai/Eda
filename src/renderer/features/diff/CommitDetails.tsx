@@ -1,3 +1,5 @@
+import { isVerifiedGitHubWebSignature } from "@shared/integrations/github";
+import { SignerDialog } from "./SignerDialog";
 import { t } from "@shared/i18n";
 import { formatDateTime } from "../../utils/format";
 import {
@@ -16,7 +18,7 @@ import {
   commitSignatureTone,
 } from "../../components/ui/display/CommitSignatureIcon";
 import {
-  CodeBlock,
+  Button,
   Collapse,
   cx,
   CopyButton,
@@ -28,6 +30,8 @@ import {
   commitSignatureFormatLabel,
   commitSignatureLabel,
   commitSignatureTrustLabel,
+  commitSignatureWarning,
+  commitSignatureOrigin,
 } from "../../components/ui/display/commit-signature-label";
 
 export function CommitDetails({
@@ -45,6 +49,7 @@ export function CommitDetails({
   verifying?: boolean;
   repositoryId?: string;
 }) {
+  const [reviewSigner, setReviewSigner] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
 
@@ -64,7 +69,9 @@ export function CommitDetails({
   const signatureLabel = verifying
     ? t("diff.commitDetails.checkingSignature")
     : signature
-      ? commitSignatureLabel(signature)
+      ? signature.validity === "valid" && !isVerifiedGitHubWebSignature(signature)
+        ? t("signature.valid")
+        : commitSignatureLabel(signature)
       : "";
 
   const signatureColor = commitSignatureTone(verifying ? null : signature);
@@ -163,21 +170,40 @@ export function CommitDetails({
           {(signature || verifying) && (
             <CommitDetail
               label={t("diff.commitDetails.signature")}
-              className="flex min-w-0 items-start gap-1"
+              className="flex min-w-0 flex-wrap items-center gap-2"
             >
               <span className={`min-w-0 flex-1 ${signatureColor}`}>{signatureLabel}</span>
 
-              {onVerify && (
-                <IconButton
-                  size="xs"
-                  disabled={verifying}
-                  busy={verifying}
-                  aria-label={t("diff.commitDetails.verifyAgain")}
-                  title={t("diff.commitDetails.verifyAgain")}
-                  icon={<RefreshCw size={13} aria-hidden="true" />}
-                  onClick={onVerify}
-                />
-              )}
+              <div className="flex shrink-0 items-center gap-1">
+                {repositoryId && signature && signature.status !== "unsigned" && (
+                  <Button size="sm" disabled={verifying} onClick={() => setReviewSigner(true)}>
+                    {t("signature.review")}
+                  </Button>
+                )}
+                {onVerify && (
+                  <IconButton
+                    size="xs"
+                    disabled={verifying}
+                    busy={verifying}
+                    aria-label={t("diff.commitDetails.verifyAgain")}
+                    title={t("diff.commitDetails.verifyAgain")}
+                    icon={<RefreshCw size={13} aria-hidden="true" />}
+                    onClick={onVerify}
+                  />
+                )}
+              </div>
+            </CommitDetail>
+          )}
+
+          {signature && commitSignatureWarning(signature) && (
+            <CommitDetail label={t("signature.warning")} className={signatureColor}>
+              {commitSignatureWarning(signature)}
+            </CommitDetail>
+          )}
+
+          {signature && commitSignatureOrigin(signature) && (
+            <CommitDetail label={t("signature.source")} className="selectable break-words">
+              {commitSignatureOrigin(signature)}
             </CommitDetail>
           )}
 
@@ -196,7 +222,7 @@ export function CommitDetails({
             </CommitDetail>
           )}
 
-          {signature?.trustLevel && (
+          {signature && commitSignatureTrustLabel(signature) && (
             <CommitDetail label={t("diff.commitDetails.signatureTrust")}>
               {commitSignatureTrustLabel(signature)}
             </CommitDetail>
@@ -277,22 +303,23 @@ export function CommitDetails({
           )}
         </dl>
 
-        {signature?.diagnostics && (
-          <Disclosure title={t("diff.commitDetails.verificationDetails")} className="mt-2 text-xs">
-            <CodeBlock
-              label={t("diff.commitDetails.verificationOutput")}
-              wrap
-              className="mt-2 max-h-40"
-            >
-              {signature.diagnostics}
-            </CodeBlock>
-          </Disclosure>
-        )}
-
         {inspection?.shallow && (
           <p>{t("diff.commitDetails.shallowRepositoryEarlierAncestorsMayNotBeAvailable")}</p>
         )}
       </Collapse>
+      {reviewSigner && signature && repositoryId && (
+        <SignerDialog
+          key={`${repositoryId}:${commit.oid}`}
+          repositoryId={repositoryId}
+          oid={commit.oid}
+          email={commit.author.email}
+          initialSignature={signature}
+          onClose={() => {
+            setReviewSigner(false);
+            onVerify?.();
+          }}
+        />
+      )}
     </div>
   );
 }

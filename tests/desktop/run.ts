@@ -14,6 +14,7 @@ const suites = [
   "workspace",
   "foundations",
   "local",
+  "signing-keys",
   "profiles",
   "identity-warning",
   "large-repo",

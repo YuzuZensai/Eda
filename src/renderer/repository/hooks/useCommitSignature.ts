@@ -22,6 +22,8 @@ interface Entry {
 const entries = new Map<string, Entry>();
 const queue: Entry[] = [];
 let running = 0;
+let subscriptions = 0;
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
 function signatureKey(repositoryId: string, identityId: string | null, oid: string) {
   return JSON.stringify([identityId, repositoryId, oid]);
@@ -91,6 +93,10 @@ function drain() {
   while (running < 2 && queue.length) {
     const entry = queue.shift()!;
     if (entry.discarded || !entry.listeners.size || entry.signature) continue;
+    if (entry.running) {
+      queue.push(entry);
+      break;
+    }
 
     entry.running = true;
     running++;
@@ -121,6 +127,17 @@ export function cacheCommitSignature(
   return entry.revision;
 }
 
+export function invalidateCommitSignatures() {
+  for (const entry of entries.values()) {
+    entry.revision++;
+    entry.signature = null;
+    entry.failed = false;
+    notify(entry);
+    if (entry.listeners.size && !queue.includes(entry)) queue.push(entry);
+  }
+  drain();
+}
+
 export function useCommitSignature(oid: string) {
   const repositoryId = useRepositoryStore((state) => state.repositoryId);
   const identityId = useRepositoryStore((state) => state.identityId);
@@ -134,6 +151,10 @@ export function useCommitSignature(oid: string) {
       if (!entry) return () => {};
 
       entry.listeners.add(listener);
+      subscriptions++;
+      refreshTimer ??= setInterval(() => {
+        if (document.visibilityState === "visible") invalidateCommitSignatures();
+      }, 60_000);
 
       if (entry.failed) {
         entry.signature = null;
@@ -148,6 +169,11 @@ export function useCommitSignature(oid: string) {
 
       return () => {
         entry.listeners.delete(listener);
+        subscriptions--;
+        if (subscriptions === 0) {
+          clearInterval(refreshTimer);
+          refreshTimer = undefined;
+        }
 
         if (!entry.listeners.size) {
           const index = queue.indexOf(entry);

@@ -50,7 +50,7 @@ it.each([
   ["verified", null, "Verified signature", "text-git-added"],
   ["invalid", "bad-signature", "Invalid signature", "text-git-deleted"],
   ["unverified", "missing-key", "Unverifiable: public key is missing", "text-git-modified"],
-  ["unsigned", null, "Unsigned", "text-text-tertiary"],
+  ["unsigned", null, "Unsigned", "text-git-modified"],
 ] as const)(
   "shows an accessible icon and details for %s signatures",
   async (status, reasonCode, label, color) => {
@@ -292,4 +292,39 @@ it("finishes a history row's recheck after selecting another commit", async () =
   } finally {
     await act(async () => useRepositoryStore.setState(previous));
   }
+});
+
+it("opens trust review from the visible button beside signature recheck", async () => {
+  vi.stubGlobal("eda", { repository: { signerDecisions: async () => ok([]) } });
+  await act(async () =>
+    root.render(
+      <CommitDetails
+        commit={commit}
+        repositoryId="repo"
+        inspection={inspection({
+          status: "unverified",
+          format: "ssh",
+          validity: "valid",
+          signerTrust: "unknown",
+          reasonCode: "untrusted-key",
+          fingerprint: `SHA256:${"A".repeat(43)}`,
+          diagnostics: "",
+        })}
+        onSelectParent={vi.fn()}
+        onVerify={vi.fn()}
+      />,
+    ),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>("button[aria-controls]")!.click(),
+  );
+  const review = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Review signer…",
+  )!;
+  expect(review).toBeDefined();
+  expect(
+    review.parentElement?.querySelector('[aria-label="Verify signature again"]'),
+  ).not.toBeNull();
+  await act(async () => review.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Trust key");
 });

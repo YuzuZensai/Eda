@@ -3,6 +3,8 @@ import { LucideProvider } from "lucide-react";
 
 export const ICON_SIZE = 13;
 
+export { default as GitHubIcon } from "@icons-pack/react-simple-icons/icons/SiGithub";
+
 export function IconDefaults({ children }: { children: ReactNode }) {
   return <LucideProvider size={ICON_SIZE}>{children}</LucideProvider>;
 }
@@ -28,6 +30,9 @@ export {
   Circle as CircleIcon,
   CircleAlert as CircleAlertIcon,
   CircleCheck as CircleCheckIcon,
+  CircleDashed as CircleDashedIcon,
+  CircleHelp as CircleHelpIcon,
+  CircleX as CircleXIcon,
   Columns2 as Columns2Icon,
   Copy as CopyIcon,
   Database as DatabaseIcon,

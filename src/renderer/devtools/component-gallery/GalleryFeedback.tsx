@@ -1,3 +1,6 @@
+import { CommitSignatureIcon } from "../../components/ui/display/CommitSignatureIcon";
+import { commitSignatureLabel } from "../../components/ui/display/commit-signature-label";
+import type { CommitSignatureVerification } from "@shared/repository/repository-read";
 import { t } from "@shared/i18n";
 import { useState } from "react";
 import {
@@ -22,6 +25,28 @@ export function GalleryFeedback({ setFeedback }: { setFeedback: (message: string
 
   return (
     <>
+      <div className="flex flex-wrap gap-3">
+        {(["trusted", "unknown", "distrusted", "github", "unsigned"] as const).map(
+          (signerTrust) => {
+            const signature: CommitSignatureVerification = {
+              status: signerTrust === "unsigned" ? "unsigned" : "verified",
+              validity: signerTrust === "unsigned" ? "unknown" : "valid",
+              signerTrust:
+                signerTrust === "github" || signerTrust === "unsigned" ? "unknown" : signerTrust,
+              ...(signerTrust === "github" ? { keySource: "https://github.com/web-flow.gpg" } : {}),
+              format: "openpgp",
+              reasonCode: null,
+              diagnostics: "",
+            };
+            return (
+              <span key={signerTrust} className="flex items-center gap-1 text-xs">
+                <CommitSignatureIcon signature={signature} />
+                {commitSignatureLabel(signature)}
+              </span>
+            );
+          },
+        )}
+      </div>
       <Sample id="gallery-feedback" title={t("settings.componentGallery.feedbackAndHeadings")}>
         <div className="space-y-3">
           <SectionLabel
