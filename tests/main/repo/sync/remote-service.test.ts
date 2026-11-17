@@ -32,6 +32,61 @@ import { isGitHubHttps } from "@shared/integrations/github";
 const fixtures: TempRepo[] = [];
 const databases: Database[] = [];
 
+it.each(["session", "inspection", "fetch", "expected-fetch"] as const)(
+  "recovers from a %s scheduler failure without leaking diagnostics",
+  async (stage) => {
+    const { service, client, profile, identity, repositories, db } = await setup();
+    const sessions = new ProfileSessionRepository(db);
+    const settings = new SettingsRepository(db);
+    const changed = vi.fn();
+    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const scheduler = new BackgroundFetchService(
+      identity,
+      sessions,
+      settings,
+      repositories,
+      service,
+      () => ({ online: true, suspended: false }),
+      changed,
+    );
+    sessions.change(profile.id, "main", {
+      kind: "tabs",
+      tabs: [client.id],
+      selectedRepositoryId: client.id,
+    });
+    scheduler.configure(client.id, 1);
+    const failure = new Error("https://user:private-token@example.com/repo.git");
+
+    try {
+      if (stage === "session") {
+        vi.spyOn(sessions, "openRepositoryIds").mockImplementationOnce(() => {
+          throw failure;
+        });
+      } else if (stage === "inspection") {
+        vi.spyOn(service, "fetchStates").mockRejectedValueOnce(failure);
+      } else {
+        vi.spyOn(service, "fetch").mockRejectedValueOnce(
+          stage === "expected-fetch"
+            ? new GitError(errorFixture({ kind: "network-failed", message: "Offline" }))
+            : failure,
+        );
+      }
+
+      await expect(scheduler.tick()).resolves.toBeUndefined();
+      expect((await scheduler.inspect(client.id)).fetching).toBe(false);
+      if (stage === "expected-fetch") expect(report).not.toHaveBeenCalled();
+      else expect(report).toHaveBeenCalledExactlyOnceWith("Background fetch failed unexpectedly.");
+
+      await scheduler.tick();
+      expect((await scheduler.inspect(client.id)).remotes[0]?.history?.lastSuccess).toBeTruthy();
+      expect(changed).toHaveBeenCalledWith(client.id);
+    } finally {
+      vi.restoreAllMocks();
+      await scheduler.stop();
+    }
+  },
+);
+
 afterEach(async () => {
   for (const db of databases.splice(0)) db.close();
   for (const repo of fixtures.splice(0)) await repo.cleanup();

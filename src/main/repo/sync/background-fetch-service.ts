@@ -1,5 +1,5 @@
 import { errorText } from "@shared/error-codes";
-import { GitError } from "@shared/errors";
+import { GitError, isExpectedKind } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { BackgroundFetchState, FetchHistory } from "@shared/integrations/background-fetch";
 import type { IdentityManager } from "../../identity/identity-manager";
@@ -119,9 +119,11 @@ export class BackgroundFetchService {
   tick(): Promise<void> {
     if (this.pending) return this.pending;
     if (this.stopping) return Promise.resolve();
-    this.pending = this.run().finally(() => {
-      this.pending = null;
-    });
+    this.pending = this.run()
+      .catch(reportUnexpectedFailure)
+      .finally(() => {
+        this.pending = null;
+      });
     return this.pending;
   }
 
@@ -170,18 +172,27 @@ export class BackgroundFetchService {
                 t("main.backgroundFetchService.backgroundFetch"),
                 "main.backgroundFetchService.backgroundFetch",
               );
-            } catch {
+            } catch (error) {
+              reportUnexpectedFailure(error);
             } finally {
               this.fetchingRepository = null;
               this.fetchingProfile = null;
               this.changed(repositoryId);
             }
           }
-        } catch {}
+        } catch (error) {
+          reportUnexpectedFailure(error);
+        }
       }
     } finally {
       this.fetchingRepository = null;
       this.fetchingProfile = null;
     }
   }
+}
+
+function reportUnexpectedFailure(error: unknown): void {
+  if (error instanceof GitError && isExpectedKind(error.kind)) return;
+
+  console.error("Background fetch failed unexpectedly.");
 }
