@@ -1010,5 +1010,7 @@
   "main.appData.importTitle": "Replace development app data?",
   "main.appData.releaseDataUnavailable": "Release app data is missing or invalid. Open the release build first, then close it and try again.",
   "main.repositoryTrust.detectedFeatures": "Detected features ({count})",
-  "main.repositoryTrust.restrictedOperations": "While untrusted, operations requiring filters or custom merge drivers are blocked. Clones that need them remain without checked-out files."
+  "main.repositoryTrust.restrictedOperations": "While untrusted, operations requiring filters or custom merge drivers are blocked. Clones that need them remain without checked-out files.",
+  "main.signatureKeys.failed": "Could not verify this public key. Check the source and fingerprint, GnuPG installation, network connection, or cancellation, then try again. Only public keys that verify this commit can be saved.",
+  "main.signatureKeys.limit": "This profile already has 256 downloaded signing keys. Forget a downloaded key before adding another."
 }

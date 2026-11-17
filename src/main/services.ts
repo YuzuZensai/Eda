@@ -1,3 +1,7 @@
+import { SignerRepository } from "./persistence/signer-repository";
+import { SignerService } from "./repo/history/signer-service";
+import { PublicKeyVerifier } from "./git/security/public-key-verifier";
+import { PublicSigningKeys } from "./providers/public-signing-keys";
 import { RepositoryTrustStore } from "./persistence/repository-trust-store";
 import { RepositoryMemberships } from "./persistence/repository-memberships";
 import { ProfileRepository } from "./persistence/profile-repository";
@@ -381,6 +385,18 @@ export async function createServices(): Promise<Services> {
       },
     });
 
+    const commitSignatures = new CommitSignatureService(
+      git,
+      repositories,
+      new CommitSignatureRepository(db),
+      new SignerService(
+        new SignerRepository(db),
+        new PublicKeyVerifier(runner, git, transportEnvironment),
+        new PublicSigningKeys(request),
+      ),
+    );
+    identity.onChange(() => commitSignatures.cancelAll());
+
     return {
       installation,
       updates,
@@ -399,11 +415,7 @@ export async function createServices(): Promise<Services> {
       repositoryReader: new RepositoryReader(git, repositories, (profileId) =>
         gitlabSelfHosted.status(profileId).accounts.map((account) => account.baseUrl),
       ),
-      commitSignatures: new CommitSignatureService(
-        git,
-        repositories,
-        new CommitSignatureRepository(db),
-      ),
+      commitSignatures,
       backgroundFetch,
       pull: new PullService(git, repositories, writer, remotes, workflows, rebase, preferences),
       rebase,

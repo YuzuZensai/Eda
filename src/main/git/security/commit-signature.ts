@@ -55,9 +55,14 @@ export function parseCommitVerification(
   const signer = identity ? statusText(identity.value.slice((keyId?.length ?? 0) + 1)) : "";
   const ssh = /^Good "git" signature(?: for (.+?))? with \S+ key (SHA256:\S+)$/m.exec(diagnostics);
   const validFingerprint =
-    valid?.[0] && /^(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$/.test(valid[0]) ? valid[0] : undefined;
+    valid?.[0] && /^(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$/.test(valid[0])
+      ? valid[0].toUpperCase()
+      : undefined;
   const fingerprint = validFingerprint ?? ssh?.[2];
-  const primaryFingerprint = valid?.[9];
+  const primaryFingerprint =
+    valid?.[9] && /^(?:[A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$/.test(valid[9])
+      ? valid[9].toUpperCase()
+      : undefined;
   const trustLevel =
     trust === "undefined" ||
     trust === "never" ||
@@ -115,7 +120,22 @@ export function parseCommitVerification(
     reasonCode = "untrusted-key";
   }
 
+  const validity =
+    reasonCode === "bad-signature"
+      ? "invalid"
+      : (validFingerprint || ssh) && reasonCode !== "missing-key"
+        ? "valid"
+        : "unknown";
+  const signerTrust =
+    trustLevel === "never"
+      ? "distrusted"
+      : trustLevel === "fully" || trustLevel === "ultimate"
+        ? "local"
+        : "unknown";
+
   return {
+    validity,
+    signerTrust,
     status,
     format,
     reasonCode,

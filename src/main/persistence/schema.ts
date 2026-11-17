@@ -373,3 +373,43 @@ export const repositoryTrust = sqliteTable("repository_trust", {
   path: text("path").primaryKey().notNull(),
   fingerprint: text("fingerprint").notNull(),
 });
+
+export const signerDecisions = sqliteTable(
+  "signer_decisions",
+  {
+    profileId: text("profile_id")
+      .notNull()
+      .references(() => identities.id, { onDelete: "cascade" }),
+    scope: text("scope").notNull(),
+    repositoryId: text("repository_id"),
+    fingerprint: text("fingerprint").notNull(),
+    identity: text("identity").notNull(),
+    decision: text("decision", { enum: ["trusted", "distrusted"] }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.profileId, table.scope, table.fingerprint] }),
+    foreignKey({
+      columns: [table.profileId, table.repositoryId],
+      foreignColumns: [repositories.identityId, repositories.id],
+    }).onDelete("cascade"),
+    check(
+      "signer_decision_scope",
+      sql`(${table.repositoryId} IS NULL AND ${table.scope} = 'profile') OR (${table.repositoryId} IS NOT NULL AND ${table.scope} = ${table.repositoryId})`,
+    ),
+    check("signer_decision_value", sql`${table.decision} IN ('trusted', 'distrusted')`),
+  ],
+);
+
+export const verificationKeys = sqliteTable(
+  "verification_keys",
+  {
+    profileId: text("profile_id")
+      .notNull()
+      .references(() => identities.id, { onDelete: "cascade" }),
+    fingerprint: text("fingerprint").notNull(),
+    armoredKey: text("armored_key").notNull(),
+    source: text("source").notNull(),
+    fetchedAt: text("fetched_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.profileId, table.fingerprint] })],
+);

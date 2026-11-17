@@ -20,17 +20,29 @@ export class CommitSignatureRepository {
       )
       .get();
 
-    if (!row || row.version !== 1) return null;
+    if (!row || row.version !== 3) return null;
 
     let value: unknown;
 
     try {
-      value = JSON.parse(row.value);
+      const envelope = JSON.parse(row.value) as { checkedAt?: unknown; signature?: unknown };
+      if (
+        typeof envelope.checkedAt !== "number" ||
+        !Number.isFinite(envelope.checkedAt) ||
+        envelope.checkedAt > Date.now() ||
+        Date.now() - envelope.checkedAt > 60_000
+      )
+        return null;
+      value = envelope.signature;
     } catch {
       return null;
     }
 
     return isSignature(value) ? value : null;
+  }
+
+  clear(profileId: string): void {
+    this.db.delete(commitSignatures).where(eq(commitSignatures.profileId, profileId)).run();
   }
 
   record(
@@ -47,14 +59,14 @@ export class CommitSignatureRepository {
 
     if (!owner) return;
 
-    const value = JSON.stringify(signature);
+    const value = JSON.stringify({ checkedAt: Date.now(), signature });
 
     this.db
       .insert(commitSignatures)
-      .values({ profileId, repositoryId, oid, version: 1, value })
+      .values({ profileId, repositoryId, oid, version: 3, value })
       .onConflictDoUpdate({
         target: [commitSignatures.profileId, commitSignatures.repositoryId, commitSignatures.oid],
-        set: { value, version: 1 },
+        set: { value, version: 3 },
       })
       .run();
   }
@@ -78,10 +90,23 @@ function isSignature(value: unknown): value is CommitSignatureVerification {
         "verification-error",
         "unsupported-format",
       ])) &&
+    (value["validity"] === undefined ||
+      isOneOf(value["validity"], ["valid", "invalid", "unknown"])) &&
+    (value["signerTrust"] === undefined ||
+      isOneOf(value["signerTrust"], ["unknown", "local", "trusted", "distrusted"])) &&
+    (value["keyDiscovery"] === undefined || value["keyDiscovery"] === "unavailable") &&
     typeof value["diagnostics"] === "string" &&
-    ["signer", "keyId", "fingerprint", "primaryFingerprint"].every(
-      (key) => value[key] === undefined || typeof value[key] === "string",
-    ) &&
+    [
+      "signer",
+      "keyId",
+      "fingerprint",
+      "primaryFingerprint",
+      "authorEmail",
+      "committerEmail",
+      "keySource",
+      "keyFetchedAt",
+      "trustedIdentity",
+    ].every((key) => value[key] === undefined || typeof value[key] === "string") &&
     (value["trustLevel"] === undefined ||
       isOneOf(value["trustLevel"], ["undefined", "never", "marginal", "fully", "ultimate"]))
   );

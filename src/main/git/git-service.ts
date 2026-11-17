@@ -600,7 +600,11 @@ export class GitService {
     };
   }
 
-  async commitSignature(path: string, oid: string): Promise<CommitSignatureVerification> {
+  async commitSignature(
+    path: string,
+    oid: string,
+    verifyOpenPgp?: (path: string, oid: string) => Promise<CommitSignatureVerification>,
+  ): Promise<CommitSignatureVerification> {
     assertFullObjectId(oid, t("operations.verifyCommitSignature"));
 
     const object = await this.exec(["cat-file", "commit", oid], {
@@ -609,7 +613,19 @@ export class GitService {
       maxStdoutBytes: 1024 * 1024,
     });
 
-    return this.verifyCommitSignature(path, oid, commitSignatureFormat(object.stdout));
+    const format = commitSignatureFormat(object.stdout);
+    const signature =
+      format === "openpgp" && verifyOpenPgp
+        ? await verifyOpenPgp(path, oid)
+        : await this.verifyCommitSignature(path, oid, format);
+    const headers = object.stdout.split("\n\n", 1)[0] ?? "";
+    const authorEmail = /^author .* <([^>]+)> /m.exec(headers)?.[1];
+    const committerEmail = /^committer .* <([^>]+)> /m.exec(headers)?.[1];
+    return {
+      ...signature,
+      ...(authorEmail ? { authorEmail } : {}),
+      ...(committerEmail ? { committerEmail } : {}),
+    };
   }
 
   private async verifyCommitSignature(

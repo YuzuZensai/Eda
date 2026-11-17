@@ -1,3 +1,5 @@
+import type { CommitSignatureVerification } from "../repository/repository-read";
+
 export const MAINTAINER_GITHUB_LOGIN = "YuzuZensai";
 export const MAINTAINER_EMAIL = ["yuzu", "kirameki.cafe"].join("@");
 
@@ -47,4 +49,23 @@ export function isGitHubHttps(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+// These hints tell us where to look. We still verify the commit with the downloaded key.
+export function isGitHubServiceSigningHint(signature: CommitSignatureVerification): boolean {
+  if (signature.format !== "openpgp") return false;
+  const keyId = (signature.keyId ?? signature.fingerprint?.slice(-16))?.toUpperCase();
+  return (
+    signature.committerEmail?.toLowerCase() === "noreply@github.com" ||
+    keyId === "B5690EEEBB952194" ||
+    keyId === "4AEE18F83AFDEB23"
+  );
+}
+
+export function isVerifiedGitHubWebSignature(signature: CommitSignatureVerification): boolean {
+  return (
+    signature.format === "openpgp" &&
+    signature.validity === "valid" &&
+    signature.keySource === "https://github.com/web-flow.gpg"
+  );
 }

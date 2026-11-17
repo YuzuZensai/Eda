@@ -252,6 +252,14 @@ const api: EdaApi = {
       ipcRenderer.invoke(IPC_CHANNELS.repositoryForgetRecovery, id, snapshot),
     inspectCommit: (id, oid, refreshSignature) =>
       ipcRenderer.invoke(IPC_CHANNELS.repositoryInspectCommit, id, oid, refreshSignature),
+    discoverSigningKey: (id, oid, request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryDiscoverSigningKey, id, oid, request),
+    forgetSigningKey: (id, fingerprint) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryForgetSigningKey, id, fingerprint),
+    cancelKeyDiscovery: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositoryCancelKeyDiscovery, id),
+    signerDecisions: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositorySignerDecisions, id),
+    decideSigner: (id, decision, remove) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryDecideSigner, id, decision, remove),
     commitSignature: (id, oid) =>
       ipcRenderer.invoke(IPC_CHANNELS.repositoryCommitSignature, id, oid),
     workingDiff: (request) => ipcRenderer.invoke(IPC_CHANNELS.repositoryWorkingDiff, request),

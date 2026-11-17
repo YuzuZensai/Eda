@@ -1,3 +1,4 @@
+import type { PublicKeyVerifier } from "@main/git/security/public-key-verifier";
 import { openInMemoryDatabase } from "@main/persistence/database";
 import { IdentityRepository } from "@main/persistence/identity-repository";
 import { RepositoryMemberships } from "@main/persistence/repository-memberships";
@@ -142,4 +143,185 @@ it("retries failed requests and validates object IDs before consulting the cache
   await expect(service.read(repository.id, oid)).rejects.toThrow("Commit unavailable");
   expect(cache.read(profile.id, repository.id, oid)).toBeNull();
   expect(await service.read(repository.id, oid)).toEqual(verified);
+});
+
+it.each(["cancel", "profile-change"])("does not save discovered keys after %s", async (action) => {
+  const { git, cache, repository, repositories, profile } = setup();
+  const { SignerRepository } = await import("@main/persistence/signer-repository");
+  const { SignerService } = await import("@main/repo/history/signer-service");
+  const store = new SignerRepository(db);
+  const signature: CommitSignatureVerification = {
+    ...verified,
+    format: "openpgp",
+    validity: "valid",
+    signerTrust: "unknown",
+    fingerprint: "A".repeat(40),
+  };
+  git.commitSignature.mockResolvedValue(signature);
+  let finish!: (value: { signature: CommitSignatureVerification; armoredKey: string }) => void;
+  const verifier = {
+    verify: vi.fn(
+      () =>
+        new Promise<{ signature: CommitSignatureVerification; armoredKey: string }>((resolve) => {
+          finish = resolve;
+        }),
+    ),
+  };
+  const signers = new SignerService(store, verifier, { find: vi.fn() });
+  const service = new CommitSignatureService(git, repositories, cache, signers);
+  const pending = service.discover(repository.id, oid, {
+    source: "manual",
+    armoredKey: "candidate",
+  });
+  await vi.waitFor(() => expect(verifier.verify).toHaveBeenCalledOnce());
+  if (action === "cancel") service.cancelDiscovery(repository.id);
+  else
+    vi.spyOn(repositories, "resolveActiveRepository").mockImplementation(() => {
+      throw new Error("Profile changed");
+    });
+  const failure = expect(pending).rejects.toThrow();
+  finish({ signature, armoredKey: "export" });
+  await failure;
+  expect(store.keyCount(profile.id)).toBe(0);
+});
+
+async function automaticSetup() {
+  const base = setup();
+  const { SignerRepository } = await import("@main/persistence/signer-repository");
+  const { SignerService } = await import("@main/repo/history/signer-service");
+  const store = new SignerRepository(db);
+  const missing: CommitSignatureVerification = {
+    status: "unverified",
+    format: "openpgp",
+    reasonCode: "missing-key",
+    keyId: "A".repeat(16),
+    diagnostics: "",
+  };
+  const valid: CommitSignatureVerification = {
+    ...missing,
+    reasonCode: "untrusted-key",
+    validity: "valid",
+    signerTrust: "unknown",
+    fingerprint: "A".repeat(40),
+  };
+  base.git.commitSignature.mockResolvedValue(missing);
+  const verifier = {
+    verify: vi.fn<PublicKeyVerifier["verify"]>(async () => ({
+      signature: valid,
+      armoredKey: "export",
+    })),
+  };
+  const discovery = {
+    find: vi.fn(async () => ({ armoredKey: "download", source: "https://keys.openpgp.org" })),
+  };
+  const signers = new SignerService(store, verifier, discovery);
+  const service = new CommitSignatureService(base.git, base.repositories, base.cache, signers);
+  return { ...base, service, store, verifier, discovery };
+}
+
+it("shares automatic lookup across commits but verifies each commit without granting trust", async () => {
+  const { service, repository, discovery, verifier, store, profile } = await automaticSetup();
+  const results = await Promise.all([
+    service.read(repository.id, oid),
+    service.read(repository.id, "b".repeat(40)),
+  ]);
+  expect(discovery.find).toHaveBeenCalledOnce();
+  for (const result of results) {
+    expect(result.validity).toBe("valid");
+    expect(result.signerTrust).toBe("unknown");
+  }
+  expect(verifier.verify.mock.calls.map((call) => call[1])).toEqual(
+    expect.arrayContaining([oid, "b".repeat(40)]),
+  );
+  expect(store.keyCount(profile.id)).toBe(1);
+  expect(store.list(profile.id, repository.id)).toEqual([]);
+});
+
+it("cools down failed automatic lookups but permits an explicit retry", async () => {
+  const { service, repository, discovery } = await automaticSetup();
+  discovery.find.mockRejectedValue(new Error("Offline"));
+  expect((await service.read(repository.id, oid)).keyDiscovery).toBe("unavailable");
+  expect(discovery.find).toHaveBeenCalledTimes(4);
+  await service.read(repository.id, "b".repeat(40));
+  expect(discovery.find).toHaveBeenCalledTimes(4);
+  await service.read(repository.id, oid, true);
+  expect(discovery.find).toHaveBeenCalledTimes(8);
+});
+
+it("does not download a forgotten key again when trust review refreshes verification", async () => {
+  const { service, repository, discovery, store, profile } = await automaticSetup();
+  await service.read(repository.id, oid);
+  service.forgetKey(repository.id, "A".repeat(40));
+  expect((await service.read(repository.id, oid, true)).reasonCode).toBe("missing-key");
+  expect(discovery.find).toHaveBeenCalledOnce();
+  expect(store.keyCount(profile.id)).toBe(0);
+});
+
+it.each(["cancel", "profile-change", "remove"])(
+  "does not save an automatic lookup after %s",
+  async (action) => {
+    const { service, repository, discovery, store, profile, repositories, memberships } =
+      await automaticSetup();
+    let finish!: (value: { armoredKey: string; source: string }) => void;
+    discovery.find.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const pending = service.read(repository.id, oid);
+    await vi.waitFor(() => expect(discovery.find).toHaveBeenCalledOnce());
+    if (action === "cancel") service.cancelAll();
+    else if (action === "remove") memberships.remove(repository.id, profile.id);
+    else
+      vi.spyOn(repositories, "resolveActiveRepository").mockImplementation(() => {
+        throw new Error("Profile changed");
+      });
+    const outcome = pending.catch(() => undefined);
+    finish({ armoredKey: "download", source: "https://keys.openpgp.org" });
+    await outcome;
+    expect(store.keyCount(profile.id)).toBe(0);
+  },
+);
+
+it("does not start key discovery in a different profile after local verification finishes", async () => {
+  const { service, repository, repositories, git, discovery } = await automaticSetup();
+  const missing = await git.commitSignature();
+  let finish!: (value: CommitSignatureVerification) => void;
+  git.commitSignature.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = service.read(repository.id, oid);
+  vi.spyOn(repositories, "resolveActiveRepository").mockReturnValue({
+    ...repository,
+    identityId: "other-profile",
+  });
+  const failure = expect(pending).rejects.toThrow();
+  finish(missing);
+  await failure;
+  expect(discovery.find).not.toHaveBeenCalled();
+});
+
+it("does not let an in-flight manual discovery restore a forgotten key", async () => {
+  const { service, repository, discovery, store, profile } = await automaticSetup();
+  let finish!: (value: { armoredKey: string; source: string }) => void;
+  discovery.find.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = service.discover(repository.id, oid, {
+    source: "keyserver",
+    server: "https://keys.openpgp.org",
+  });
+  await vi.waitFor(() => expect(discovery.find).toHaveBeenCalledOnce());
+  service.forgetKey(repository.id, "A".repeat(40));
+  const failure = expect(pending).rejects.toThrow();
+  finish({ armoredKey: "download", source: "https://keys.openpgp.org" });
+  await failure;
+  expect(store.keyCount(profile.id)).toBe(0);
 });

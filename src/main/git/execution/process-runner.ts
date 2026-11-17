@@ -4,7 +4,7 @@ export interface ProcessRequest {
   args: readonly string[];
   cwd?: string;
   env: Readonly<Record<string, string>>;
-  stdin?: string;
+  stdin?: string | Uint8Array;
   signal?: AbortSignal;
   onStderrLine?: (line: string) => void;
   maxStdoutBytes?: number;

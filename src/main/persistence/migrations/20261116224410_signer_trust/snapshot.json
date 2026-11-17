@@ -1,0 +1,2002 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "080a3c09-ab87-4fe1-9bff-21b993fe307c",
+  "prevIds": [
+    "883590a0-a991-4395-9db3-9d5000e14556"
+  ],
+  "ddl": [
+    {
+      "name": "app_state",
+      "entityType": "tables"
+    },
+    {
+      "name": "commit_signatures",
+      "entityType": "tables"
+    },
+    {
+      "name": "content_recovery",
+      "entityType": "tables"
+    },
+    {
+      "name": "fetch_history",
+      "entityType": "tables"
+    },
+    {
+      "name": "github_accounts",
+      "entityType": "tables"
+    },
+    {
+      "name": "gitlab_accounts",
+      "entityType": "tables"
+    },
+    {
+      "name": "gitlab_self_hosted_accounts",
+      "entityType": "tables"
+    },
+    {
+      "name": "identities",
+      "entityType": "tables"
+    },
+    {
+      "name": "operations",
+      "entityType": "tables"
+    },
+    {
+      "name": "profile_drafts",
+      "entityType": "tables"
+    },
+    {
+      "name": "profile_recovery",
+      "entityType": "tables"
+    },
+    {
+      "name": "profile_sessions",
+      "entityType": "tables"
+    },
+    {
+      "name": "repositories",
+      "entityType": "tables"
+    },
+    {
+      "name": "repository_trust",
+      "entityType": "tables"
+    },
+    {
+      "name": "setting_overrides",
+      "entityType": "tables"
+    },
+    {
+      "name": "settings",
+      "entityType": "tables"
+    },
+    {
+      "name": "signer_decisions",
+      "entityType": "tables"
+    },
+    {
+      "name": "verification_keys",
+      "entityType": "tables"
+    },
+    {
+      "name": "workflow_journal",
+      "entityType": "tables"
+    },
+    {
+      "table": "app_state",
+      "name": "id",
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "app_state",
+      "name": "active_identity_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "commit_signatures",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "commit_signatures",
+      "name": "repository_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "commit_signatures",
+      "name": "oid",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "commit_signatures",
+      "name": "version",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "commit_signatures",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "content_recovery",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "content_recovery",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "content_recovery",
+      "name": "repository_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "content_recovery",
+      "name": "version",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "content_recovery",
+      "name": "created_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "content_recovery",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "fetch_history",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "fetch_history",
+      "name": "repository_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "fetch_history",
+      "name": "remote",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "fetch_history",
+      "name": "url_hash",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "fetch_history",
+      "name": "version",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "fetch_history",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "github_accounts",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "github_accounts",
+      "name": "account_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "github_accounts",
+      "name": "login",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "github_accounts",
+      "name": "credential_ref",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "github_accounts",
+      "name": "state",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_accounts",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_accounts",
+      "name": "account_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_accounts",
+      "name": "login",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_accounts",
+      "name": "credential_ref",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_accounts",
+      "name": "state",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_self_hosted_accounts",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_self_hosted_accounts",
+      "name": "base_url",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_self_hosted_accounts",
+      "name": "ignore_tls_errors",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_self_hosted_accounts",
+      "name": "account_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_self_hosted_accounts",
+      "name": "login",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_self_hosted_accounts",
+      "name": "credential_ref",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "gitlab_self_hosted_accounts",
+      "name": "state",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "name",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "name_key",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "sort_order",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "git_name",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "git_email",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "username",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "avatar_path",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "ssh_key_path",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "signing_format",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'none'",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "signing_key_ref",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "sign_commits",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "rules",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'[]'",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "created_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "identities",
+      "name": "updated_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "operations",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "operations",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "operations",
+      "name": "version",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "operations",
+      "name": "updated_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "operations",
+      "name": "record",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "profile_drafts",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "profile_drafts",
+      "name": "repository_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "profile_drafts",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "profile_recovery",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "profile_recovery",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "profile_recovery",
+      "name": "source",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "profile_recovery",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "profile_recovery",
+      "name": "created_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "profile_sessions",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "profile_sessions",
+      "name": "window_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "profile_sessions",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "repositories",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "repositories",
+      "name": "identity_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "repositories",
+      "name": "name",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "repositories",
+      "name": "path",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "repositories",
+      "name": "favourite",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "repositories",
+      "name": "last_opened_at",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "repositories",
+      "name": "created_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "repository_trust",
+      "name": "path",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "repository_trust",
+      "name": "fingerprint",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "repository_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "key",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "settings",
+      "name": "key",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "settings",
+      "name": "value",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "signer_decisions",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "signer_decisions",
+      "name": "scope",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "signer_decisions",
+      "name": "repository_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "signer_decisions",
+      "name": "fingerprint",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "signer_decisions",
+      "name": "identity",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "signer_decisions",
+      "name": "decision",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "verification_keys",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "verification_keys",
+      "name": "fingerprint",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "verification_keys",
+      "name": "armored_key",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "verification_keys",
+      "name": "source",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "verification_keys",
+      "name": "fetched_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "profile_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "repository_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "updated_at",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "record",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "root",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": {
+        "as": "(json_extract(\"record\", '$.root'))",
+        "type": "stored"
+      },
+      "entityType": "columns"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "common_directory",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": {
+        "as": "(json_extract(\"record\", '$.refChange.commonDirectory'))",
+        "type": "stored"
+      },
+      "entityType": "columns"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "mode",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": {
+        "as": "(json_extract(\"record\", '$.mode'))",
+        "type": "stored"
+      },
+      "entityType": "columns"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "state",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": {
+        "as": "(json_extract(\"record\", '$.state'))",
+        "type": "stored"
+      },
+      "entityType": "columns"
+    },
+    {
+      "table": "content_recovery",
+      "name": "content_recovery_owner_created",
+      "columns": [
+        {
+          "value": "profile_id",
+          "isExpression": false
+        },
+        {
+          "value": "repository_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "operations",
+      "name": "operations_profile_updated",
+      "columns": [
+        {
+          "value": "profile_id",
+          "isExpression": false
+        },
+        {
+          "value": "updated_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "profile_recovery",
+      "name": "profile_recovery_profile_created",
+      "columns": [
+        {
+          "value": "profile_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "setting_overrides_profile_key",
+      "columns": [
+        {
+          "value": "profile_id",
+          "isExpression": false
+        },
+        {
+          "value": "key",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"setting_overrides\".\"repository_id\" IS NULL",
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "setting_overrides_repository_key",
+      "columns": [
+        {
+          "value": "profile_id",
+          "isExpression": false
+        },
+        {
+          "value": "repository_id",
+          "isExpression": false
+        },
+        {
+          "value": "key",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"setting_overrides\".\"repository_id\" IS NOT NULL",
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "setting_overrides_owner",
+      "columns": [
+        {
+          "value": "profile_id",
+          "isExpression": false
+        },
+        {
+          "value": "repository_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "workflow_journal_owner_updated",
+      "columns": [
+        {
+          "value": "profile_id",
+          "isExpression": false
+        },
+        {
+          "value": "repository_id",
+          "isExpression": false
+        },
+        {
+          "value": "updated_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "workflow_journal_root_updated",
+      "columns": [
+        {
+          "value": "root",
+          "isExpression": false
+        },
+        {
+          "value": "updated_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "workflow_journal_common_updated",
+      "columns": [
+        {
+          "value": "common_directory",
+          "isExpression": false
+        },
+        {
+          "value": "updated_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "app_state",
+      "name": "fk_app_state_active_identity_id_identities_id_fk",
+      "columns": [
+        "active_identity_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "commit_signatures",
+      "name": "fk_commit_signatures_profile_id_repository_id_repositories_identity_id_id_fk",
+      "columns": [
+        "profile_id",
+        "repository_id"
+      ],
+      "tableTo": "repositories",
+      "columnsTo": [
+        "identity_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "content_recovery",
+      "name": "fk_content_recovery_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "content_recovery",
+      "name": "fk_content_recovery_profile_id_repository_id_repositories_identity_id_id_fk",
+      "columns": [
+        "profile_id",
+        "repository_id"
+      ],
+      "tableTo": "repositories",
+      "columnsTo": [
+        "identity_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "fetch_history",
+      "name": "fk_fetch_history_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "fetch_history",
+      "name": "fk_fetch_history_profile_id_repository_id_repositories_identity_id_id_fk",
+      "columns": [
+        "profile_id",
+        "repository_id"
+      ],
+      "tableTo": "repositories",
+      "columnsTo": [
+        "identity_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "github_accounts",
+      "name": "fk_github_accounts_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "gitlab_accounts",
+      "name": "fk_gitlab_accounts_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "gitlab_self_hosted_accounts",
+      "name": "fk_gitlab_self_hosted_accounts_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "operations",
+      "name": "fk_operations_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "profile_drafts",
+      "name": "fk_profile_drafts_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "profile_drafts",
+      "name": "fk_profile_drafts_profile_id_repository_id_repositories_identity_id_id_fk",
+      "columns": [
+        "profile_id",
+        "repository_id"
+      ],
+      "tableTo": "repositories",
+      "columnsTo": [
+        "identity_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "profile_recovery",
+      "name": "fk_profile_recovery_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "profile_sessions",
+      "name": "fk_profile_sessions_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "repositories",
+      "name": "fk_repositories_identity_id_identities_id_fk",
+      "columns": [
+        "identity_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "fk_setting_overrides_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "fk_setting_overrides_profile_id_repository_id_repositories_identity_id_id_fk",
+      "columns": [
+        "profile_id",
+        "repository_id"
+      ],
+      "tableTo": "repositories",
+      "columnsTo": [
+        "identity_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "signer_decisions",
+      "name": "fk_signer_decisions_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "signer_decisions",
+      "name": "fk_signer_decisions_profile_id_repository_id_repositories_identity_id_id_fk",
+      "columns": [
+        "profile_id",
+        "repository_id"
+      ],
+      "tableTo": "repositories",
+      "columnsTo": [
+        "identity_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "verification_keys",
+      "name": "fk_verification_keys_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "fk_workflow_journal_profile_id_identities_id_fk",
+      "columns": [
+        "profile_id"
+      ],
+      "tableTo": "identities",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "fk_workflow_journal_profile_id_repository_id_repositories_identity_id_id_fk",
+      "columns": [
+        "profile_id",
+        "repository_id"
+      ],
+      "tableTo": "repositories",
+      "columnsTo": [
+        "identity_id",
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
+      "table": "commit_signatures",
+      "name": "commit_signatures_pk",
+      "columns": [
+        "profile_id",
+        "repository_id",
+        "oid"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "content_recovery",
+      "name": "content_recovery_pk",
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "fetch_history",
+      "name": "fetch_history_pk",
+      "columns": [
+        "profile_id",
+        "repository_id",
+        "remote",
+        "url_hash"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "github_accounts",
+      "name": "github_accounts_pk",
+      "columns": [
+        "profile_id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "gitlab_accounts",
+      "name": "gitlab_accounts_pk",
+      "columns": [
+        "profile_id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "gitlab_self_hosted_accounts",
+      "name": "gitlab_self_hosted_accounts_pk",
+      "columns": [
+        "profile_id",
+        "base_url"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "identities",
+      "name": "identities_pk",
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "operations",
+      "name": "operations_pk",
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "profile_drafts",
+      "name": "profile_drafts_pk",
+      "columns": [
+        "profile_id",
+        "repository_id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "profile_recovery",
+      "name": "profile_recovery_pk",
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "profile_sessions",
+      "name": "profile_sessions_pk",
+      "columns": [
+        "profile_id",
+        "window_id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "repositories",
+      "name": "repositories_pk",
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "setting_overrides_pk",
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "settings",
+      "name": "settings_pk",
+      "columns": [
+        "key"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "signer_decisions",
+      "name": "signer_decisions_pk",
+      "columns": [
+        "profile_id",
+        "scope",
+        "fingerprint"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "verification_keys",
+      "name": "verification_keys_pk",
+      "columns": [
+        "profile_id",
+        "fingerprint"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "workflow_journal_pk",
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "app_state",
+      "name": "app_state_pk",
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "repository_trust",
+      "name": "repository_trust_pk",
+      "columns": [
+        "path"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
+      "table": "repositories",
+      "name": "repositories_identity_path",
+      "columns": [
+        "identity_id",
+        "path"
+      ],
+      "nameExplicit": true,
+      "entityType": "uniques"
+    },
+    {
+      "table": "repositories",
+      "name": "repositories_owner",
+      "columns": [
+        "identity_id",
+        "id"
+      ],
+      "nameExplicit": true,
+      "entityType": "uniques"
+    },
+    {
+      "table": "identities",
+      "name": "identities_name_key_unique",
+      "columns": [
+        "name_key"
+      ],
+      "nameExplicit": false,
+      "entityType": "uniques"
+    },
+    {
+      "table": "app_state",
+      "name": "app_state_single_row",
+      "value": "\"id\" = 1",
+      "entityType": "checks"
+    },
+    {
+      "table": "commit_signatures",
+      "name": "commit_signatures_value_json",
+      "value": "json_valid(\"value\")",
+      "entityType": "checks"
+    },
+    {
+      "table": "content_recovery",
+      "name": "content_recovery_version",
+      "value": "\"version\" > 0",
+      "entityType": "checks"
+    },
+    {
+      "table": "content_recovery",
+      "name": "content_recovery_value_json",
+      "value": "CASE WHEN json_valid(\"value\") THEN json_type(\"value\") = 'object' ELSE 0 END",
+      "entityType": "checks"
+    },
+    {
+      "table": "fetch_history",
+      "name": "fetch_history_version",
+      "value": "\"version\" > 0",
+      "entityType": "checks"
+    },
+    {
+      "table": "fetch_history",
+      "name": "fetch_history_value_json",
+      "value": "CASE WHEN json_valid(\"value\") THEN json_type(\"value\") = 'object' ELSE 0 END",
+      "entityType": "checks"
+    },
+    {
+      "table": "github_accounts",
+      "name": "github_accounts_state",
+      "value": "\"state\" IN ('connected', 'expired', 'revoked')",
+      "entityType": "checks"
+    },
+    {
+      "table": "gitlab_accounts",
+      "name": "gitlab_accounts_state",
+      "value": "\"state\" IN ('connected', 'expired', 'revoked')",
+      "entityType": "checks"
+    },
+    {
+      "table": "gitlab_self_hosted_accounts",
+      "name": "gitlab_self_hosted_accounts_state",
+      "value": "\"state\" IN ('connected', 'expired', 'revoked')",
+      "entityType": "checks"
+    },
+    {
+      "table": "identities",
+      "name": "identities_name",
+      "value": "length(trim(\"name\")) BETWEEN 1 AND 100",
+      "entityType": "checks"
+    },
+    {
+      "table": "identities",
+      "name": "identities_name_key",
+      "value": "length(\"name_key\") > 0",
+      "entityType": "checks"
+    },
+    {
+      "table": "identities",
+      "name": "identities_signing_format",
+      "value": "\"signing_format\" IN ('ssh', 'gpg', 'none')",
+      "entityType": "checks"
+    },
+    {
+      "table": "identities",
+      "name": "identities_sign_commits",
+      "value": "\"sign_commits\" IN (0, 1)",
+      "entityType": "checks"
+    },
+    {
+      "table": "identities",
+      "name": "identities_rules_json",
+      "value": "CASE WHEN json_valid(\"rules\") THEN json_type(\"rules\") = 'array' ELSE 0 END",
+      "entityType": "checks"
+    },
+    {
+      "table": "operations",
+      "name": "operations_version",
+      "value": "\"version\" > 0",
+      "entityType": "checks"
+    },
+    {
+      "table": "operations",
+      "name": "operations_record_json",
+      "value": "CASE WHEN json_valid(\"record\") THEN json_type(\"record\") = 'object' ELSE 0 END",
+      "entityType": "checks"
+    },
+    {
+      "table": "profile_drafts",
+      "name": "profile_drafts_value_json",
+      "value": "CASE WHEN json_valid(\"value\") THEN json_type(\"value\") = 'object' ELSE 0 END",
+      "entityType": "checks"
+    },
+    {
+      "table": "profile_sessions",
+      "name": "profile_sessions_value_json",
+      "value": "CASE WHEN json_valid(\"value\") THEN json_type(\"value\") = 'object' ELSE 0 END",
+      "entityType": "checks"
+    },
+    {
+      "table": "repositories",
+      "name": "repositories_favourite",
+      "value": "\"favourite\" IN (0, 1)",
+      "entityType": "checks"
+    },
+    {
+      "table": "setting_overrides",
+      "name": "setting_overrides_value_json",
+      "value": "json_valid(\"value\")",
+      "entityType": "checks"
+    },
+    {
+      "table": "settings",
+      "name": "settings_value_json",
+      "value": "json_valid(\"value\")",
+      "entityType": "checks"
+    },
+    {
+      "table": "signer_decisions",
+      "name": "signer_decision_scope",
+      "value": "(\"repository_id\" IS NULL AND \"scope\" = 'profile') OR (\"repository_id\" IS NOT NULL AND \"scope\" = \"repository_id\")",
+      "entityType": "checks"
+    },
+    {
+      "table": "signer_decisions",
+      "name": "signer_decision_value",
+      "value": "\"decision\" IN ('trusted', 'distrusted')",
+      "entityType": "checks"
+    },
+    {
+      "table": "workflow_journal",
+      "name": "workflow_journal_record_json",
+      "value": "CASE WHEN json_valid(\"record\") THEN json_type(\"record\") = 'object' ELSE 0 END",
+      "entityType": "checks"
+    }
+  ],
+  "renames": []
+}

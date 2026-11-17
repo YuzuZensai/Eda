@@ -1,3 +1,4 @@
+import { PublicKeyVerifier, splitCommitSignature } from "@main/git/security/public-key-verifier";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -141,6 +142,15 @@ it("verifies real SSH signatures, rejects tampering and reports missing trust or
       reasonCode: "missing-trust",
     });
 
+    const independent = await new PublicKeyVerifier(new NodeProcessRunner(), repo.git).verify(
+      repo.path,
+      oid,
+      null,
+      AbortSignal.timeout(10_000),
+    );
+    expect(independent.signature).toMatchObject({ validity: "valid", signerTrust: "unknown" });
+    expect(independent.signature.fingerprint).toMatch(/^SHA256:/);
+
     const allowed = join(repo.home, "allowed-signers");
     await writeFile(allowed, `test@eda.invalid ${await readFile(`${key}.pub`, "utf8")}`);
     await repo.run(["config", "gpg.ssh.allowedSignersFile", allowed]);
@@ -153,7 +163,11 @@ it("verifies real SSH signatures, rejects tampering and reports missing trust or
       trustLevel: "fully",
     });
     expect(verified.signature.fingerprint).toMatch(/^SHA256:/);
-    expect(await repo.git.commitSignature(repo.path, oid)).toEqual(verified.signature);
+    expect(await repo.git.commitSignature(repo.path, oid)).toEqual({
+      ...verified.signature,
+      authorEmail: "test@eda.invalid",
+      committerEmail: "test@eda.invalid",
+    });
     expect(await repo.run(["show-ref"])).toBe(before);
     expect(await repo.run(["status", "--porcelain"])).toBe("");
 
@@ -262,6 +276,27 @@ it("verifies real GPG signatures and distinguishes missing and untrusted public 
       status: "unverified",
       reasonCode: "missing-key",
     });
+    const verifier = new PublicKeyVerifier(runner, unknown, { GNUPGHOME: toolPath(other) });
+    const armor = gpg(trusted, ["--armor", "--export", key]);
+    const discovered = await verifier.verify(repo.path, oid, armor, AbortSignal.timeout(10_000));
+    expect(discovered.signature).toMatchObject({
+      validity: "valid",
+      signerTrust: "unknown",
+      fingerprint: key,
+    });
+    expect(discovered.armoredKey).toContain("BEGIN PGP PUBLIC KEY BLOCK");
+    expect((await unknown.commitSignature(repo.path, oid)).reasonCode).toBe("missing-key");
+    const secret = gpg(trusted, ["--armor", "--export-secret-keys", key]).replaceAll(
+      "PRIVATE KEY",
+      "PUBLIC KEY",
+    );
+    await expect(
+      verifier.verify(repo.path, oid, secret, AbortSignal.timeout(10_000)),
+    ).rejects.toThrow();
+    await expect(
+      verifier.verify(repo.path, oid, "invalid", AbortSignal.timeout(10_000)),
+    ).rejects.toThrow();
+
     const publicKey = join(repo.home, "public.asc");
     await writeFile(publicKey, gpg(trusted, ["--armor", "--export", key]));
     gpg(other, ["--import", toolPath(publicKey)]);
@@ -276,6 +311,9 @@ it("verifies real GPG signatures and distinguishes missing and untrusted public 
       operation: "tamper fixture",
       stdin: object.replace("GPG signed commit", "Changed signed commit"),
     });
+    await expect(
+      verifier.verify(repo.path, tampered.stdout.trim(), armor, AbortSignal.timeout(10_000)),
+    ).rejects.toThrow();
     expect((await git.inspectCommit(repo.path, tampered.stdout.trim())).signature.status).toBe(
       "invalid",
     );
@@ -296,4 +334,31 @@ it("verifies real GPG signatures and distinguishes missing and untrusted public 
     }
     await repo.cleanup();
   }
+});
+
+it("separates cryptographic validity from unknown or explicitly denied identity trust", () => {
+  expect(
+    parseCommitVerification("openpgp", 0, `${good}\n${valid}\n[GNUPG:] TRUST_UNDEFINED`),
+  ).toMatchObject({ validity: "valid", signerTrust: "unknown" });
+  expect(
+    parseCommitVerification("openpgp", 1, `${good}\n${valid}\n[GNUPG:] TRUST_NEVER`),
+  ).toMatchObject({ validity: "valid", signerTrust: "distrusted" });
+  expect(parseCommitVerification("openpgp", 1, `${valid}\n[GNUPG:] BADSIG key bad`)).toMatchObject({
+    validity: "invalid",
+  });
+  expect(
+    parseCommitVerification("openpgp", 1, `${valid}\n[GNUPG:] REVKEYSIG key revoked`),
+  ).toMatchObject({ validity: "valid", reasonCode: "revoked-key", status: "invalid" });
+});
+
+it("preserves signed bytes and rejects ambiguous signature headers", () => {
+  const raw =
+    "tree abc\nauthor A <a@b> 1 +0000\ngpgsig -----BEGIN PGP SIGNATURE-----\n line\n -----END PGP SIGNATURE-----\n\nMessage\n\n";
+  expect(splitCommitSignature(raw)).toEqual({
+    payload: "tree abc\nauthor A <a@b> 1 +0000\n\nMessage\n\n",
+    signature: "-----BEGIN PGP SIGNATURE-----\nline\n-----END PGP SIGNATURE-----\n",
+  });
+  expect(() =>
+    splitCommitSignature(raw.replace("\n\nMessage", "\ngpgsig-sha256 duplicate\n\nMessage")),
+  ).toThrow();
 });

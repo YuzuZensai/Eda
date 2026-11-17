@@ -158,3 +158,24 @@ it.each([false, true])(
     }
   },
 );
+
+it("expires verification evidence so local key and trust changes are rechecked", () => {
+  const db = openInMemoryDatabase();
+  const now = vi.spyOn(Date, "now").mockReturnValue(100_000);
+  try {
+    const { cache, work, repository } = setup(db);
+    const signature: CommitSignatureVerification = {
+      status: "unverified",
+      format: "openpgp",
+      reasonCode: "missing-key",
+      diagnostics: "",
+    };
+    cache.record(work.id, repository.id, "a".repeat(40), signature);
+    expect(cache.read(work.id, repository.id, "a".repeat(40))).toEqual(signature);
+    now.mockReturnValue(160_001);
+    expect(cache.read(work.id, repository.id, "a".repeat(40))).toBeNull();
+  } finally {
+    now.mockRestore();
+    db.close();
+  }
+});

@@ -96,7 +96,30 @@ export interface CommitInspection {
 
 export type CommitSignatureFormat = "openpgp" | "ssh" | "x509" | "unknown";
 
+export type SignerTrust = "unknown" | "local" | "trusted" | "distrusted";
+export interface SignerDecision {
+  fingerprint: string;
+  identity: string;
+  scope: "repository" | "profile";
+  decision: "trusted" | "distrusted";
+}
+export type PublicKeyRequest =
+  | { source: "automatic" }
+  | { source: "github"; account: string }
+  | { source: "keyserver"; server: string }
+  | { source: "manual"; armoredKey: string };
+
 export interface CommitSignatureVerification {
+  validity?: "valid" | "invalid" | "unknown";
+  signerTrust?: SignerTrust;
+  trustedIdentity?: string;
+  trustScope?: "repository" | "profile";
+  keySource?: string;
+  keyFetchedAt?: string;
+  keyDiscovery?: "unavailable";
+  identityMismatch?: boolean;
+  authorEmail?: string;
+  committerEmail?: string;
   status: "verified" | "invalid" | "unverified" | "unsigned";
   format: CommitSignatureFormat | null;
   reasonCode:

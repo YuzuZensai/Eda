@@ -1,3 +1,4 @@
+import type { PublicKeyRequest, SignerDecision } from "./repository/repository-read";
 import type { ProviderRepositoryPage } from "./integrations/provider-repositories";
 import type {
   GitLabSelfHostedStatus,
@@ -412,6 +413,15 @@ export interface EdaApi {
       oid: string,
       refreshSignature?: boolean,
     ): Promise<Result<CommitInspection>>;
+    discoverSigningKey(
+      id: string,
+      oid: string,
+      request: PublicKeyRequest,
+    ): Promise<Result<CommitSignatureVerification>>;
+    forgetSigningKey(id: string, fingerprint: string): Promise<Result<void>>;
+    cancelKeyDiscovery(id: string): Promise<Result<void>>;
+    signerDecisions(id: string): Promise<Result<SignerDecision[]>>;
+    decideSigner(id: string, decision: SignerDecision, remove: boolean): Promise<Result<void>>;
     commitSignature(id: string, oid: string): Promise<Result<CommitSignatureVerification>>;
     ignoredFiles(id: string): Promise<Result<{ paths: string[]; truncated: boolean }>>;
     openEditor(id: string): Promise<Result<void>>;
@@ -689,6 +699,11 @@ export const IPC_CHANNELS = {
   repositoryPreviewCommit: "repository:previewCommit",
   repositoryForgetRecovery: "repository:forgetRecovery",
   repositoryInspectCommit: "repository:inspectCommit",
+  repositoryDiscoverSigningKey: "repository:discoverSigningKey",
+  repositoryForgetSigningKey: "repository:forgetSigningKey",
+  repositoryCancelKeyDiscovery: "repository:cancelKeyDiscovery",
+  repositorySignerDecisions: "repository:signerDecisions",
+  repositoryDecideSigner: "repository:decideSigner",
   repositoryCommitSignature: "repository:commitSignature",
   repositoryWorkingDiff: "repository:workingDiff",
   repositoryCommitDiff: "repository:commitDiff",
