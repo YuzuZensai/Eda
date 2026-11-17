@@ -9,8 +9,11 @@ export function useRepositoryRemotes(repositoryId: string) {
   const loadRevision = useRef(0);
   const running = useRef(false);
   const mounted = useRef(false);
+  const ready = useRef(false);
   const contextRevision = useRef(0);
   const [state, setState] = useState<RemoteState>({ remotes: [], branches: [] });
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [branch, setBranch] = useState("");
   const [upstream, setUpstream] = useState("");
   const [edit, setEdit] = useState<RemoteChange>({ kind: "add", name: "origin", url: "" });
@@ -20,23 +23,30 @@ export function useRepositoryRemotes(repositoryId: string) {
   const [message, setMessage] = useState<string | null>(null);
   const load = async () => {
     const revision = ++loadRevision.current;
+    ready.current = false;
+    setLoading(true);
+    setLoadError(null);
+
     try {
       const result = await window.eda.remotes.inspect(repositoryId);
 
       if (revision !== loadRevision.current) return;
 
       if (!result.ok) {
-        setError(errorMessage(result.error));
+        setLoadError(errorMessage(result.error));
         return;
       }
 
       setState(result.value);
+      ready.current = true;
 
       const current = result.value.branches.find((item) => item.isHead)?.name ?? "";
 
       setBranch((old) => old || current);
     } catch (error) {
-      if (revision === loadRevision.current) setError(errorMessage(error));
+      if (revision === loadRevision.current) setLoadError(errorMessage(error));
+    } finally {
+      if (revision === loadRevision.current) setLoading(false);
     }
   };
 
@@ -54,13 +64,14 @@ export function useRepositoryRemotes(repositoryId: string) {
     void load();
     return () => {
       mounted.current = false;
+      ready.current = false;
       loadRevision.current++;
       contextRevision.current++;
     };
   }, [repositoryId]);
 
   const run = async <T>(kindKey: MessageKey, work: () => Promise<Result<T>>) => {
-    if (!mounted.current || running.current) return;
+    if (!mounted.current || !ready.current || running.current) return;
     running.current = true;
     const context = contextRevision.current;
 
@@ -100,6 +111,9 @@ export function useRepositoryRemotes(repositoryId: string) {
 
   return {
     state,
+    loading,
+    loadError,
+    reload: load,
     branch,
     setBranch,
     upstream,

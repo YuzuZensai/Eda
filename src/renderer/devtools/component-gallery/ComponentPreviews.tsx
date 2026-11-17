@@ -6,6 +6,8 @@ import type {
 } from "@shared/repository/repository-read";
 import { t } from "@shared/i18n";
 import { useState } from "react";
+import type { RemoteChange } from "@shared/integrations/remotes";
+import { RemoteConfiguration } from "../../features/sync/RemoteConfiguration";
 
 import type { RebasePlanEntry } from "@shared/workflows/rebase";
 import type { SshKey } from "@shared/identity/ssh";
@@ -49,6 +51,34 @@ export function ThemesPreview() {
   });
 
   return <ThemePreferences value={theme} onChange={setTheme} />;
+}
+
+export function RemotesPreview() {
+  const [loading, setLoading] = useState(true);
+  const [edit, setEdit] = useState<RemoteChange>({ kind: "add", name: "origin", url: "" });
+
+  return (
+    <div className="space-y-4">
+      <Checkbox checked={loading} onChange={(event) => setLoading(event.target.checked)}>
+        {t("remotes.loading")}
+      </Checkbox>
+      <RemoteConfiguration
+        remotes={[
+          {
+            name: "origin",
+            fetchUrls: ["https://example.com/team/repo.git"],
+            pushUrls: ["https://example.com/team/repo.git"],
+          },
+        ]}
+        edit={edit}
+        busy={false}
+        loading={loading}
+        onEdit={setEdit}
+        onRemove={() => setEdit({ kind: "add", name: "", url: "" })}
+        onSave={() => setEdit({ kind: "add", name: "", url: "" })}
+      />
+    </div>
+  );
 }
 
 export function UpdatesPreview() {

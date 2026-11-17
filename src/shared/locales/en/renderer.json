@@ -1,4 +1,5 @@
 {
+  "remotes.loading": "Loading remotes and branch tracking…",
   "externalLinkButton.copyHint": "Open in browser · Hold {modifier} to copy URL",
   "profilesSettings.moveUp": "Move {name} up",
   "profilesSettings.moveDown": "Move {name} down",

@@ -1,11 +1,12 @@
 import { t } from "@shared/i18n";
 import type { RemoteChange, RemoteSummary } from "@shared/integrations/remotes";
-import { Button, Input } from "../../components/ui/index";
+import { Button, Input, Skeleton } from "../../components/ui/index";
 
 export function RemoteConfiguration({
   remotes,
   edit,
-  busy,
+  busy: actionBusy,
+  loading = false,
   onEdit,
   onRemove,
   onSave,
@@ -13,22 +14,38 @@ export function RemoteConfiguration({
   remotes: RemoteSummary[];
   edit: RemoteChange;
   busy: boolean;
+  loading?: boolean;
   onEdit: (change: RemoteChange) => void;
   onRemove: (name: string) => void;
   onSave: () => void;
 }) {
+  const busy = actionBusy || loading;
+
   return (
     <>
       <div className="space-y-3">
-        {remotes.map((item) => (
+        {(loading && !remotes.length
+          ? [{ name: "loading", fetchUrls: [], pushUrls: [] }]
+          : remotes
+        ).map((item) => (
           <div key={item.name} className="border-b border-border-subtle pb-3 text-xs">
-            <p className="font-medium">{item.name}</p>
-            <p className="break-all text-text-tertiary">
-              {t("remotes.remoteConfiguration.fetch", { fetchUrls: item.fetchUrls.join(", ") })}
-            </p>
-            <p className="break-all text-text-tertiary">
-              {t("remotes.remoteConfiguration.push", { pushUrls: item.pushUrls.join(", ") })}
-            </p>
+            <div className="font-medium">
+              {loading ? <Skeleton className="h-4 w-24" /> : item.name}
+            </div>
+            <div className="break-all text-text-tertiary">
+              {loading ? (
+                <Skeleton className="h-4 w-3/4" />
+              ) : (
+                t("remotes.remoteConfiguration.fetch", { fetchUrls: item.fetchUrls.join(", ") })
+              )}
+            </div>
+            <div className="break-all text-text-tertiary">
+              {loading ? (
+                <Skeleton className="h-4 w-3/4" />
+              ) : (
+                t("remotes.remoteConfiguration.push", { pushUrls: item.pushUrls.join(", ") })
+              )}
+            </div>
             <div className="mt-2 flex flex-wrap gap-1">
               <Button
                 size="sm"

@@ -481,6 +481,7 @@ export const COMPONENT_EXPORTS: Record<string, readonly string[]> = {
   "devtools/component-gallery/ComponentGallery.tsx": ["ComponentGallery"],
   "devtools/component-gallery/ComponentPreviews.tsx": [
     "ThemesPreview",
+    "RemotesPreview",
     "UpdatesPreview",
     "RebasePreview",
     "KeysPreview",

@@ -56,5 +56,6 @@ export const PREVIEW_ANCHORS: Record<string, string> = {
   "features/settings/appearance/ThemeGrid.tsx": "gallery-identity",
   "features/updates/UpdatesSettings.tsx": "gallery-states",
   "features/workflows/RebasePlanEditor.tsx": "gallery-features",
+  "features/sync/RemoteConfiguration.tsx": "gallery-features",
   "features/credentials/SshKeyList.tsx": "gallery-features",
 };

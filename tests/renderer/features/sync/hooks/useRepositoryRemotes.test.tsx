@@ -73,7 +73,34 @@ it("handles transport rejections and allows a retry", async () => {
 it("handles rejected initial loads without an unhandled promise", async () => {
   inspect.mockRejectedValueOnce(new Error("transport closed"));
   await act(async () => root.render(<View repositoryId="other" />));
-  expect(api.error).toBeTruthy();
+  expect(api.loadError).toBeTruthy();
+  expect(api.loading).toBe(false);
+  const work = vi.fn(async () => ok(undefined));
+  await act(async () => api.run("main.remoteService.configureRemote", work));
+  expect(work).not.toHaveBeenCalled();
+
+  await act(async () => api.reload());
+  expect(api.loadError).toBeNull();
+  await act(async () => api.run("main.remoteService.configureRemote", work));
+  expect(work).toHaveBeenCalledOnce();
+});
+
+it("keeps mutations blocked until the current repository finishes loading", async () => {
+  let finish!: (value: Result<RemoteState>) => void;
+  inspect.mockImplementationOnce(
+    () =>
+      new Promise<Result<RemoteState>>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => root.render(<View repositoryId="other" />));
+  expect(api.loading).toBe(true);
+  const work = vi.fn(async () => ok(undefined));
+  await act(async () => api.run("main.remoteService.configureRemote", work));
+  expect(work).not.toHaveBeenCalled();
+  await act(async () => finish(ok(state("develop"))));
+  expect(api.loading).toBe(false);
+  expect(api.branch).toBe("develop");
 });
 
 it("clears the old repository's tracking and remote edits when the target changes", async () => {
@@ -89,6 +116,31 @@ it("clears the old repository's tracking and remote edits when the target change
   expect(api.upstream).toBe("");
   expect(api.edit).toEqual({ kind: "add", name: "origin", url: "" });
   expect(api.remove).toBeNull();
+});
+
+it("does not clear loading when an earlier repository inspection finishes", async () => {
+  let finishOld!: (value: Result<RemoteState>) => void;
+  let finishNew!: (value: Result<RemoteState>) => void;
+  inspect.mockImplementationOnce(
+    () =>
+      new Promise<Result<RemoteState>>((resolve) => {
+        finishOld = resolve;
+      }),
+  );
+  await act(async () => root.render(<View repositoryId="old" />));
+  inspect.mockImplementationOnce(
+    () =>
+      new Promise<Result<RemoteState>>((resolve) => {
+        finishNew = resolve;
+      }),
+  );
+  await act(async () => root.render(<View repositoryId="new" />));
+  await act(async () => finishOld(ok(state("old-branch"))));
+  expect(api.loading).toBe(true);
+  expect(api.branch).toBe("");
+  await act(async () => finishNew(ok(state("new-branch"))));
+  expect(api.loading).toBe(false);
+  expect(api.branch).toBe("new-branch");
 });
 
 it("does not refresh the new repository from a completed action's stale reload", async () => {

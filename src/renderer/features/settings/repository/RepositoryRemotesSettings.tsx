@@ -1,11 +1,21 @@
 import { t } from "@shared/i18n";
 import { useRepositoryRemotes } from "../../sync/hooks/useRepositoryRemotes";
 import { RemoteConfiguration } from "../../sync/RemoteConfiguration";
-import { Button, Dialog, ErrorDialog, Select } from "../../../components/ui/index";
+import {
+  Button,
+  Dialog,
+  ErrorDialog,
+  Select,
+  Skeleton,
+  StatusBanner,
+} from "../../../components/ui/index";
 
 export function RepositoryRemotesSettings({ repositoryId }: { repositoryId: string }) {
   const {
     state,
+    loading,
+    loadError,
+    reload,
     branch,
     setBranch,
     upstream,
@@ -21,13 +31,33 @@ export function RepositoryRemotesSettings({ repositoryId }: { repositoryId: stri
     setError,
     message,
   } = useRepositoryRemotes(repositoryId);
+  const disabled = !!busy || loading || !!loadError;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" aria-busy={loading}>
+      {loading && (
+        <span role="status" className="sr-only">
+          {t("remotes.loading")}
+        </span>
+      )}
+      {loadError && (
+        <StatusBanner
+          label={t("settings.remotes")}
+          tone="error"
+          action={
+            <Button size="sm" onClick={() => void reload()}>
+              {t("common.retry")}
+            </Button>
+          }
+        >
+          {loadError}
+        </StatusBanner>
+      )}
       <RemoteConfiguration
         remotes={state.remotes}
         edit={edit}
-        busy={!!busy}
+        busy={disabled}
+        loading={loading}
         onEdit={setEdit}
         onRemove={setRemove}
         onSave={() =>
@@ -51,14 +81,16 @@ export function RepositoryRemotesSettings({ repositoryId }: { repositoryId: stri
             className="w-full"
             aria-label={t("settings.repositoryRemotesSettings.localBranch")}
             value={branch}
-            disabled={!!busy}
+            disabled={disabled}
             onValueChange={(value) => {
               setBranch(value);
               setUpstream("");
             }}
           >
             <option value="" disabled>
-              {t("settings.repositoryRemotesSettings.chooseABranch")}
+              {loading
+                ? t("remotes.loading")
+                : t("settings.repositoryRemotesSettings.chooseABranch")}
             </option>
 
             {state.branches
@@ -69,11 +101,17 @@ export function RepositoryRemotesSettings({ repositoryId }: { repositoryId: stri
           </Select>
         </label>
 
-        <p className="text-sm">
-          {selectedBranch?.upstream
-            ? `${selectedBranch.upstream} ${selectedBranch.upstreamState || t("settings.repositoryRemotesSettings.upToDate")}`
-            : t("settings.repositoryRemotesSettings.noUpstreamConfigured")}
-        </p>
+        {loading ? (
+          <Skeleton className="h-5 w-48" />
+        ) : (
+          !loadError && (
+            <p className="text-sm">
+              {selectedBranch?.upstream
+                ? `${selectedBranch.upstream} ${selectedBranch.upstreamState || t("settings.repositoryRemotesSettings.upToDate")}`
+                : t("settings.repositoryRemotesSettings.noUpstreamConfigured")}
+            </p>
+          )
+        )}
 
         <label className="block space-y-1 text-xs">
           {t("settings.repositoryRemotesSettings.upstream")}
@@ -83,10 +121,12 @@ export function RepositoryRemotesSettings({ repositoryId }: { repositoryId: stri
             className="w-full"
             aria-label={t("settings.repositoryRemotesSettings.upstream")}
             value={upstream}
-            disabled={!!busy}
+            disabled={disabled}
             onValueChange={(value) => setUpstream(value)}
           >
-            <option value="">{t("settings.repositoryRemotesSettings.noUpstream")}</option>
+            <option value="">
+              {loading ? t("remotes.loading") : t("settings.repositoryRemotesSettings.noUpstream")}
+            </option>
 
             {state.branches
               .filter((item) => item.remote)
@@ -99,7 +139,7 @@ export function RepositoryRemotesSettings({ repositoryId }: { repositoryId: stri
         </label>
 
         <Button
-          disabled={!!busy || !branch || (!upstream && !selectedBranch?.upstream)}
+          disabled={disabled || !branch || (!upstream && !selectedBranch?.upstream)}
           onClick={() =>
             void run("main.remoteService.setUpstream", () =>
               window.eda.remotes.track(repositoryId, branch, upstream || null),
@@ -131,7 +171,7 @@ export function RepositoryRemotesSettings({ repositoryId }: { repositoryId: stri
           onClose={() => setRemove(null)}
           footer={
             <Button
-              disabled={!!busy}
+              disabled={disabled}
               onClick={() => {
                 const name = remove;
                 setRemove(null);

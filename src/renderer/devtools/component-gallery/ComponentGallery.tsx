@@ -9,6 +9,7 @@ import {
   KeysPreview,
   LayoutPreview,
   RebasePreview,
+  RemotesPreview,
   RepositoryRowsPreview,
   StatesPreview,
   ThemesPreview,
@@ -132,6 +133,11 @@ export function ComponentGallery() {
 
       <Sample id="gallery-features" title={t("settings.componentGallery.featureControls")}>
         <div className="space-y-6 text-sm">
+          <div>
+            <RemotesPreview />
+            <Name>{t("settings.remotes")}</Name>
+          </div>
+
           <div>
             <KeysPreview />
             <Name>{t("settings.componentGallery.sshKeyListSampleKeysLocalAssignment")}</Name>

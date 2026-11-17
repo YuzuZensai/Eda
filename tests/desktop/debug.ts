@@ -84,6 +84,43 @@ try {
   await page.getByRole("button", { name: "Components", exact: true }).click();
   await page.locator("#gallery-identity .profile-avatar").last().waitFor();
 
+  const remoteLoading = page.getByRole("checkbox", {
+    name: "Loading remotes and branch tracking…",
+  });
+  const remoteName = page.getByRole("textbox", { name: "Remote name", exact: true });
+  const remoteSave = page.getByRole("button", { name: "Save remote", exact: true });
+  const originalViewport = page.viewportSize();
+
+  for (const width of [1440, 1000]) {
+    await page.setViewportSize({ width, height: 900 });
+    await remoteLoading.check();
+    await remoteLoading.scrollIntoViewIfNeeded();
+    await expect(remoteName).toBeDisabled();
+    const before = await remoteName.boundingBox();
+    const beforeSave = await remoteSave.boundingBox();
+    const beforeToggle = await remoteLoading.boundingBox();
+    await remoteLoading.uncheck();
+    await expect(remoteName).toBeEnabled();
+    const after = await remoteName.boundingBox();
+    const afterSave = await remoteSave.boundingBox();
+    const afterToggle = await remoteLoading.boundingBox();
+    assert.ok(before && beforeSave && beforeToggle && after && afterSave && afterToggle);
+    assert.equal(
+      after.y - afterToggle.y,
+      before.y - beforeToggle.y,
+      "Loading preserves the remote form position",
+    );
+    assert.equal(
+      afterSave.y - afterToggle.y,
+      beforeSave.y - beforeToggle.y,
+      "Loading preserves the remote action position",
+    );
+    assert.equal(after.width, before.width);
+    assert.equal(after.height, before.height);
+  }
+
+  if (originalViewport) await page.setViewportSize(originalViewport);
+
   const avatarSizes = await page
     .locator("#gallery-identity .profile-avatar")
     .evaluateAll((avatars) =>
