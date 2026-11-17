@@ -12,6 +12,7 @@ import {
 } from "@main/git/security/commit-signature";
 import { SshService } from "@main/ssh/ssh-service";
 import { createTempRepo, resolveTestGitEngine } from "../../helpers/temp-repo";
+import { FakeProcessRunner } from "../../helpers/fake-process-runner";
 
 const fingerprint = "A".repeat(40);
 const valid = `[GNUPG:] VALIDSIG ${fingerprint} 2026-11-06 1793923200 0 4 0 22 8 00 ${fingerprint}`;
@@ -246,7 +247,12 @@ it("verifies real GPG signatures and distinguishes missing and untrusted public 
         GIT_CONFIG_NOSYSTEM: "1",
       });
     const git = service(trusted);
-    await repo.run(["config", "gpg.openpgp.program", gpgExecutable.replaceAll("\\", "/")]);
+    await repo.run([
+      "config",
+      "--global",
+      "gpg.openpgp.program",
+      gpgExecutable.replaceAll("\\", "/"),
+    ]);
     await repo.writeFile("file.txt", "base\n");
     await repo.commit("Initial");
     await git.exec(
@@ -334,6 +340,47 @@ it("verifies real GPG signatures and distinguishes missing and untrusted public 
     }
     await repo.cleanup();
   }
+});
+
+it("keeps isolated GPG paths relative to its private working directory for native and MSYS tools", async () => {
+  const armor = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nfixture\n-----END PGP PUBLIC KEY BLOCK-----";
+  const object =
+    "tree abc\ngpgsig -----BEGIN PGP SIGNATURE-----\n fixture\n -----END PGP SIGNATURE-----\n\nMessage\n";
+  const runner = new FakeProcessRunner()
+    .when((request) => request.args.includes("--verify"), {
+      stdout: `${good}\n${valid}\n[GNUPG:] TRUST_UNDEFINED`,
+    })
+    .when((request) => request.args.includes("--export"), { stdout: armor })
+    .otherwise({ stdout: "pub:fixture" });
+  const git: Pick<GitService, "exec" | "readConfig"> = {
+    readConfig: async () => undefined,
+    exec: async () => ({
+      stdout: object,
+      stdoutBytes: Buffer.from(object),
+      stderr: "",
+      exitCode: 0,
+    }),
+  };
+
+  const result = await new PublicKeyVerifier(runner, git).verify(
+    "repository",
+    "a".repeat(40),
+    armor,
+    AbortSignal.timeout(10_000),
+  );
+  expect(result.signature.validity).toBe("valid");
+  expect(runner.calls.length).toBeGreaterThan(0);
+  for (const request of runner.calls) {
+    expect(request.cwd).toBeTruthy();
+    expect(request.cwd).not.toBe("repository");
+    expect(request.env["GNUPGHOME"]).toBe(".");
+    expect(request.args[request.args.indexOf("--homedir") + 1]).toBe(".");
+    if (request.args.includes("--verify"))
+      expect(request.args[request.args.indexOf("--verify") + 1]).toBe("signature");
+  }
+  await expect(readFile(join(runner.calls[0]!.cwd!, "signature"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
 });
 
 it("separates cryptographic validity from unknown or explicitly denied identity trust", () => {

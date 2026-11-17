@@ -75,13 +75,14 @@ export class PublicKeyVerifier {
     const env = buildGitEnvironment({
       overrides: {
         ...this.environment,
-        ...(armoredKey === undefined ? {} : { GNUPGHOME: directory }),
+        ...(armoredKey === undefined ? {} : { GNUPGHOME: "." }),
       },
     });
     const run = async (executable: string, args: string[], stdin?: string | Uint8Array) => {
       const result = await this.runner.run({
         executable,
         args,
+        cwd: directory,
         env,
         signal,
         ...(stdin === undefined ? {} : { stdin }),
@@ -97,7 +98,7 @@ export class PublicKeyVerifier {
         [
           ...(armoredKey === undefined ? [] : ["--no-options"]),
           "--no-autostart",
-          ...(armoredKey === undefined ? [] : ["--homedir", directory]),
+          ...(armoredKey === undefined ? [] : ["--homedir", "."]),
           "--batch",
           "--no-tty",
           "--no-auto-key-retrieve",
@@ -116,8 +117,8 @@ export class PublicKeyVerifier {
         maxStdoutBytes: 1024 * 1024,
       });
       const { payload, signature } = splitCommitSignature(object.stdoutBytes.toString("latin1"));
-      const signaturePath = join(directory, "signature");
-      await writeFile(signaturePath, signature, { mode: 0o600 });
+      const signaturePath = "signature";
+      await writeFile(join(directory, signaturePath), signature, { mode: 0o600 });
       if (armoredKey === null) {
         if (!signature.startsWith("-----BEGIN SSH SIGNATURE-----")) throw keyError();
         const result = await run(
