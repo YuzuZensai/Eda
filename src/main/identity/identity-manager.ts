@@ -9,6 +9,7 @@ import type {
   IdentitySwitchStep,
 } from "@shared/identity/identity";
 import { isCommitIdentity, profileGitConfig } from "@shared/identity/identity";
+import { commitConfigKeys, type ProfileGitInspection } from "@shared/identity/profile-session";
 import { existsSync } from "node:fs";
 import type { GitService } from "../git/git-service";
 import type { IdentityRepository } from "../persistence/identity-repository";
@@ -48,6 +49,31 @@ export class IdentityManager {
   getActive(): Identity | null {
     const id = this.identities.getActiveId();
     return id ? (this.identities.findById(id) ?? null) : null;
+  }
+
+  async inspectGit(path?: string): Promise<ProfileGitInspection> {
+    const active = this.getActive();
+
+    if (!active)
+      throw new GitError({
+        kind: "invalid-input",
+        operation: t("operations.inspectGitConfiguration"),
+        message: errorText("main.requestErrors.thatIdentityNoLongerExists"),
+      });
+
+    const keys = commitConfigKeys("all");
+    const [global, repository, local] = await Promise.all([
+      Promise.all(keys.map((key) => this.git.inspectConfig(key, { scope: "global" }))),
+      path ? Promise.all(keys.map((key) => this.git.inspectConfig(key, { cwd: path }))) : null,
+      path ? this.git.localConfigKeys(path) : null,
+    ]);
+
+    return {
+      profileId: active.id,
+      global,
+      repository,
+      localOverrides: local?.filter((key) => keys.includes(key)) ?? null,
+    };
   }
 
   serialize<T>(work: () => Promise<T>): Promise<T> {

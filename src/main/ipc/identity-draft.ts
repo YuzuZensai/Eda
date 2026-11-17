@@ -1,4 +1,6 @@
 import { t } from "@shared/i18n";
+import { errorText } from "@shared/error-codes";
+import { invalidRequest } from "./request-errors";
 import type { IdentityDraft } from "@shared/identity/identity";
 import { isHexColor } from "@shared/preferences/accent";
 import {
@@ -6,6 +8,7 @@ import {
   optionalString,
   requireEmail,
   requireHue,
+  requireRecord,
   requireString,
   requireStringArray,
 } from "./validate";
@@ -14,15 +17,23 @@ type Signing = IdentityDraft["signing"];
 
 const parseAccent = (value: unknown) => (isHexColor(value) ? value : requireHue(value));
 
-function parseSigning(raw: unknown): Signing {
-  const signing = optionalRecord(raw);
-  const format = String(signing["format"] ?? "none");
-  const keyRef = optionalString(signing["keyRef"], t("fields.signingKey"));
+export function parseSigning(raw: unknown): Signing {
+  const signing = requireRecord(raw, t("operations.configureSigning"));
+  const format = signing["format"] === undefined ? "none" : signing["format"];
+  const signCommits = signing["signCommits"] === undefined ? false : signing["signCommits"];
+
+  if (
+    (format !== "none" && format !== "ssh" && format !== "gpg") ||
+    typeof signCommits !== "boolean"
+  )
+    throw invalidRequest(errorText("main.identityDraft.invalidSigning"));
+
+  const keyRef = optionalString(signing["keyRef"], t("fields.signingKey"), 1024);
 
   return {
-    format: format === "ssh" || format === "gpg" ? format : "none",
+    format,
     ...(keyRef !== undefined && { keyRef }),
-    signCommits: signing["signCommits"] === true,
+    signCommits,
   };
 }
 

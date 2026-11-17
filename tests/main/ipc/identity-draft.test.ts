@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GitError } from "@shared/errors";
-import { parseDraft, parsePartialDraft } from "@main/ipc/identity-draft";
+import { parseDraft, parsePartialDraft, parseSigning } from "@main/ipc/identity-draft";
 
 const valid = {
   name: "Work",
@@ -40,7 +40,7 @@ describe("parseDraft", () => {
     });
   });
 
-  it("parses ssh and gpg signing, and rejects an unknown format to none", () => {
+  it("parses ssh and gpg signing", () => {
     expect(
       parseDraft({ ...valid, signing: { format: "ssh", keyRef: "/k.pub", signCommits: true } })
         .signing,
@@ -49,16 +49,30 @@ describe("parseDraft", () => {
       parseDraft({ ...valid, signing: { format: "gpg", keyRef: "ABCD", signCommits: false } })
         .signing,
     ).toEqual({ format: "gpg", keyRef: "ABCD", signCommits: false });
-    expect(parseDraft({ ...valid, signing: { format: "x509", keyRef: "k" } }).signing.format).toBe(
-      "none",
-    );
   });
 
-  it("treats a non-true signCommits as false rather than truthy", () => {
-    expect(
-      parseDraft({ ...valid, signing: { format: "ssh", keyRef: "k", signCommits: "yes" } }).signing
-        .signCommits,
-    ).toBe(false);
+  it.each([
+    null,
+    "ssh",
+    [],
+    { format: "x509" },
+    { format: null },
+    { format: 1 },
+    { format: "ssh", keyRef: "k", signCommits: "yes" },
+    { signCommits: null },
+    { signCommits: 0 },
+  ])("rejects malformed signing rather than silently disabling it: %j", (signing) => {
+    expect(() => parseSigning(signing)).toThrow(GitError);
+    expect(() => parseDraft({ ...valid, signing })).toThrow(GitError);
+    expect(() => parsePartialDraft({ signing })).toThrow(GitError);
+  });
+
+  it("defaults omitted signing options and permits explicitly disabling signing", () => {
+    expect(parseSigning({})).toEqual({ format: "none", signCommits: false });
+    expect(parseSigning({ format: "none", signCommits: false })).toEqual({
+      format: "none",
+      signCommits: false,
+    });
   });
 
   it.each([null, undefined, "a string", 42, ["array"], true])(

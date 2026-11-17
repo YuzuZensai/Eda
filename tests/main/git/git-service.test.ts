@@ -94,6 +94,19 @@ describe("GitService against real Git", () => {
     expect(await repo.git.isRepository(repo.path)).toBe(false);
   });
 
+  it("lists only direct local configuration keys without following includes", async () => {
+    repo = await createTempRepo();
+    const included = join(repo.home, "included.gitconfig");
+    await writeFile(included, "[user]\n\temail = included@example.com\n");
+    await repo.run(["config", "--local", "include.path", included]);
+    await repo.run(["config", "--local", "user.name", "Local Author"]);
+
+    const keys = await repo.git.localConfigKeys(repo.path);
+    expect(keys).toContain("user.name");
+    expect(keys).not.toContain("user.email");
+    expect(keys).not.toContain("");
+  });
+
   it("maps a missing repository to a typed error", async () => {
     repo = await createTempRepo();
     await expect(

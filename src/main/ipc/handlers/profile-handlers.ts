@@ -1,16 +1,13 @@
 import { errorText } from "@shared/error-codes";
 import { GitError, ok } from "@shared/errors";
 import { t } from "@shared/i18n";
-import { commitConfigKeys } from "@shared/identity/profile-session";
 import { IPC_CHANNELS, IPC_EVENTS } from "@shared/ipc";
 import type { Services } from "../../services";
-import { parseDraft, parsePartialDraft } from "../identity-draft";
+import { parseDraft, parsePartialDraft, parseSigning } from "../identity-draft";
 import { captureProfile } from "../profile-context";
 import { invalidRequest, missingIdentity } from "../request-errors";
 import { broadcast, handle } from "../transport";
 import {
-  optionalRecord,
-  optionalString,
   requireAbsolutePath,
   requireId,
   requireRecord,
@@ -19,7 +16,7 @@ import {
 } from "../validate";
 
 export function registerProfileHandlers(services: Services): void {
-  const { git, identities, identity, repositories } = services;
+  const { identities, identity, repositories } = services;
 
   handle(IPC_CHANNELS.identityListGpgSigningKeys, async () =>
     ok(await services.gpg.listSigningKeys()),
@@ -48,29 +45,10 @@ export function registerProfileHandlers(services: Services): void {
   });
 
   handle(IPC_CHANNELS.identityInspectGit, async (_event, rawId) => {
-    const active = identity.getActive();
-
-    if (!active) throw missingIdentity(t("operations.inspectGitConfiguration"));
-
     const path =
       rawId === undefined ? undefined : repositories.resolveActiveRepository(requireId(rawId)).path;
-    const keys = commitConfigKeys("all");
-    const [global, repository, local] = await Promise.all([
-      Promise.all(keys.map((key) => git.inspectConfig(key, { scope: "global" }))),
-      path ? Promise.all(keys.map((key) => git.inspectConfig(key, { cwd: path }))) : null,
-      path
-        ? git.exec(["config", "--local", "--no-includes", "--null", "--name-only", "--list"], {
-            cwd: path,
-            operation: t("operations.inspectLocalCommitOverrides"),
-          })
-        : null,
-    ]);
 
-    const localOverrides = local
-      ? local.stdout.split("\0").filter((key) => keys.includes(key))
-      : null;
-
-    return ok({ profileId: active.id, global, repository, localOverrides });
+    return ok(await identity.inspectGit(path));
   });
 
   handle(IPC_CHANNELS.identityCreate, async (_e, raw, rawOptions) => {
@@ -159,10 +137,8 @@ export function registerProfileHandlers(services: Services): void {
 
   handle(IPC_CHANNELS.identityConfigureSigning, async (_e, raw, rawProfile) => {
     const active = captureProfile(identity, rawProfile);
-    const input = optionalRecord(raw);
-    const format =
-      input["format"] === "ssh" || input["format"] === "gpg" ? input["format"] : "none";
-    const keyRef = optionalString(input["keyRef"], t("fields.signingKey"), 1024);
+    const signing = parseSigning(raw);
+    const { format, keyRef } = signing;
 
     if (format !== "none" && keyRef === undefined) {
       throw new GitError({
@@ -177,11 +153,7 @@ export function registerProfileHandlers(services: Services): void {
     }
 
     const updated = await identity.update(active.id, {
-      signing: {
-        format,
-        ...(keyRef !== undefined && { keyRef }),
-        signCommits: input["signCommits"] === true,
-      },
+      signing,
     });
 
     if (!updated) throw missingIdentity(t("operations.configureSigning"));

@@ -1,4 +1,5 @@
 {
+  "main.identityDraft.invalidSigning": "Choose a supported signing format and a valid signing preference.",
   "main.repositoryHandlers.chooseWhetherToVerifySignatureAgain": "Choose whether to verify the signature again.",
   "main.persistence.identityRepository.invalidProfileOrder": "The profile list changed. Refresh it and try again.",
   "main.avatarCache.imageExceedsSizeLimit": "The avatar exceeds the permitted image size.",

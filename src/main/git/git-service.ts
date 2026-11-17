@@ -1218,6 +1218,15 @@ export class GitService {
     };
   }
 
+  async localConfigKeys(cwd: string): Promise<string[]> {
+    const { stdout } = await this.exec(
+      ["config", "--local", "--no-includes", "--null", "--name-only", "--list"],
+      { cwd, operation: t("operations.inspectLocalCommitOverrides") },
+    );
+
+    return stdout.split("\0").filter(Boolean);
+  }
+
   async readConfig(
     key: string,
     options: { cwd?: string; scope?: "global" | "local" } = {},

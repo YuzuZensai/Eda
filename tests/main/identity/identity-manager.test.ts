@@ -46,6 +46,28 @@ describe("IdentityManager switch transaction", () => {
     expect(await ctx.repo.git.readConfig("user.name", { scope: "global" })).toBe("Work");
   });
 
+  it("inspects global and repository commit settings without unrelated local keys", async () => {
+    const ctx = await setup();
+    repo = ctx.repo;
+    await expect(ctx.manager.inspectGit()).rejects.toMatchObject({ kind: "invalid-input" });
+    const profile = ctx.identities.create(draft("Work", "dev@work.example", 210));
+    await ctx.manager.setActive(profile.id);
+    await repo.run(["config", "--local", "user.email", "local@example.com"]);
+    await repo.run(["config", "--local", "eda.unrelated", "value"]);
+
+    const global = await ctx.manager.inspectGit();
+    expect(global).toMatchObject({ profileId: profile.id, repository: null, localOverrides: null });
+    expect(global.global).toContainEqual(
+      expect.objectContaining({ key: "user.email", value: "dev@work.example" }),
+    );
+
+    const local = await ctx.manager.inspectGit(repo.path);
+    expect(local.repository).toContainEqual(
+      expect.objectContaining({ key: "user.email", value: "local@example.com" }),
+    );
+    expect(local.localOverrides).toEqual(["user.email"]);
+  });
+
   it("makes the switch visible to Git itself, not just to Eda", async () => {
     const ctx = await setup();
 
