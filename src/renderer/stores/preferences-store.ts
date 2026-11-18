@@ -103,21 +103,23 @@ function apply(values: Values): void {
 }
 
 export const usePreferencesStore = create<PreferencesState>((set, get) => {
+  let pendingMutations = 0;
+  let contextGeneration = 0;
+
   const mutate = async (
     action: () => ReturnType<typeof window.eda.settings.reset>,
   ): Promise<boolean> => {
     const context = get().context;
+    const requestContext = contextGeneration;
+    const current = () => requestContext === contextGeneration;
 
+    pendingMutations++;
     set({ saving: true, error: null });
 
     try {
       const result = await action();
 
-      if (
-        get().context.profileId !== context.profileId ||
-        get().context.repositoryId !== context.repositoryId
-      )
-        return result.ok;
+      if (!current()) return result.ok;
 
       if (!result.ok) {
         set({ error: result.error });
@@ -128,6 +130,8 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
 
       return true;
     } catch {
+      if (!current()) return false;
+
       set({
         error: new GitError({
           kind: "unknown",
@@ -138,7 +142,8 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
 
       return false;
     } finally {
-      set({ saving: false });
+      pendingMutations--;
+      set({ saving: pendingMutations > 0 });
     }
   };
 
@@ -150,6 +155,11 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
     error: null,
     async load(context) {
       const request = ++generation;
+      if (
+        context.profileId !== get().context.profileId ||
+        context.repositoryId !== get().context.repositoryId
+      )
+        contextGeneration++;
 
       if (context.profileId !== get().context.profileId) {
         const values = {
@@ -159,29 +169,42 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
 
         set({ context, values, loading: true, error: null });
         apply(values);
-      } else set({ context, loading: true });
+      } else set({ context, loading: true, error: null });
 
-      const results = await Promise.all(
-        PREFERENCE_KEYS.map(
-          async (key) => [key, await window.eda.settings.resolve(key, context)] as const,
-        ),
-      );
+      try {
+        const results = await Promise.all(
+          PREFERENCE_KEYS.map(
+            async (key) => [key, await window.eda.settings.resolve(key, context)] as const,
+          ),
+        );
 
-      if (request !== generation) return;
+        if (request !== generation) return;
 
-      const failure = results.find(([, result]) => !result.ok)?.[1];
+        const failure = results.find(([, result]) => !result.ok)?.[1];
 
-      if (failure && !failure.ok) {
-        set({ loading: false, error: failure.error });
-        return;
+        if (failure && !failure.ok) {
+          set({ loading: false, error: failure.error });
+          return;
+        }
+
+        const values = Object.fromEntries(
+          results.flatMap(([key, result]) => (result.ok ? [[key, result.value]] : [])),
+        ) as Values;
+
+        set({ values, loading: false, error: null });
+        apply(values);
+      } catch {
+        if (request !== generation) return;
+
+        set({
+          loading: false,
+          error: new GitError({
+            kind: "unknown",
+            operation: t("operations.readPreferences"),
+            message: errorText("settings.useScopedSetting.couldNotReadApplicationPreferences"),
+          }).toData(),
+        });
       }
-
-      const values = Object.fromEntries(
-        results.flatMap(([key, result]) => (result.ok ? [[key, result.value]] : [])),
-      ) as Values;
-
-      set({ values, loading: false, error: null });
-      apply(values);
     },
     set: (key, scope, value) => mutate(() => window.eda.settings.set(key, scope, value)),
     reset: (key, scope) => mutate(() => window.eda.settings.reset(key, scope)),

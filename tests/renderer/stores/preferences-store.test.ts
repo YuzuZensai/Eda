@@ -1,3 +1,4 @@
+import { deferred } from "../../helpers/deferred";
 import { errorFixture } from "../../helpers/error";
 import { err, ok } from "@shared/errors";
 import type { EdaApi } from "@shared/ipc";
@@ -190,4 +191,99 @@ it("keeps live background edits above saved previews and ignores stale cleanup",
   expect(document.documentElement.style.getPropertyValue("--background-blur")).toBe("2px");
 
   previewBackground(null);
+});
+
+it("finishes loading with an error when preference IPC rejects", async () => {
+  install(async () => {
+    throw new Error("IPC disconnected");
+  });
+
+  await usePreferencesStore.getState().load({ profileId: "unavailable" });
+
+  expect(usePreferencesStore.getState().loading).toBe(false);
+  expect(usePreferencesStore.getState().error).not.toBeNull();
+});
+
+it("ignores rejected preference reads after switching profiles", async () => {
+  const pending = deferred<void>();
+  install(async (key, context) => {
+    if (context.profileId === "work") {
+      await pending.promise;
+      throw new Error("IPC disconnected");
+    }
+    return ok(resolved(key, context));
+  });
+
+  const previous = usePreferencesStore.getState().load({ profileId: "work" });
+  await usePreferencesStore.getState().load({ profileId: "home" });
+  pending.resolve();
+  await previous;
+
+  expect(usePreferencesStore.getState().error).toBeNull();
+  expect(usePreferencesStore.getState().values.theme.value).toEqual(lightPreference);
+});
+
+it("does not carry a rejected save into another profile", async () => {
+  const pending = deferred<void>();
+  install(
+    async (key, context) => ok(resolved(key, context)),
+    async () => {
+      await pending.promise;
+      throw new Error("IPC disconnected");
+    },
+  );
+  await usePreferencesStore.getState().load({ profileId: "work" });
+  const saving = usePreferencesStore
+    .getState()
+    .set("theme", { kind: "profile", profileId: "work" }, nordPreference);
+  await usePreferencesStore.getState().load({ profileId: "home" });
+  pending.resolve();
+
+  expect(await saving).toBe(false);
+  expect(usePreferencesStore.getState().error).toBeNull();
+});
+
+it("keeps saving true until all overlapping preference mutations finish", async () => {
+  const pending = deferred<void>();
+  install(
+    async (key, context) => ok(resolved(key, context)),
+    async () => {
+      await pending.promise;
+      return ok(undefined);
+    },
+  );
+  await usePreferencesStore.getState().load({ profileId: "home" });
+  const first = usePreferencesStore
+    .getState()
+    .set("theme", { kind: "application" }, nordPreference);
+  const second = usePreferencesStore.getState().reset("theme", { kind: "application" });
+
+  await second;
+  expect(usePreferencesStore.getState().saving).toBe(true);
+  pending.resolve();
+  await first;
+  expect(usePreferencesStore.getState().saving).toBe(false);
+});
+
+it("ignores a stale save failure after leaving and returning to the same profile", async () => {
+  const pending = deferred<void>();
+  install(
+    async (key, context) => ok(resolved(key, context)),
+    async () => {
+      await pending.promise;
+      return err(
+        errorFixture({ kind: "invalid-input", operation: "test", message: "Stale failure" }),
+      );
+    },
+  );
+  await usePreferencesStore.getState().load({ profileId: "work" });
+  const saving = usePreferencesStore
+    .getState()
+    .set("theme", { kind: "profile", profileId: "work" }, nordPreference);
+  await usePreferencesStore.getState().load({ profileId: "home" });
+  await usePreferencesStore.getState().load({ profileId: "work" });
+  pending.resolve();
+
+  expect(await saving).toBe(false);
+  expect(usePreferencesStore.getState().error).toBeNull();
 });
