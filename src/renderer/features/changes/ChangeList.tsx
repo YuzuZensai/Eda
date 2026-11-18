@@ -10,7 +10,6 @@ import { Button, TextButton } from "../../components/ui/index";
 
 export function ChangeList({
   rows,
-  categories,
   files,
   selection,
   writing,
@@ -23,7 +22,6 @@ export function ChangeList({
   onOpenMenu,
 }: {
   rows: ChangeListRow[];
-  categories: Record<ChangeArea, RepositoryChange[]>;
   files: FileView;
   selection: RepositorySelection;
   writing: boolean;
@@ -79,8 +77,8 @@ export function ChangeList({
                 className="flex h-9 items-center gap-2 px-3 text-xs font-semibold text-text-tertiary"
               >
                 <span>{t(CHANGE_AREA_LABELS[row.area])}</span>
-                <span className="mono">{categories[row.area].length}</span>
-                {(row.area === "staged" || row.area === "unstaged" || row.area === "untracked") && (
+                <span className="mono">{row.changes.length}</span>
+                {row.area !== "conflicted" && (
                   <Button
                     size="sm"
                     variant="secondary"
@@ -88,8 +86,8 @@ export function ChangeList({
                     data-tour={row.area === "unstaged" ? "stage-all" : undefined}
                     onClick={() =>
                       void (row.area === "staged"
-                        ? onUnstage(categories.staged.map((c) => c.path))
-                        : onStage(categories[row.area].map((c) => c.path)))
+                        ? onUnstage(row.changes.map((c) => c.path))
+                        : onStage(row.changes.map((c) => c.path)))
                     }
                     className="ml-auto"
                   >

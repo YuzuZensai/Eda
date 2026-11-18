@@ -4,6 +4,7 @@ import { MinusIcon as Minus, PencilIcon as Pencil, PlusIcon as Plus } from "../i
 export function fileStatusTone(status: ChangeCode | FileDiff["status"]) {
   switch (status) {
     case "A":
+    case "?":
     case "C":
     case "added":
     case "copied":
@@ -19,8 +20,6 @@ export function fileStatusTone(status: ChangeCode | FileDiff["status"]) {
     case "R":
     case "renamed":
       return "text-git-renamed";
-    case "?":
-      return "text-git-untracked";
     case "U":
       return "text-git-conflict";
     default:

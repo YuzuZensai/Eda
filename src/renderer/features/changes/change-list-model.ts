@@ -1,10 +1,6 @@
 import type { MessageKey } from "@shared/i18n";
 import type { FileView } from "@shared/preferences/file-view";
-import {
-  CHANGE_AREAS,
-  type ChangeArea,
-  type RepositoryChange,
-} from "@shared/repository/repository-read";
+import type { ChangeArea, RepositoryChange } from "@shared/repository/repository-read";
 import {
   buildChangeTree,
   flattenChangeTree,
@@ -19,7 +15,7 @@ export const CHANGE_AREA_LABELS = {
 } satisfies Record<ChangeArea, MessageKey>;
 
 export type ChangeListRow =
-  | { kind: "heading"; area: ChangeArea }
+  | { kind: "heading"; area: ChangeArea; changes: RepositoryChange[] }
   | { kind: "change"; area: ChangeArea; change: RepositoryChange; depth: number }
   | { kind: "directory"; area: ChangeArea; node: ChangeTreeNode; depth: number };
 
@@ -28,16 +24,28 @@ export function buildChangeRows(
   files: FileView,
 ): ChangeListRow[] {
   const collapsedDirs = new Set(files.collapsed);
+  const untracked = new Set(categories.untracked);
+  const sections = ["conflicted", "staged", "unstaged"] as const;
 
-  return CHANGE_AREAS.flatMap((area): ChangeListRow[] => {
-    if (categories[area].length === 0) return [];
+  return sections.flatMap((area): ChangeListRow[] => {
+    const changes =
+      area === "unstaged" ? [...categories.unstaged, ...categories.untracked] : categories[area];
 
-    const heading = { kind: "heading" as const, area };
+    if (changes.length === 0) return [];
+
+    const heading = { kind: "heading" as const, area, changes };
+    const changeArea = (change: RepositoryChange): ChangeArea =>
+      area === "unstaged" && untracked.has(change) ? "untracked" : area;
 
     if (files.mode !== "tree") {
       return [
         heading,
-        ...categories[area].map((change) => ({ kind: "change" as const, area, change, depth: 0 })),
+        ...changes.map((change) => ({
+          kind: "change" as const,
+          area: changeArea(change),
+          change,
+          depth: 0,
+        })),
       ];
     }
 
@@ -49,9 +57,14 @@ export function buildChangeRows(
 
     return [
       heading,
-      ...flattenChangeTree(buildChangeTree(categories[area]), collapsedForArea, 0).map((row) =>
+      ...flattenChangeTree(buildChangeTree(changes), collapsedForArea, 0).map((row) =>
         row.node.kind === "file"
-          ? { kind: "change" as const, area, change: row.node.change, depth: row.depth }
+          ? {
+              kind: "change" as const,
+              area: changeArea(row.node.change),
+              change: row.node.change,
+              depth: row.depth,
+            }
           : { kind: "directory" as const, area, node: row.node, depth: row.depth },
       ),
     ];

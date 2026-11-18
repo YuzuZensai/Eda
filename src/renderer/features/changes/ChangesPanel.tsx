@@ -278,7 +278,6 @@ export function ChangesPanel({ pending = false }: { pending?: boolean }) {
       ) : (
         <ChangeList
           rows={rows}
-          categories={categories}
           files={files}
           selection={selection}
           writing={writing}

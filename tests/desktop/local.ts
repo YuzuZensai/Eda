@@ -259,8 +259,27 @@ try {
   await page.keyboard.press(`${process.platform === "darwin" ? "Meta" : "Control"}+r`);
   await page.getByRole("button", { name: "Stage scratch.log", exact: true }).waitFor();
 
+  await page.getByRole("button", { name: "Stage file.txt", exact: true }).waitFor();
+  assert.equal(await page.getByText("Untracked", { exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Stage all", exact: true }).count(), 1);
+  await page.getByLabel("2 unstaged files", { exact: true }).waitFor();
+
   const beforeDiscardIndex = git("ls-files", "--stage", "-z");
   const beforeDiscardFile = await readFile(join(repository, "file.txt"));
+
+  await page.getByRole("button", { name: "Stage all", exact: true }).click();
+  await page.getByRole("button", { name: "Unstage scratch.log", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Unstage file.txt", exact: true }).waitFor();
+  assert.equal(git("diff"), "");
+  assert.deepEqual(git("diff", "--cached", "--name-only").trim().split("\n"), [
+    "file.txt",
+    "scratch.log",
+  ]);
+
+  await page.getByRole("button", { name: "Unstage all", exact: true }).click();
+  await page.getByRole("button", { name: "Stage scratch.log", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Stage file.txt", exact: true }).waitFor();
+  assert.equal(git("ls-files", "--stage", "-z"), beforeDiscardIndex);
 
   await page.getByRole("button", { name: "Discard all files", exact: true }).click();
 
@@ -312,7 +331,7 @@ try {
   assert.equal(errors.length, 0, errors.join("\n"));
 
   console.log(
-    "Local workflow passed: hunk staging and commit, commit/amend Undo/Redo, templates/sign-off/co-authors, hook failure and running-hook cancellation, preserved index/drafts, redacted activity diagnostics, whole-file and partial discard/recovery, and ignore rules.",
+    "Local workflow passed: combined tracked/untracked staging, hunk staging and commit, commit/amend Undo/Redo, templates/sign-off/co-authors, hook failure and running-hook cancellation, preserved index/drafts, redacted activity diagnostics, whole-file and partial discard/recovery, and ignore rules.",
   );
 } catch (error) {
   if (errors.length) console.error(errors);

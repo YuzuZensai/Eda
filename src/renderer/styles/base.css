@@ -69,7 +69,6 @@
   --color-git-modified: var(--git-modified);
   --color-git-deleted: var(--git-deleted);
   --color-git-renamed: var(--git-renamed);
-  --color-git-untracked: var(--git-untracked);
   --color-git-conflict: var(--git-conflict);
 
   --spacing-1: var(--space-1);
