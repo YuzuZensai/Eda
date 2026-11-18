@@ -31,40 +31,31 @@ export async function pruneHistoryRecords(
   const complete = records.filter(completed);
 
   for (const [index, record] of complete.entries()) {
-    if (!Number.isFinite(Date.parse(record.updatedAt))) continue;
-    if (index < 99 && Date.parse(record.updatedAt) >= Date.now() - 30 * 86400_000) continue;
+    const updatedAt = Date.parse(record.updatedAt);
+    if (!Number.isFinite(updatedAt)) continue;
+    if (index < 99 && updatedAt >= Date.now() - 30 * 86400_000) continue;
 
+    const change = record.refChange;
     if (
+      !change ||
       !/^[a-f0-9-]{36}$/.test(record.id) ||
-      record.refChange!.recoveryRef !== `refs/eda/recovery/${record.id}`
+      change.recoveryRef !== `refs/eda/recovery/${record.id}`
     )
       continue;
 
-    if (
-      ![
-        ...(record.head ? [record.head] : []),
-        record.refChange!.indexTree,
-        ...(record.refChange!.reversal
-          ? [record.refChange!.target, record.refChange!.reversal.afterIndexTree]
-          : []),
-      ].every(isFullObjectId)
-    )
-      continue;
+    const refs: [suffix: string, oid: string][] = [];
+    if (record.head) refs.push(["head", record.head]);
+    refs.push(["index", change.indexTree]);
+    if (change.reversal)
+      refs.push(["after-head", change.target], ["after-index", change.reversal.afterIndexTree]);
+
+    if (!refs.every(([, oid]) => isFullObjectId(oid))) continue;
 
     const deletes: string[] = [];
     let changed = false;
 
-    for (const [suffix, oid] of [
-      ...(record.head ? [["head", record.head]] : []),
-      ["index", record.refChange!.indexTree],
-      ...(record.refChange!.reversal
-        ? [
-            ["after-head", record.refChange!.target],
-            ["after-index", record.refChange!.reversal.afterIndexTree],
-          ]
-        : []),
-    ]) {
-      const ref = `${record.refChange!.recoveryRef}/${suffix}`;
+    for (const [suffix, oid] of refs) {
+      const ref = `${change.recoveryRef}/${suffix}`;
       const current = await git.exec(["rev-parse", "--verify", "--quiet", ref], {
         cwd: root,
         operation: t("operations.inspectExpiredHistoryRecovery"),
