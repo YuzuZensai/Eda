@@ -2,6 +2,20 @@ import { describe, expect, it } from "vitest";
 import { NodeProcessRunner } from "@main/git/execution/node-process-runner";
 
 describe("NodeProcessRunner output bounds", () => {
+  it("returns cancellation without resolving or starting an already cancelled command", async () => {
+    const result = await new NodeProcessRunner().run({
+      executable: "eda-nonexistent-cancelled-command",
+      args: [],
+      env: {},
+      signal: AbortSignal.abort(),
+    });
+
+    expect(result.cancelled).toBe(true);
+    expect(result.exitCode).toBe(130);
+    expect(result.stdout).toHaveLength(0);
+    expect(result.stderr).toHaveLength(0);
+  });
+
   it("cancels a running child, including one ignoring graceful termination", async () => {
     const controller = new AbortController();
     const result = await new NodeProcessRunner().run({

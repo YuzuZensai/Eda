@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 import { resolveExecutable } from "./executable";
 import type { ProcessRequest, ProcessResult, ProcessRunner } from "./process-runner";
 import { ProcessSpawnError } from "./process-runner";
@@ -31,7 +32,11 @@ export class NodeProcessRunner implements ProcessRunner {
   }
 
   async run(request: ProcessRequest): Promise<ProcessResult> {
+    if (request.signal?.aborted) return cancelledResult();
+
     const executable = await this.resolve(request.executable, request.env);
+
+    if (request.signal?.aborted) return cancelledResult();
     return new Promise((resolve, reject) => {
       const child = spawn(executable, [...request.args], {
         shell: false,
@@ -50,6 +55,7 @@ export class NodeProcessRunner implements ProcessRunner {
       let outputLimitExceeded: "stdout" | "stderr" | undefined;
       let cancelled = false;
       let settled = false;
+      const stderrDecoder = new StringDecoder("utf8");
       let stderrLineBuffer = "";
       let stopKillTimer: (() => void) | undefined;
 
@@ -107,7 +113,7 @@ export class NodeProcessRunner implements ProcessRunner {
 
         if (!request.onStderrLine) return;
 
-        stderrLineBuffer += chunk.subarray(0, stderrBytes - previousBytes).toString("utf8");
+        stderrLineBuffer += stderrDecoder.write(chunk.subarray(0, stderrBytes - previousBytes));
 
         const lines = stderrLineBuffer.split(/\r\n|\r|\n/);
 
@@ -136,6 +142,7 @@ export class NodeProcessRunner implements ProcessRunner {
         settled = true;
         cleanup();
 
+        stderrLineBuffer += stderrDecoder.end();
         if (stderrLineBuffer.length > 0) request.onStderrLine?.(stderrLineBuffer);
 
         if (inputError && code === 0 && !cancelled && !outputLimitExceeded) {
@@ -169,6 +176,15 @@ export class NodeProcessRunner implements ProcessRunner {
       throw new ProcessSpawnError(executable, error as NodeJS.ErrnoException);
     }
   }
+}
+
+function cancelledResult(): ProcessResult {
+  return {
+    exitCode: 130,
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.alloc(0),
+    cancelled: true,
+  };
 }
 
 function killTree(pid: number | undefined): () => void {
