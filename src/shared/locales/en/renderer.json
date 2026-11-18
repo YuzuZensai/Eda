@@ -213,6 +213,8 @@
   "commitGraph.forwardInSelectionHistory": "Forward in selection history",
   "commitGraph.head": "HEAD",
   "commitGraph.history": "History",
+  "commitGraph.workingTreeCommitTitle": "Working tree title",
+  "commitGraph.viewWorkingChanges": "View working changes: {description}",
   "commitGraph.historyLabel": "history",
   "commitGraph.jumpToHead": "Jump to HEAD",
   "commitGraph.loadingHistory": "Loading history",

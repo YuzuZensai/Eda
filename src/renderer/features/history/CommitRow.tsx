@@ -11,8 +11,10 @@ import type { DagRow } from "../../repository/dag-layout";
 import { ROW_HEIGHT, edgePath, laneColor, laneX } from "../../repository/graph-geometry";
 import { referenceLabel } from "../../repository/reference-label";
 import { TagIcon } from "../../components/ui/index";
+import { PencilIcon, PlusIcon } from "../../components/ui/icons";
 import { CommitSignatureIcon } from "../../components/ui/display/CommitSignatureIcon";
 import { useCommitSignature } from "../../repository/hooks/useCommitSignature";
+import { CommitTitleInput } from "../../components/ui/forms/CommitTitleInput";
 
 export function CommitRow({
   row,
@@ -23,6 +25,7 @@ export function CommitRow({
   vigilantMode = false,
   signature,
   repositoryId,
+  workingTreeConnection,
   onSelect,
   onContextMenu,
 }: {
@@ -34,6 +37,7 @@ export function CommitRow({
   vigilantMode?: boolean;
   signature?: CommitSignatureVerification;
   repositoryId?: string;
+  workingTreeConnection?: { lane: number; head: boolean } | undefined;
   onSelect: () => void;
   onContextMenu: (event: ReactMouseEvent) => void;
 }) {
@@ -69,6 +73,19 @@ export function CommitRow({
         className="shrink-0 overflow-visible"
         aria-hidden="true"
       >
+        {workingTreeConnection && (
+          <path
+            d={
+              workingTreeConnection.head
+                ? `M ${laneX(workingTreeConnection.lane)} 0 C ${laneX(workingTreeConnection.lane)} ${center}, ${laneX(row.lane)} 0, ${laneX(row.lane)} ${center}`
+                : `M ${laneX(workingTreeConnection.lane)} 0 V ${ROW_HEIGHT}`
+            }
+            fill="none"
+            stroke={laneColor(workingTreeConnection.lane)}
+            strokeWidth="1.75"
+            strokeLinecap="round"
+          />
+        )}
         {row.segments
           .filter((segment) => segment.continues)
           .map((segment, index) => (
@@ -147,6 +164,104 @@ export function CommitRow({
           ))}
       </div>
     </ButtonBase>
+  );
+}
+
+export function WorkingTreeRow({
+  changeCount,
+  addedCount,
+  truncated,
+  gutter,
+  lane,
+  selected,
+  title,
+  titleDisabled,
+  onTitleChange,
+  onSelect,
+}: {
+  changeCount: number;
+  addedCount: number;
+  truncated: boolean;
+  gutter: number;
+  lane: number | undefined;
+  selected: boolean;
+  title: string;
+  titleDisabled: boolean;
+  onTitleChange: (title: string) => void;
+  onSelect: () => void;
+}) {
+  const descriptionKey = truncated
+    ? "commitChangesPanel.workingTreeChangesTruncated"
+    : "commitChangesPanel.workingTreeChanges";
+  const description = t(descriptionKey, { count: changeCount });
+  const nodeLane = lane ?? 0;
+  const otherCount = changeCount - addedCount;
+
+  return (
+    <div
+      data-tour="history-working-tree"
+      className={`flex w-full min-w-0 items-center border-b border-border-subtle text-left hover:bg-bg-raised ${selected ? "bg-accent-muted" : ""}`}
+      style={{ height: ROW_HEIGHT }}
+    >
+      <ButtonBase
+        aria-label={t("commitGraph.viewWorkingChanges", { description })}
+        aria-pressed={selected}
+        title={description}
+        className="flex h-full shrink-0 items-center"
+        onClick={onSelect}
+      >
+        <svg width={gutter} height={ROW_HEIGHT} className="shrink-0" aria-hidden="true">
+          {lane !== undefined && (
+            <path
+              d={`M ${laneX(lane)} ${ROW_HEIGHT / 2} V ${ROW_HEIGHT}`}
+              stroke={laneColor(lane)}
+              strokeWidth="1.75"
+            />
+          )}
+          <circle
+            cx={laneX(nodeLane)}
+            cy={ROW_HEIGHT / 2}
+            r="5"
+            fill="var(--bg-base)"
+            stroke={laneColor(nodeLane)}
+            strokeWidth="1.75"
+            strokeDasharray="2 2"
+          />
+        </svg>
+      </ButtonBase>
+
+      <div className="w-80 min-w-0 shrink pr-3">
+        <CommitTitleInput
+          aria-label={t("commitGraph.workingTreeCommitTitle")}
+          placeholder={t("changesPanel.workingTree")}
+          style={{ height: ROW_HEIGHT - 6 }}
+          value={title}
+          disabled={titleDisabled}
+          onChange={onTitleChange}
+          onFocus={onSelect}
+        />
+      </div>
+
+      {addedCount > 0 && (
+        <span
+          className="flex shrink-0 items-center gap-1.5 pr-3 text-sm text-git-added"
+          title={t("changesPanel.added")}
+        >
+          <PlusIcon size={13} className="shrink-0" aria-hidden="true" />
+          <span>{truncated ? `${addedCount}+` : addedCount}</span>
+        </span>
+      )}
+
+      {otherCount > 0 && (
+        <span
+          className="flex shrink-0 items-center gap-1.5 pr-3 text-sm text-git-modified"
+          title={t(descriptionKey, { count: otherCount })}
+        >
+          <PencilIcon size={13} className="shrink-0" aria-hidden="true" />
+          <span>{truncated ? `${otherCount}+` : otherCount}</span>
+        </span>
+      )}
+    </div>
   );
 }
 

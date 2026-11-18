@@ -159,10 +159,18 @@ try {
     () => page.getByRole("button", { name: "Inspect branch main", exact: true }).click(),
     "section",
   );
-  await expectEntry(
-    () => page.getByRole("button", { name: "View changes", exact: true }).click(),
-    "section",
-  );
+  const workingChanges = page.getByRole("button", {
+    name: "View working changes: 1 file change in working tree",
+    exact: true,
+  });
+  const workingBounds = await page.locator('[data-tour="history-working-tree"]').boundingBox();
+  const headBounds = await page.locator('[data-tour="history-commit"]').first().boundingBox();
+  assert.ok(workingBounds && headBounds);
+  assert.equal(workingBounds.height, headBounds.height);
+  assert.equal(workingBounds.y + workingBounds.height, headBounds.y);
+  await expectEntry(() => workingChanges.click(), "section");
+  await expect(workingChanges).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("searchbox", { name: "Filter changed files", exact: true }).waitFor();
   await expectEntry(
     () => page.getByRole("button", { name: "Close navigation-repository", exact: true }).click(),
     "section",
@@ -257,7 +265,18 @@ try {
 
   const draft = page.getByRole("textbox", { name: "Commit title", exact: true });
 
+  const graphDraft = page.getByRole("textbox", { name: "Working tree title", exact: true });
+  const editorBounds = await graphDraft.boundingBox();
+  const rowBounds = await page.locator('[data-tour="history-working-tree"]').boundingBox();
+  assert.ok(editorBounds && rowBounds);
+  assert.ok(editorBounds.width <= 320, "Graph title stays compact on wide layouts");
+  assert.ok(editorBounds.x + editorBounds.width <= rowBounds.x + rowBounds.width);
+  assert.ok(editorBounds.y >= rowBounds.y);
+  assert.ok(editorBounds.y + editorBounds.height <= rowBounds.y + rowBounds.height);
+  await graphDraft.fill("Draft from the graph");
+  await expect(draft).toHaveValue("Draft from the graph");
   await draft.fill("Keep this draft through layout changes");
+  await expect(graphDraft).toHaveValue("Keep this draft through layout changes");
 
   for (const name of [
     "Maximize working tree",
@@ -288,6 +307,7 @@ try {
   }
 
   assert.equal(await draft.inputValue(), "Keep this draft through layout changes");
+  await expect(graphDraft).toHaveValue("Keep this draft through layout changes");
 
   await page.emulateMedia({ reducedMotion: "reduce" });
 

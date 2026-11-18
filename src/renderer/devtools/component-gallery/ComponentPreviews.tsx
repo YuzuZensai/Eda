@@ -16,7 +16,7 @@ import { buildChangeTree } from "../../repository/change-tree";
 import { ChangeRow, DirectoryRow } from "../../features/changes/ChangeRows";
 import { DiffContent } from "../../features/diff/DiffContent";
 import { CommitDetails } from "../../features/diff/CommitDetails";
-import { CommitRow } from "../../features/history/CommitRow";
+import { CommitRow, WorkingTreeRow } from "../../features/history/CommitRow";
 import { CollapsiblePanel } from "../../components/layout/CollapsiblePanel";
 import {
   ViewTransition,
@@ -411,6 +411,7 @@ export function RepositoryRowsPreview() {
   const [checked, setChecked] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [commit, setCommit] = useState(COMMITS[0]!);
+  const [workingTitle, setWorkingTitle] = useState("");
 
   const [message, setMessage] = useState(
     t("settings.componentPreviews.interactionsOnlyUpdateThisPreview"),
@@ -468,6 +469,20 @@ export function RepositoryRowsPreview() {
       </div>
 
       <div className="overflow-hidden rounded-md border border-border-default bg-bg-inset">
+        <WorkingTreeRow
+          title={workingTitle}
+          titleDisabled={false}
+          onTitleChange={setWorkingTitle}
+          changeCount={CHANGES.length}
+          addedCount={1}
+          truncated={false}
+          gutter={40}
+          lane={0}
+          selected={false}
+          onSelect={() =>
+            setMessage(t("commitChangesPanel.workingTreeChanges", { count: CHANGES.length }))
+          }
+        />
         {layoutCommitPage(COMMITS).rows.map((row, index) => (
           <CommitRow
             key={row.commit.oid}
@@ -483,6 +498,7 @@ export function RepositoryRowsPreview() {
             gutter={40}
             selected={commit.oid === row.commit.oid}
             related={false}
+            workingTreeConnection={index === 0 ? { lane: 0, head: true } : undefined}
             onSelect={() => setCommit(row.commit)}
             onContextMenu={(event) => event.preventDefault()}
           />

@@ -107,6 +107,8 @@ try {
   assert.match(git("diff", "--cached"), /first change/);
   assert.doesNotMatch(git("diff", "--cached"), /second change/);
 
+  await page.getByRole("button", { name: "Back to history", exact: true }).click();
+
   const draft = page.getByRole("textbox", { name: "Commit title" });
 
   await page.getByText("Commit options", { exact: true }).click();
@@ -116,7 +118,9 @@ try {
       .querySelector<HTMLTextAreaElement>('[aria-label="Commit description"]')
       ?.value.includes("Template body"),
   );
-  await draft.fill("Commit first hunk");
+  const graphDraft = page.getByRole("textbox", { name: "Working tree title", exact: true });
+  await graphDraft.fill("Commit first hunk");
+  assert.equal(await draft.inputValue(), "Commit first hunk");
   await page.getByRole("textbox", { name: "Commit description" }).fill("");
   await page.getByRole("checkbox", { name: "Add Signed-off-by trailer" }).check();
   await page.getByRole("button", { name: "Add co-author..." }).click();
@@ -128,6 +132,10 @@ try {
   assert.match(git("show", "HEAD:file.txt"), /first change/);
   assert.doesNotMatch(git("show", "HEAD:file.txt"), /second change/);
   assert.match(git("diff"), /second change/);
+  await page.waitForFunction(
+    () =>
+      document.querySelector<HTMLInputElement>('[aria-label="Working tree title"]')?.value === "",
+  );
   assert.match(git("log", "-1", "--format=%B"), /Signed-off-by: Eda <work@eda.invalid>/);
   assert.match(git("log", "-1", "--format=%B"), /Co-authored-by: Eda <second@eda.invalid>/);
 

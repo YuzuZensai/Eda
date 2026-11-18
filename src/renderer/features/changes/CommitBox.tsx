@@ -27,6 +27,7 @@ import { useSessionStore } from "../../stores/session-store";
 import { DirectPush } from "../sync/DirectPush";
 import { CommitPrefixPicker } from "./CommitPrefixPicker";
 import { useCommitDraft } from "./hooks/useCommitDraft";
+import { CommitTitleInput } from "../../components/ui/forms/CommitTitleInput";
 
 export function CommitBox({ pending = false }: { pending?: boolean }) {
   const [expanded, setExpanded] = useState(true);
@@ -86,6 +87,7 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
     conventional,
     prefixes,
     pushRequest,
+    disabled: messageDisabled,
   } = useCommitDraft(pending);
 
   return (
@@ -140,29 +142,11 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
               )}
 
               <div className="min-w-0 flex-1">
-                <Input
-                  size="sm"
+                <CommitTitleInput
                   value={subject}
-                  onChange={(event) =>
-                    setMessage(`${composeTitle(event.target.value)}${messageTail}`)
-                  }
-                  onPaste={(event) => {
-                    const text = event.clipboardData.getData("text/plain");
-
-                    if (!/[\r\n]/.test(text)) return;
-
-                    event.preventDefault();
-
-                    const field = event.currentTarget;
-
-                    setMessage(
-                      `${composeTitle(`${subject.slice(0, field.selectionStart ?? subject.length)}${text.replace(/\r\n?/g, "\n")}${subject.slice(field.selectionEnd ?? subject.length)}`)}${messageTail}`,
-                    );
-                  }}
+                  onChange={(value) => setMessage(`${composeTitle(value)}${messageTail}`)}
                   onKeyDown={commitShortcut}
-                  placeholder={t("commitBox.commitTitle")}
-                  aria-label={t("commitBox.commitTitle")}
-                  disabled={pending || !!snapshot?.recovery || transitioning}
+                  disabled={messageDisabled}
                 />
               </div>
             </div>
@@ -176,7 +160,7 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
               onKeyDown={commitShortcut}
               placeholder={t("commitBox.descriptionOptional")}
               aria-label={t("commitBox.commitDescription")}
-              disabled={pending || !!snapshot?.recovery || transitioning}
+              disabled={messageDisabled}
               surface="base"
               className="leading-snug"
             />

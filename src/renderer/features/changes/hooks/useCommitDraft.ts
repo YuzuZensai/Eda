@@ -7,6 +7,7 @@ import { useAppStore } from "../../../stores/app-store";
 import { usePreferencesStore } from "../../../stores/preferences-store";
 import { useRepositoryStore } from "../../../stores/repository-store";
 import { useSessionStore } from "../../../stores/session-store";
+import { useCommitMessage } from "../../../repository/hooks/useCommitMessage";
 
 export function useCommitDraft(pending: boolean) {
   const conventional = usePreferencesStore(
@@ -19,8 +20,8 @@ export function useCommitDraft(pending: boolean) {
   const commit = useRepositoryStore((state) => state.commit);
   const repositoryId = useRepositoryStore((state) => state.repositoryId);
   const [pushRequest, setPushRequest] = useState(0);
-  const snapshot = useSessionStore((state) => state.snapshot);
-  const transitioning = useSessionStore((state) => state.transitioning);
+  const messageEditor = useCommitMessage(pending);
+  const { snapshot, transitioning, draft, message, title } = messageEditor;
   const selectedId = useAppStore((state) => state.selectedRepositoryId);
   const [amendLoading, setAmendLoading] = useState(false);
   const [amendError, setAmendError] = useState<string | null>(null);
@@ -35,10 +36,7 @@ export function useCommitDraft(pending: boolean) {
     };
   }, [repositoryId, selectedId, context?.profileId, context?.generation, context?.windowId]);
 
-  const draft = (selectedId && snapshot?.drafts[selectedId]) || emptyDraft();
-  const { message, amend } = draft;
-  const firstBreak = message.indexOf("\n");
-  const title = firstBreak < 0 ? message : message.slice(0, firstBreak).replace(/\r$/, "");
+  const { amend } = draft;
   const recognized = conventional ? matchCommitPrefix(title, prefixes) : null;
   const selectedPrefix = recognized?.[1] ?? "";
   const subject = recognized ? title.slice(recognized[0].length) : title;
@@ -51,14 +49,6 @@ export function useCommitDraft(pending: boolean) {
     return selectedPrefix
       ? `${selectedPrefix}${recognized?.[2] ?? ""}${recognized?.[3] ?? ""}: ${value}`
       : value;
-  };
-
-  const messageTail = firstBreak < 0 ? "" : message.slice(firstBreak);
-  const description = messageTail.replace(/^\r?\n(?:\r?\n)?/, "");
-
-  const setMessage = (message: string) => {
-    if (!pending && repositoryId)
-      useSessionStore.getState().setDraft(repositoryId, { ...draft, message });
   };
 
   const setAmend = async (amend: boolean) => {
@@ -182,19 +172,12 @@ export function useCommitDraft(pending: boolean) {
   };
 
   return {
-    snapshot,
-    transitioning,
-    draft,
-    message,
+    ...messageEditor,
     amend,
-    title,
     recognized,
     selectedPrefix,
     subject,
     composeTitle,
-    messageTail,
-    description,
-    setMessage,
     setAmend,
     amendLoading,
     amendError,

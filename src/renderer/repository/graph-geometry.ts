@@ -12,8 +12,8 @@ export const laneX = (lane: number) => LANE_ORIGIN + lane * LANE_WIDTH;
 const rowGraphWidth = (laneCount: number) =>
   Math.max(40, laneCount * LANE_WIDTH + LANE_ORIGIN + 10);
 
-export function graphColumnWidth(rows: readonly DagRow[]): number {
-  let widest = 1;
+export function graphColumnWidth(rows: readonly DagRow[], minimumLanes = 1): number {
+  let widest = minimumLanes;
   for (const row of rows) if (row.laneCount > widest) widest = row.laneCount;
   return rowGraphWidth(widest);
 }

@@ -5,9 +5,10 @@ import {
   ArrowRightIcon as ArrowRight,
   GitCommitHorizontalIcon as GitCommitHorizontal,
 } from "../../components/ui/icons";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { PanelHeader } from "../../components/layout/PanelHeader";
 import { usePanel } from "../../components/layout/hooks/usePanel";
+import { useLayoutTransition } from "../../components/layout/hooks/useLayoutTransition";
 import { VirtualRows } from "../../components/ui/display/VirtualRows";
 import { LoadingContent, Skeleton } from "../../components/ui/feedback/Skeleton";
 import { ButtonBase, ErrorDialog, IconButton, TextButton } from "../../components/ui/index";
@@ -15,10 +16,12 @@ import { layoutCommitPages } from "../../repository/dag-layout";
 import { ROW_HEIGHT, graphColumnWidth } from "../../repository/graph-geometry";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { usePreferencesStore } from "../../stores/preferences-store";
+import { useLayoutStore } from "../../stores/layout-store";
 import type { CommitMenuTarget } from "./CommitMenu";
-import { CommitRow } from "./CommitRow";
+import { CommitRow, WorkingTreeRow } from "./CommitRow";
 import { useGraphColumns } from "./useGraphColumns";
 import { GraphVisibilityMenu } from "./GraphVisibilityMenu";
+import { useCommitMessage } from "../../repository/hooks/useCommitMessage";
 
 const CommitMenu = lazy(() =>
   import("../repository-dialogs").then((module) => ({ default: module.CommitMenu })),
@@ -71,6 +74,8 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
   const status = useRepositoryStore((state) => state.status);
   const selection = useRepositoryStore((state) => state.selection);
   const selectCommit = useRepositoryStore((state) => state.selectCommit);
+  const showWorkingTree = useRepositoryStore((state) => state.showWorkingTree);
+  const truncatedChanges = useRepositoryStore((state) => state.truncatedChanges);
   const historyTip = useRepositoryStore((state) => state.historyTip);
   const navigationIndex = useRepositoryStore((state) => state.navigationIndex);
   const navigationLength = useRepositoryStore((state) => state.navigation.length);
@@ -82,6 +87,7 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
   const loadPrevious = useRepositoryStore((state) => state.loadPrevious);
   const historyError = useRepositoryStore((state) => state.historyError);
   const panel = usePanel("graph");
+  const transitionLayout = useLayoutTransition();
   const [menu, setMenu] = useState<CommitMenuTarget | null>(null);
 
   const rows = useMemo(
@@ -93,10 +99,41 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
     [pages, dagBoundary],
   );
 
-  const gutter = useMemo(() => graphColumnWidth(rows), [rows]);
+  const workingRowCount = status?.changes.length ? 1 : 0;
+  const graphRows = useMemo(
+    () => (workingRowCount && baseOffset === 0 ? [null, ...rows] : rows),
+    [rows, workingRowCount, baseOffset],
+  );
+  const workingConnection = useMemo(() => {
+    if (!workingRowCount || baseOffset > 0 || !status?.branch.oid) return null;
+    const headIndex = rows.findIndex((row) => row.commit.oid === status.branch.oid);
+    if (headIndex < 0 || rows.slice(0, headIndex + 1).some((row) => row.topologyUnavailable))
+      return null;
 
-  const selectedIndex =
-    selection?.kind === "commit" ? rows.findIndex((row) => row.commit.oid === selection.oid) : -1;
+    const lane = headIndex === 0 ? rows[0]!.lane : Math.max(...rows.map((row) => row.laneCount));
+    return { lane, headIndex };
+  }, [rows, workingRowCount, baseOffset, status?.branch.oid]);
+  const gutter = useMemo(
+    () => graphColumnWidth(rows, workingConnection ? workingConnection.lane + 1 : 1),
+    [rows, workingConnection],
+  );
+  const graphOffset = baseOffset > 0 ? baseOffset + workingRowCount : 0;
+
+  let selectedIndex = workingRowCount && baseOffset === 0 ? 0 : -1;
+  if (selection?.kind === "commit")
+    selectedIndex = graphRows.findIndex((row) => row?.commit.oid === selection.oid);
+
+  const selectWorkingTree = () => {
+    showWorkingTree();
+
+    const layout = useLayoutStore.getState();
+    if (!layout.collapsed.rail && layout.maximized !== "graph") return;
+
+    transitionLayout(() => {
+      if (layout.collapsed.rail) layout.toggleCollapse("rail");
+      if (layout.maximized === "graph") layout.toggleMaximize("graph");
+    });
+  };
 
   return (
     <section
@@ -113,30 +150,33 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
 
         const index =
           event.key === "ArrowDown"
-            ? Math.min(rows.length - 1, selectedIndex + 1)
+            ? Math.min(graphRows.length - 1, selectedIndex + 1)
             : event.key === "ArrowUp"
               ? Math.max(0, selectedIndex - 1)
               : event.key === "Home"
                 ? 0
                 : event.key === "End"
-                  ? rows.length - 1
+                  ? graphRows.length - 1
                   : -1;
 
-        if (index >= 0 && rows[index]) {
+        if (index >= 0 && index < graphRows.length) {
           event.preventDefault();
-          void selectCommit(rows[index].commit.oid);
+          const row = graphRows[index];
+          if (row) void selectCommit(row.commit.oid);
+          else selectWorkingTree();
         }
 
         if (
           (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) &&
-          selectedIndex >= 0
+          selectedIndex >= 0 &&
+          graphRows[selectedIndex]
         ) {
           event.preventDefault();
 
           const bounds = event.currentTarget.getBoundingClientRect();
 
           setMenu({
-            oid: rows[selectedIndex]!.commit.oid,
+            oid: graphRows[selectedIndex]!.commit.oid,
             x: bounds.left + 40,
             y: bounds.top + 60,
           });
@@ -323,7 +363,7 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
             </p>
           )}
 
-          {rows.length === 0 && !historyError && (
+          {rows.length === 0 && !historyError && !workingRowCount && (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-5 text-sm text-text-tertiary">
               <GitCommitHorizontal size={22} />
               <p>{t("commitGraph.noCommitsYet")}</p>
@@ -334,11 +374,11 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
           <VirtualRows
             scrollKey={`${identityId}:${repositoryId}:graph`}
             horizontalScroll={false}
-            revealIndex={selectedIndex >= 0 ? baseOffset + selectedIndex : undefined}
-            items={rows}
+            revealIndex={selectedIndex >= 0 ? graphOffset + selectedIndex : undefined}
+            items={graphRows}
             rowHeight={ROW_HEIGHT}
-            itemOffset={baseOffset}
-            totalCount={nextOffset ?? baseOffset + rows.length}
+            itemOffset={graphOffset}
+            totalCount={(nextOffset ?? baseOffset + rows.length) + workingRowCount}
             className="min-h-0 flex-1"
             {...(nextOffset !== null && !historyLoading
               ? { onNearEnd: () => void loadMore() }
@@ -346,23 +386,52 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
             {...(baseOffset > 0 && !historyLoading
               ? { onNearStart: () => void loadPrevious() }
               : {})}
-            renderRow={(row) => (
-              <CommitRow
-                key={row.commit.oid}
-                row={row}
-                {...(repositoryId && { repositoryId })}
-                columns={columns}
-                gutter={gutter}
-                selected={selection?.kind === "commit" && selection.oid === row.commit.oid}
-                related={hoveredRefOid === row.commit.oid}
-                vigilantMode={vigilantMode && shaColumnVisible}
-                onSelect={() => void selectCommit(row.commit.oid)}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  setMenu({ oid: row.commit.oid, x: event.clientX, y: event.clientY });
-                }}
-              />
-            )}
+            renderRow={(row, index) =>
+              row ? (
+                <CommitRow
+                  key={row.commit.oid}
+                  row={row}
+                  {...(repositoryId && { repositoryId })}
+                  columns={columns}
+                  gutter={gutter}
+                  selected={selection?.kind === "commit" && selection.oid === row.commit.oid}
+                  related={hoveredRefOid === row.commit.oid}
+                  vigilantMode={vigilantMode && shaColumnVisible}
+                  workingTreeConnection={
+                    workingConnection && index - workingRowCount <= workingConnection.headIndex
+                      ? {
+                          lane: workingConnection.lane,
+                          head: index - workingRowCount === workingConnection.headIndex,
+                        }
+                      : undefined
+                  }
+                  onSelect={() => void selectCommit(row.commit.oid)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setMenu({ oid: row.commit.oid, x: event.clientX, y: event.clientY });
+                  }}
+                />
+              ) : (
+                <WorkingTreeDraftRow
+                  pending={pending}
+                  key="working-tree"
+                  changeCount={status?.changes.length ?? 0}
+                  addedCount={
+                    status?.changes.filter(
+                      (change) =>
+                        change.kind === "untracked" ||
+                        change.index === "A" ||
+                        change.worktree === "?",
+                    ).length ?? 0
+                  }
+                  truncated={truncatedChanges}
+                  gutter={gutter}
+                  lane={workingConnection?.lane}
+                  selected={selection?.kind !== "commit"}
+                  onSelect={selectWorkingTree}
+                />
+              )
+            }
           />
 
           {menu && (
@@ -379,5 +448,23 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
         </>
       )}
     </section>
+  );
+}
+
+function WorkingTreeDraftRow({
+  pending,
+  ...props
+}: Omit<ComponentProps<typeof WorkingTreeRow>, "title" | "titleDisabled" | "onTitleChange"> & {
+  pending: boolean;
+}) {
+  const { title, messageTail, setMessage, disabled } = useCommitMessage(pending);
+
+  return (
+    <WorkingTreeRow
+      {...props}
+      title={title}
+      titleDisabled={disabled}
+      onTitleChange={(value) => setMessage(`${value}${messageTail}`)}
+    />
   );
 }
