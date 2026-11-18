@@ -394,7 +394,7 @@ try {
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await settings.click();
-  await page.locator('button[aria-controls="settings-credentials"]').click();
+  await page.locator('button[aria-controls="settings-global"]').click();
 
   const vigilantMode = page.getByRole("checkbox", { name: "Vigilant mode", exact: true });
   await vigilantMode.waitFor();
@@ -416,6 +416,24 @@ try {
   await settings.click();
   await vigilantMode.waitFor();
   await expect(vigilantMode).toBeChecked();
+  await page.locator('button[aria-controls="settings-preferences"]').click();
+  const profileVigilantMode = page.getByRole("combobox", { name: "Vigilant mode", exact: true });
+  await expect(profileVigilantMode).toHaveText("Follow global");
+  await profileVigilantMode.click();
+  await page.getByRole("option", { name: "Off", exact: true }).click();
+  await expect(profileVigilantMode).toHaveText("Off");
+  await settings.click();
+  await unsigned.waitFor({ state: "detached" });
+
+  await settings.click();
+  await profileVigilantMode.click();
+  await page.getByRole("option", { name: "Follow global", exact: true }).click();
+  await expect(profileVigilantMode).toHaveText("Follow global");
+  await settings.click();
+  await unsigned.waitFor({ state: "visible" });
+
+  await settings.click();
+  await page.locator('button[aria-controls="settings-global"]').click();
   await vigilantMode.click();
   await expect(vigilantMode).not.toBeChecked();
   await settings.click();

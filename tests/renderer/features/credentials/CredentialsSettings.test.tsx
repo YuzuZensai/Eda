@@ -6,7 +6,6 @@ import type { ConnectionTestResult, SshKey } from "@shared/identity/ssh";
 
 vi.mock("@renderer/features/credentials/SigningSettings", () => ({
   SigningSettings: () => null,
-  VigilantModeSettings: () => null,
 }));
 
 it.each([

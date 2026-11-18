@@ -20,6 +20,7 @@ const APPEARANCE_SETTINGS = [
   "background",
   "windowTransparency",
   "historyVisibleColumns",
+  "vigilantMode",
 ] as const;
 
 interface ScopedPreferencesProps {

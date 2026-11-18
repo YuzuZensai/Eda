@@ -18,7 +18,7 @@ import {
   StateMessage,
 } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
-import { SigningSettings, VigilantModeSettings } from "./SigningSettings";
+import { SigningSettings } from "./SigningSettings";
 import { SshKeyList } from "./SshKeyList";
 
 export function CredentialsSettings() {
@@ -240,8 +240,6 @@ export function CredentialsSettings() {
         sshKeys={keys}
         onSaved={refreshIdentities}
       />
-
-      <VigilantModeSettings />
 
       {identity.sshKeyPath && (!selectedKey || selectedKey.encrypted) && (
         <fieldset

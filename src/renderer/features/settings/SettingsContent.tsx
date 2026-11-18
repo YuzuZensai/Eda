@@ -11,6 +11,7 @@ import { ProfilesSettings } from "../profiles/ProfilesSettings";
 import { ScopedPreferences } from "./ScopedPreferences";
 import { AccentSettings } from "./appearance/AccentSettings";
 import { AppearanceControls } from "./appearance/AppearanceControls";
+import { VigilantModeSettings } from "./appearance/VigilantModeSettings";
 import { HistoryColumnsSettings } from "./appearance/HistoryColumnsSettings";
 import { AboutSettings } from "./application/AboutSettings";
 import { ApplicationPreferences } from "./application/ApplicationPreferences";
@@ -61,6 +62,7 @@ export function SettingsContent({
           <AccentSettings owner={owner} preview={preview} />
           <AppearanceControls owner={owner} preview={preview} active />
           <HistoryColumnsSettings key={`${owner}:${profile?.id}`} owner={owner} />
+          <VigilantModeSettings key={`vigilant:${owner}:${profile?.id}`} owner={owner} />
         </div>
       );
     }

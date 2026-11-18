@@ -2,35 +2,10 @@ import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { Identity, SigningFormat } from "@shared/identity/identity";
 import type { SshKey } from "@shared/identity/ssh";
-import { useId, useState } from "react";
+import { useState } from "react";
 import { Button, Checkbox, ErrorDialog, Field, Select } from "../../components/ui/index";
 import { GpgKeyPicker } from "./GpgKeyPicker";
 import { useGpgKeys } from "./hooks/useGpgKeys";
-import { usePreferencesStore } from "../../stores/preferences-store";
-import { useScopedSetting } from "../settings/hooks/useScopedSetting";
-
-export function VigilantModeSettings() {
-  const setting = useScopedSetting("vigilantMode", "profile");
-  const saving = usePreferencesStore((state) => state.saving);
-  const descriptionId = useId();
-
-  return (
-    <div className="space-y-2 border-t border-border-subtle pt-5">
-      <Checkbox
-        checked={setting.resolved.value}
-        disabled={setting.unavailable || saving}
-        aria-describedby={descriptionId}
-        onChange={(event) => void setting.set(event.target.checked)}
-      >
-        {t("signingSettings.vigilantMode")}
-      </Checkbox>
-
-      <p id={descriptionId} className="text-xs leading-relaxed text-text-secondary">
-        {t("signingSettings.vigilantModeDescription")}
-      </p>
-    </div>
-  );
-}
 
 export function SigningSettings({
   identity,

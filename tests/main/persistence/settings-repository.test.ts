@@ -123,23 +123,43 @@ describe("preference scopes", () => {
     expect(store.resolve("showInternalRefs").value).toBe(false);
   });
 
-  it("keeps vigilant mode off by default and persists it only for its profile", () => {
+  it("persists the global vigilant mode default while preserving independent profile overrides", () => {
     const { db, store, work, home } = setup();
-    const scope = { kind: "profile", profileId: work.id } as const;
+    const global = { kind: "application" } as const;
+    const profile = { kind: "profile", profileId: work.id } as const;
+    const context = { profileId: work.id, repositoryId: "repo" };
 
-    expect(store.resolve("vigilantMode", { profileId: work.id }).value).toBe(false);
-    store.set("vigilantMode", scope, true);
+    expect(store.resolve("vigilantMode").value).toBe(false);
+    store.set("vigilantMode", profile, true);
 
     const reloaded = new SettingsRepository(db);
-    expect(
-      reloaded.resolve("vigilantMode", { profileId: work.id, repositoryId: "repo" }).value,
-    ).toBe(true);
+    expect(reloaded.resolve("vigilantMode", context)).toMatchObject({
+      value: true,
+      source: profile,
+    });
     expect(reloaded.resolve("vigilantMode", { profileId: home.id }).value).toBe(false);
-    expect(() => store.set("vigilantMode", { kind: "application" }, true)).toThrow();
-    expect(() => store.set("vigilantMode", scope, "true")).toThrow();
 
-    store.reset("vigilantMode", scope);
-    expect(store.resolve("vigilantMode", { profileId: work.id }).value).toBe(false);
+    store.set("vigilantMode", global, true);
+    store.set("vigilantMode", profile, false);
+    expect(reloaded.resolve("vigilantMode", context)).toMatchObject({
+      value: false,
+      source: profile,
+    });
+    expect(reloaded.resolve("vigilantMode", { profileId: home.id })).toMatchObject({
+      value: true,
+      source: global,
+    });
+    expect(() => store.set("vigilantMode", global, "true")).toThrow();
+    expect(() => store.set("vigilantMode", profile, "true")).toThrow();
+    expect(() => store.set("vigilantMode", { kind: "repository", ...context }, true)).toThrow();
+
+    store.reset("vigilantMode", profile);
+    expect(reloaded.resolve("vigilantMode", context)).toMatchObject({
+      value: true,
+      source: global,
+    });
+    store.reset("vigilantMode", global);
+    expect(reloaded.resolve("vigilantMode", context).value).toBe(false);
   });
 
   it("keeps developer settings disabled by default and persists the application opt-in", () => {

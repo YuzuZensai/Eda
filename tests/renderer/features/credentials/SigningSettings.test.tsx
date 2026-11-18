@@ -4,13 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { err, ok, type Result } from "@shared/errors";
 import type { Identity } from "@shared/identity/identity";
 import type { GpgSigningKey } from "@shared/identity/signing";
-import {
-  SigningSettings,
-  VigilantModeSettings,
-} from "@renderer/features/credentials/SigningSettings";
-import { builtInSetting, type SettingKey } from "@shared/preferences/settings";
-import { useAppStore } from "@renderer/stores/app-store";
-import { usePreferencesStore } from "@renderer/stores/preferences-store";
+import { SigningSettings } from "@renderer/features/credentials/SigningSettings";
 
 const identity: Identity = {
   id: "work",
@@ -50,53 +44,6 @@ afterEach(async () => {
 
 const button = () =>
   [...document.querySelectorAll("button")].find((item) => item.textContent === "Retry saving")!;
-
-it("saves vigilant mode for the selected profile and retains its saved value after a failed change", async () => {
-  const app = useAppStore.getState();
-  const preferences = usePreferencesStore.getState();
-  let enabled = false;
-  const set = vi.fn(async (_key: string, _scope: unknown, value: boolean) => {
-    enabled = value;
-    return ok(undefined);
-  });
-
-  vi.stubGlobal("eda", {
-    settings: {
-      resolve: async (key: SettingKey) =>
-        ok(
-          key === "vigilantMode" ? { ...builtInSetting(key), value: enabled } : builtInSetting(key),
-        ),
-      set,
-    },
-  });
-
-  try {
-    useAppStore.setState({ activeIdentity: identity, switchingIdentityId: null });
-    await act(async () => root.render(<VigilantModeSettings />));
-    const toggle = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    expect(toggle.checked).toBe(false);
-    expect(toggle.disabled).toBe(false);
-
-    await act(async () => toggle.click());
-    expect(set).toHaveBeenCalledWith(
-      "vigilantMode",
-      { kind: "profile", profileId: identity.id },
-      true,
-    );
-    expect(toggle.checked).toBe(true);
-    expect(usePreferencesStore.getState().values.vigilantMode.value).toBe(true);
-
-    set.mockResolvedValueOnce(err(errorFixture({ message: "Save failed" })));
-    await act(async () => toggle.click());
-    expect(toggle.checked).toBe(true);
-    expect(usePreferencesStore.getState().error?.message).toBe("Save failed");
-  } finally {
-    await act(async () => root.unmount());
-    useAppStore.setState(app);
-    usePreferencesStore.setState(preferences);
-    root = createRoot(container);
-  }
-});
 
 it("keeps the selected key after a failed save and only persists an explicit choice for its profile", async () => {
   const configureSigning = vi.fn().mockResolvedValue(

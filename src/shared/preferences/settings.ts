@@ -135,7 +135,7 @@ export const SETTING_DEFINITIONS = {
   }),
   vigilantMode: define<boolean>({
     defaultValue: false,
-    scopes: ["profile"],
+    scopes: profile,
     validate: boolean,
   }),
   commitPrefixes: define<string[]>({
