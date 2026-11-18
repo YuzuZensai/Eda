@@ -1,10 +1,11 @@
+type Pending<T> = { work: Promise<T | null>; invalidated: boolean };
 type Entry<T> = { value: T | null; expiresAt: number };
 const TTL = 5 * 60_000;
 const MAX_ENTRIES = 128;
 
 export class ProviderProfileCache<T> {
   private readonly entries = new Map<string, Entry<T>>();
-  private readonly pending = new Map<string, Promise<T | null>>();
+  private readonly pending = new Map<string, Pending<T>>();
 
   constructor(private readonly now = Date.now) {}
 
@@ -13,6 +14,7 @@ export class ProviderProfileCache<T> {
   }
 
   set(key: string, value: T): void {
+    this.invalidate(key);
     this.save(key, value, TTL);
   }
 
@@ -24,29 +26,44 @@ export class ProviderProfileCache<T> {
     const cached = this.entries.get(key);
     if (cached && cached.expiresAt > this.now()) return cached.value;
     const pending = this.pending.get(key);
-    if (pending) return pending;
+    if (pending) {
+      if (!pending.invalidated) return pending.work;
+      await pending.work;
+      return this.get(key, load, fallback);
+    }
     if (this.pending.size >= MAX_ENTRIES) return cached?.value ?? fallback;
-    const work = this.refresh(key, load, cached?.value ?? fallback).finally(() =>
-      this.pending.delete(key),
-    );
-    this.pending.set(key, work);
-    return work;
+    const entry: Pending<T> = {
+      invalidated: false,
+      work: this.refresh(load, cached?.value ?? fallback)
+        .then(({ value, ttl }) => {
+          if (!entry.invalidated) this.save(key, value, ttl);
+          return value;
+        })
+        .finally(() => this.pending.delete(key)),
+    };
+    this.pending.set(key, entry);
+    return entry.work;
   }
 
   delete(key: string): void {
+    this.invalidate(key);
     this.entries.delete(key);
   }
 
   async clear(): Promise<void> {
-    await Promise.allSettled(this.pending.values());
+    await Promise.allSettled([...this.pending.values()].map((entry) => entry.work));
     this.entries.clear();
   }
 
+  private invalidate(key: string): void {
+    const pending = this.pending.get(key);
+    if (pending) pending.invalidated = true;
+  }
+
   private async refresh(
-    key: string,
     load: () => Promise<T | null>,
     fallback: T | null,
-  ): Promise<T | null> {
+  ): Promise<{ value: T | null; ttl: number }> {
     let value = fallback;
     let ttl = 60_000;
     try {
@@ -56,8 +73,7 @@ export class ProviderProfileCache<T> {
         ttl = TTL;
       }
     } catch {}
-    this.save(key, value, ttl);
-    return value;
+    return { value, ttl };
   }
 
   private save(key: string, value: T | null, ttl: number): void {
