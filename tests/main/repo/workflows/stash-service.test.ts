@@ -99,7 +99,6 @@ async function setup() {
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 0,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 

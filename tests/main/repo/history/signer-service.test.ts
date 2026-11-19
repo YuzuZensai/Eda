@@ -39,7 +39,6 @@ function setup() {
       gitName: name,
       gitEmail: `${name}@example.test`,
       hue: 210,
-      rules: [],
       signing: { format: "none", signCommits: false },
     });
   const work = create("work");

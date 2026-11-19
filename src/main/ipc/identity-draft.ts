@@ -10,7 +10,6 @@ import {
   requireHue,
   requireRecord,
   requireString,
-  requireStringArray,
 } from "./validate";
 
 type Signing = IdentityDraft["signing"];
@@ -55,8 +54,6 @@ export function parseDraft(raw: unknown): IdentityDraft {
       input["signing"] === undefined
         ? { format: "none", signCommits: false }
         : parseSigning(input["signing"]),
-    rules:
-      input["rules"] === undefined ? [] : requireStringArray(input["rules"], t("fields.rules")),
   };
 }
 
@@ -71,8 +68,6 @@ export function parsePartialDraft(raw: unknown): Partial<IdentityDraft> {
   if (input["gitEmail"] !== undefined)
     draft.gitEmail = requireEmail(input["gitEmail"], t("main.identityDraft.gitEmail"));
   if (input["hue"] !== undefined) draft.hue = parseAccent(input["hue"]);
-  if (input["rules"] !== undefined)
-    draft.rules = requireStringArray(input["rules"], t("fields.rules"));
   if (input["signing"] !== undefined) draft.signing = parseSigning(input["signing"]);
 
   const username = optionalString(input["username"], t("fields.username"), 128);

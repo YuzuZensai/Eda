@@ -29,7 +29,6 @@ try {
         gitEmail: "explorer@example.test",
         hue: 190,
         signing: { format: "none", signCommits: false },
-        rules: [],
       },
       { syncGlobalGitConfig: false },
     ),

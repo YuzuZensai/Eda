@@ -55,7 +55,8 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
   const [connections, setConnections] = useState<Record<string, Connection> | null>(null);
 
   const [url, setUrl] = useState("");
-  const [parent, setParent] = useState("");
+  const [parent, setParent] = useState<string | null>(null);
+  const parentPath = parent ?? "";
   const [name, setName] = useState("");
   const [nameEdited, setNameEdited] = useState(false);
   const [auth, setAuth] = useState<TransportCredentials>({ username: "", password: "" });
@@ -71,6 +72,27 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
     ...(Object.keys(connections ?? {}) as Exclude<Source, "url">[]),
     "url",
   ];
+
+  useEffect(() => {
+    let active = true;
+
+    void window.eda.settings
+      .resolve("repositoryRoot", { profileId })
+      .then((result) => {
+        if (!active) return;
+        setParent((current) => current ?? (result.ok ? result.value.value : ""));
+        if (!result.ok) setError(errorMessage(result.error));
+      })
+      .catch(() => {
+        if (!active) return;
+        setParent((current) => current ?? "");
+        setError(t("settings.useScopedSetting.couldNotReadApplicationPreferences"));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [profileId]);
 
   useEffect(() => {
     let active = true;
@@ -164,7 +186,7 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
   };
 
   const clone = async () => {
-    if (busy || !url.trim() || !parent.trim() || !name.trim()) return;
+    if (busy || !url.trim() || !parentPath.trim() || !name.trim()) return;
 
     setBusy(true);
     setError(null);
@@ -173,7 +195,7 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
       const result = await window.eda.remotes.clone({
         profileId,
         url: url.trim(),
-        parent: parent.trim(),
+        parent: parentPath.trim(),
         name: name.trim(),
         ...(auth.username || auth.password ? { credentials: auth } : {}),
       });
@@ -224,7 +246,7 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
             variant="primary"
             icon={<ArrowDownToLine size={15} />}
             busy={busy}
-            disabled={!url.trim() || !parent.trim() || !name.trim()}
+            disabled={!url.trim() || !parentPath.trim() || !name.trim()}
             onClick={() => void clone()}
           >
             {busy ? t("cloneRepositoryDialog.cloning") : t("cloneRepositoryDialog.cloneRepository")}
@@ -379,8 +401,9 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
                   <Input
                     {...field}
                     aria-label={t("cloneRepositoryDialog.cloneParentFolder")}
-                    value={parent}
+                    value={parentPath}
                     disabled={busy}
+                    aria-busy={parent === null}
                     onChange={(event) => setParent(event.target.value)}
                     placeholder={t("cloneRepositoryDialog.chooseParentFolder")}
                   />

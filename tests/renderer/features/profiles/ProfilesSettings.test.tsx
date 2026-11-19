@@ -13,7 +13,6 @@ const profile = (name: string): Identity => ({
   gitEmail: "",
   hue: 210,
   signing: { format: "none", signCommits: false },
-  rules: [],
   createdAt: "now",
   updatedAt: "now",
 });

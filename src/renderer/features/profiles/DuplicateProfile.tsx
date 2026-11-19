@@ -98,7 +98,7 @@ export function DuplicateProfile({ profile, onClose }: { profile: Identity; onCl
         </Checkbox>
 
         <p className="text-xs text-text-tertiary">
-          {t("profiles.duplicateProfile.authorDetailsAndPathRulesAreCopiedKeys")}
+          {t("profiles.duplicateProfile.authorDetailsAreCopiedKeys")}
         </p>
         <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>
       </div>

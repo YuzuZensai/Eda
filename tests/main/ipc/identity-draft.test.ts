@@ -20,7 +20,6 @@ describe("parseDraft", () => {
       hue: 210,
     });
     expect(draft.signing).toEqual({ format: "none", signCommits: false });
-    expect(draft.rules).toEqual([]);
   });
 
   it("carries optional fields through when present", () => {
@@ -29,14 +28,12 @@ describe("parseDraft", () => {
       username: "eda",
       avatarPath: "/avatars/eda.png",
       sshKeyPath: "/home/dev/.ssh/id_work",
-      rules: ["~/Work/*"],
     });
 
     expect(draft).toMatchObject({
       username: "eda",
       avatarPath: "/avatars/eda.png",
       sshKeyPath: "/home/dev/.ssh/id_work",
-      rules: ["~/Work/*"],
     });
   });
 
@@ -87,11 +84,6 @@ describe("parseDraft", () => {
     expect(() => parseDraft({ ...valid, gitEmail: "not-an-email" })).toThrow(GitError);
     expect(() => parseDraft({ ...valid, hue: "blue" })).toThrow(GitError);
   });
-
-  it("rejects a rules value that is not a list of strings", () => {
-    expect(() => parseDraft({ ...valid, rules: "not-a-list" })).toThrow(GitError);
-    expect(() => parseDraft({ ...valid, rules: [1, 2] })).toThrow(GitError);
-  });
 });
 
 describe("parsePartialDraft", () => {
@@ -117,9 +109,5 @@ describe("parsePartialDraft", () => {
     expect(
       parsePartialDraft({ signing: { format: "gpg", keyRef: "ABCD", signCommits: true } }).signing,
     ).toEqual({ format: "gpg", keyRef: "ABCD", signCommits: true });
-  });
-
-  it("can clear the rules list", () => {
-    expect(parsePartialDraft({ rules: [] }).rules).toEqual([]);
   });
 });

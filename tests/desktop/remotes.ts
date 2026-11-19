@@ -193,12 +193,21 @@ try {
   await page.getByRole("textbox", { name: /^Git email/ }).fill("fixture@example.com");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await finishOnboarding(page);
+  const activeProfile = await page.evaluate(() => window.eda.identity.getActive());
+  assert.ok(activeProfile.ok && activeProfile.value, JSON.stringify(activeProfile));
+  const profileId = activeProfile.value.id;
+  const savedRoot = await page.evaluate(
+    ({ path, profileId }) =>
+      window.eda.settings.set("repositoryRoot", { kind: "profile", profileId }, path),
+    { path: root, profileId },
+  );
+  assert.ok(savedRoot.ok, JSON.stringify(savedRoot));
   await page.getByRole("button", { name: "Clone repository", exact: true }).click();
 
   const clone = page.getByRole("dialog", { name: "Clone repository", exact: true });
 
   await clone.getByLabel("Repository URL", { exact: true }).fill(url);
-  await clone.getByLabel("Clone parent folder").fill(root);
+  await expect(clone.getByLabel("Clone parent folder")).toHaveValue(root);
   await clone.getByLabel("Clone folder name").fill("cloned repo");
   await clone.getByText("HTTPS authentication", { exact: true }).click();
   await clone.getByLabel("HTTPS username").fill("fixture");
@@ -669,6 +678,12 @@ try {
   resumedPage.setDefaultTimeout(20_000);
   resumedPage.on("pageerror", (error) => errors.push(error.message));
   await resumedPage.getByRole("button", { name: "Settings", exact: true }).waitFor();
+  const restoredRoot = await resumedPage.evaluate(
+    (profileId) => window.eda.settings.resolve("repositoryRoot", { profileId }),
+    profileId,
+  );
+  assert.ok(restoredRoot.ok, JSON.stringify(restoredRoot));
+  assert.equal(restoredRoot.value.value, root);
 
   const savedFetch = await resumedPage.evaluate(
     async (id) => window.eda.backgroundFetch.inspect(id),

@@ -31,7 +31,6 @@ async function setup(homeSync?: boolean) {
     gitEmail: "work@example.com",
     hue: 210,
     signing: { format: "none", signCommits: false },
-    rules: [],
   });
 
   const home = profiles.create(
@@ -41,7 +40,6 @@ async function setup(homeSync?: boolean) {
       gitEmail: "home@example.com",
       hue: 330,
       signing: { format: "none", signCommits: false },
-      rules: [],
     },
     homeSync === undefined ? {} : { syncGlobalGitConfig: homeSync },
   );

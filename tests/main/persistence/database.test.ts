@@ -102,8 +102,8 @@ describe("schema constraints", () => {
     expect(() =>
       db.raw
         .prepare(
-          `INSERT INTO identities (id, name, name_key, git_name, git_email, signing_format, sign_commits, rules, created_at, updated_at)
-           VALUES ('x', 'x', 'x', 'n', 'e', 'x509', 0, '[]', 'now', 'now')`,
+          `INSERT INTO identities (id, name, name_key, git_name, git_email, signing_format, sign_commits, created_at, updated_at)
+           VALUES ('x', 'x', 'x', 'n', 'e', 'x509', 0, 'now', 'now')`,
         )
         .run(),
     ).toThrow();
@@ -203,7 +203,6 @@ describe("schema constraints", () => {
     expect(db.select().from(identities).get()).toMatchObject({
       signingFormat: "none",
       signCommits: 0,
-      rules: "[]",
     });
   });
 });
@@ -321,7 +320,6 @@ it("rejects invalid booleans, provider states, and live JSON while allowing raw 
   try {
     for (const query of [
       "UPDATE identities SET sign_commits = 7",
-      "UPDATE identities SET rules = '{}'",
       "UPDATE repositories SET favourite = -1",
       "INSERT INTO github_accounts VALUES ('work', '1', 'login', 'secret-ref', 'invalid')",
       "INSERT INTO settings VALUES ('bad', 'broken')",

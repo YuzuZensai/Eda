@@ -12,13 +12,12 @@ import { ProfileSessionRepository } from "@main/persistence/profile-session-repo
 import { RepositoryManager } from "@main/repo/lifecycle/repository-manager";
 import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 
-const draft = (name: string, email: string, rules: string[] = []): IdentityDraft => ({
+const draft = (name: string, email: string): IdentityDraft => ({
   name,
   gitName: name,
   gitEmail: email,
   hue: 210,
   signing: { format: "none", signCommits: false },
-  rules,
 });
 
 const setup = async () => {
@@ -372,19 +371,6 @@ describe("RepositoryManager", () => {
     await ctx.repositories.open(ctx.repo.path);
 
     expect(await ctx.repositories.listForActiveIdentity()).toHaveLength(1);
-  });
-
-  it("suggests an identity from its path rules without applying it", async () => {
-    const ctx = await setup();
-
-    repo = ctx.repo;
-
-    const work = ctx.identities.create(draft("Work", "dev@work.example", [`${ctx.repo.path}/*`]));
-
-    const suggestion = ctx.repositories.suggestIdentityForPath(`${ctx.repo.path}/some-repo`);
-
-    expect(suggestion?.id).toBe(work.id);
-    expect(ctx.identity.getActive()).toBeNull();
   });
 
   it("deletes an identity's repositories along with it", async () => {

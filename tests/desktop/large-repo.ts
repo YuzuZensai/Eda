@@ -59,7 +59,6 @@ try {
       gitEmail: "gate@eda.invalid",
       hue: 210,
       signing: { format: "none", signCommits: false },
-      rules: [],
     });
 
     if (!created.ok) throw new Error(created.error.message);

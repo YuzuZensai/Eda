@@ -77,7 +77,6 @@ it.each(["original", "applied", "undoing"] as const)(
       gitName: "Eda",
       gitEmail: "test@eda.invalid",
       hue: 0,
-      rules: [],
       signing: { format: "none", signCommits: false },
     });
     context.identities.setActiveId(profile.id);
@@ -133,7 +132,6 @@ it("reviews all reset modes and preserves index/content recovery across restart 
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 0,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 
@@ -630,7 +628,6 @@ it("resumes the original reset intent before Git runs or after Git reached the t
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 0,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 

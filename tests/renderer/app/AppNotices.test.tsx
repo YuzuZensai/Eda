@@ -41,7 +41,6 @@ it("stacks notices, dismisses an update independently, and resurfaces changed up
       gitEmail: "work@example.com",
       hue: 210,
       signing: { format: "none", signCommits: false },
-      rules: [],
       createdAt: "now",
       updatedAt: "now",
     },

@@ -315,10 +315,6 @@ export function registerRepositoryHandlers(services: Services): void {
     return ok(undefined);
   });
 
-  handle(IPC_CHANNELS.repositorySuggestProfile, async (_event, path) =>
-    ok(repositories.suggestIdentityForPath(requireAbsolutePath(path)) ?? null),
-  );
-
   handle(IPC_CHANNELS.repositoryAssignProfile, async (_event, rawId, rawTarget, rawMove) => {
     if (typeof rawMove !== "boolean")
       throw invalidRequest(
@@ -540,7 +536,12 @@ export function registerRepositoryHandlers(services: Services): void {
   });
 
   handle(IPC_CHANNELS.repositoryChooseFolder, async (event) => {
+    const profileId = services.identity.getActive()?.id;
+    const root = profileId
+      ? services.preferences.resolve("repositoryRoot", { profileId }).value
+      : "";
     const result = await showOpenDialog(event, {
+      ...(root ? { defaultPath: root } : {}),
       properties: ["openDirectory", "createDirectory"],
     });
 

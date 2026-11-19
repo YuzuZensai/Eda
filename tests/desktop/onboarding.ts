@@ -458,7 +458,6 @@ try {
       gitEmail: "eda.work@example.com",
       hue: 210,
       signing: { format: "none", signCommits: false },
-      rules: [],
     });
 
     if (!result.ok) throw new Error(result.error.message);

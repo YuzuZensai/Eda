@@ -32,7 +32,6 @@ async function setup() {
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 0,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 
@@ -284,7 +283,6 @@ it("resolves text, rename and modify/delete conflicts without losing external ed
     gitName: "Eda",
     gitEmail: "other@eda.invalid",
     hue: 10,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 

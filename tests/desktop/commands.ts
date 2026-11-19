@@ -194,7 +194,6 @@ try {
       gitEmail: "home@example.com",
       hue: 270,
       signing: { format: "none", signCommits: false },
-      rules: [],
     }),
   );
 

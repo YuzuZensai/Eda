@@ -13,7 +13,6 @@ const identity = (id: string): Identity => ({
   gitEmail: `${id}@example.com`,
   hue: 210,
   signing: { format: "none", signCommits: false },
-  rules: [],
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
 });

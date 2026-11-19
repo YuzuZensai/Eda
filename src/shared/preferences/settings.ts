@@ -31,6 +31,12 @@ interface Definition<T> {
 
 const define = <T>(definition: Definition<T>): Definition<T> => definition;
 const boolean = (v: unknown): v is boolean => typeof v === "boolean";
+const optionalAbsolutePath = (value: unknown): value is string =>
+  typeof value === "string" &&
+  (value === "" ||
+    (value.length <= 4096 &&
+      /^(?:[A-Za-z]:[\\/]|\/|\\\\)/.test(value) &&
+      !/[\x00-\x1f]/.test(value)));
 const application = ["application"] as const;
 const profile = ["application", "profile"] as const;
 const repository = ["application", "profile", "repository"] as const;
@@ -88,6 +94,11 @@ const percentage = (v: unknown): v is number =>
   typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 100;
 
 export const SETTING_DEFINITIONS = {
+  repositoryRoot: define<string>({
+    defaultValue: "",
+    scopes: ["profile"],
+    validate: optionalAbsolutePath,
+  }),
   historyVisibleColumns: define<GraphColumnId[]>({
     defaultValue: [...GRAPH_COLUMN_IDS],
     scopes: profile,
@@ -218,12 +229,7 @@ export const SETTING_DEFINITIONS = {
   editorExecutable: define<string>({
     defaultValue: "",
     scopes: profile,
-    validate: (value): value is string =>
-      typeof value === "string" &&
-      (value === "" ||
-        (value.length <= 4096 &&
-          /^(?:[A-Za-z]:[\\/]|\/|\\\\)/.test(value) &&
-          !/[\x00-\x1f]/.test(value))),
+    validate: optionalAbsolutePath,
   }),
   hardwareAcceleration: define<boolean>({
     defaultValue: true,

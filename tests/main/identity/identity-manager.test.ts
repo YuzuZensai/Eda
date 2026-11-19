@@ -11,7 +11,6 @@ const draft = (name: string, email: string, hue: number): IdentityDraft => ({
   gitEmail: email,
   hue,
   signing: { format: "none", signCommits: false },
-  rules: [],
 });
 
 const setup = async () => {

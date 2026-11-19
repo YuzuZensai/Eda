@@ -33,7 +33,6 @@ async function setup(options: { gitName?: string; gitEmail?: string } = {}) {
     gitEmail: options.gitEmail ?? "test@eda.invalid",
     hue: 210,
     signing: { format: "none", signCommits: false },
-    rules: [],
   });
 
   identities.setActiveId(identity.id);

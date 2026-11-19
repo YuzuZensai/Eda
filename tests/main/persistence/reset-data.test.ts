@@ -22,7 +22,6 @@ it("wipes every user table but preserves migrations and a usable fresh database"
       gitEmail: "old@example.com",
       hue: 210,
       signing: { format: "none", signCommits: false },
-      rules: [],
     });
     profiles.setActiveId(profile.id);
     settings.set("background", { kind: "application" }, { image: "", strength: 70, blur: 12 });
@@ -39,7 +38,6 @@ it("wipes every user table but preserves migrations and a usable fresh database"
       gitEmail: "new@example.com",
       hue: 210,
       signing: { format: "none", signCommits: false },
-      rules: [],
     });
     profiles.setActiveId(fresh.id);
     expect(profiles.getActiveId()).toBe(fresh.id);

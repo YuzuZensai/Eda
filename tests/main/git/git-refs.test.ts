@@ -130,7 +130,6 @@ describe("tags against real Git", () => {
       gitEmail: "test@eda.invalid",
       hue: 0,
       signing: { format: "ssh", keyRef: key, signCommits: false },
-      rules: [],
       createdAt: "",
       updatedAt: "",
     };

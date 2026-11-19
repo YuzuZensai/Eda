@@ -55,7 +55,7 @@ export const SETTINGS_SECTIONS: {
   },
   {
     id: "profiles",
-    keywords: t("settings.nameEmailAuthorIdentityAvatarDuplicateDeletePathRules"),
+    keywords: t("settings.nameEmailAuthorIdentityAvatarDuplicateDelete"),
     title: t("settings.profiles"),
     description: t("settings.manageCommitIdentitiesRepositoryAccessAndSavedSessions"),
     icon: UsersRound,
@@ -63,7 +63,7 @@ export const SETTINGS_SECTIONS: {
   },
   {
     id: "application",
-    keywords: t("settings.globalExternalEditorExecutableMergeToolArgumentsGraphics"),
+    keywords: t("settings.applicationKeywords"),
     title: t("settings.application"),
     description: t("settings.defaultToolsForYourProfilesAndApplicationGraphics"),
     icon: Monitor,
@@ -103,7 +103,7 @@ export const SETTINGS_SECTIONS: {
   },
   {
     id: "repositories",
-    keywords: t("settings.membershipShareMoveFolderPathRulesProfileRepository"),
+    keywords: t("settings.membershipShareMoveFolderProfileRepository"),
     title: t("settings.repositories"),
     description: t("settings.manageTheLocalRepositoryFoldersListedInThisProfile"),
     icon: FolderGit2,

@@ -323,7 +323,6 @@ exec ${quote(join(brewRoot, "bin/brew"))} "$@"
         gitEmail: "test@eda.invalid",
         hue: 45,
         signing: { format: "none", signCommits: false },
-        rules: [],
       },
       { syncGlobalGitConfig: true },
     );

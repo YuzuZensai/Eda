@@ -27,7 +27,6 @@ async function setup() {
     gitEmail: "eda@example.com",
     hue: 210,
     signing: { format: "none", signCommits: false },
-    rules: [],
   });
 
   db.insert(repositories)

@@ -97,7 +97,6 @@ try {
         gitName: "Eda",
         gitEmail: "bundle@example.com",
         hue: 210,
-        rules: [],
         signing: { format: "none", signCommits: false },
       }),
     );

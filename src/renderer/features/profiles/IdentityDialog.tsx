@@ -5,14 +5,7 @@ import type { Identity } from "@shared/identity/identity";
 import { builtInSetting } from "@shared/preferences/settings";
 import { useState } from "react";
 import { ButtonBase } from "../../components/ui/actions/ButtonBase";
-import {
-  DialogActions,
-  Dialog,
-  ErrorDialog,
-  Field,
-  Input,
-  Textarea,
-} from "../../components/ui/index";
+import { DialogActions, Dialog, ErrorDialog, Field, Input } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
 
 export function IdentityDialog({
@@ -28,7 +21,6 @@ export function IdentityDialog({
   const [name, setName] = useState(identity?.name ?? "");
   const [gitName, setGitName] = useState(identity?.gitName ?? "");
   const [gitEmail, setGitEmail] = useState(identity?.gitEmail ?? "");
-  const [rules, setRules] = useState(identity?.rules.join("\n") ?? "");
   const [saving, setSaving] = useState(false);
   const [touchedEmail, setTouchedEmail] = useState(false);
 
@@ -44,10 +36,6 @@ export function IdentityDialog({
       name: name.trim(),
       gitName: gitName.trim(),
       gitEmail: gitEmail.trim(),
-      rules: rules
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean),
     };
 
     try {
@@ -151,20 +139,6 @@ export function IdentityDialog({
               onBlur={() => setTouchedEmail(true)}
               invalid={touchedEmail && gitEmail !== "" && !emailValid}
               placeholder={t("identityDialog.edaExampleCom")}
-            />
-          )}
-        </Field>
-
-        <Field
-          label={t("identityDialog.repositoryPathRules")}
-          hint={t("identityDialog.onePathPatternPerLineSuchAsWork")}
-        >
-          {(props) => (
-            <Textarea
-              {...props}
-              rows={2}
-              value={rules}
-              onChange={(event) => setRules(event.target.value)}
             />
           )}
         </Field>

@@ -1,7 +1,7 @@
 import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { RepositorySummary } from "@shared/repository/repository";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   DialogActions,
   ActionList,
@@ -14,6 +14,7 @@ import {
 import { useAppStore } from "../../stores/app-store";
 import { useSessionStore } from "../../stores/session-store";
 import { RemoveRepositoryButton } from "../repositories/RemoveRepositoryButton";
+import { RepositoryRootSettings } from "./RepositoryRootSettings";
 
 export function ProfileRepositoriesSettings() {
   const active = useAppStore((state) => state.activeIdentity);
@@ -23,6 +24,8 @@ export function ProfileRepositoriesSettings() {
 
   return (
     <div className="flex flex-col gap-5 text-sm">
+      <RepositoryRootSettings />
+
       <div className="flex items-center justify-between gap-3">
         <p className="text-text-secondary">
           {t("profileRepositoriesSettings.repositoryListFor", {
@@ -79,28 +82,11 @@ function RepositoryProfileAction({ repository }: { repository: RepositorySummary
   const [move, setMove] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [suggestion, setSuggestion] = useState<string | null>(null);
   const candidates = profiles.filter((profile) => profile.id !== active?.id);
 
   const targetId = candidates.some((profile) => profile.id === target)
     ? target
     : (candidates[0]?.id ?? "");
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (open) {
-      setSuggestion(null);
-
-      void window.eda.repository.suggestProfile(repository.path).then((result) => {
-        if (!cancelled && result.ok) setSuggestion(result.value?.name ?? null);
-      });
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, repository.path]);
 
   const save = async () => {
     if (!targetId) return;
@@ -198,12 +184,6 @@ function RepositoryProfileAction({ repository }: { repository: RepositorySummary
                 ))}
               </Select>
             </label>
-
-            {suggestion && (
-              <p className="text-xs text-text-secondary">
-                {t("profileRepositoriesSettings.yourPathRulesSuggest", { suggestion: suggestion })}
-              </p>
-            )}
 
             <p>{t("profileRepositoriesSettings.bothProfilesWillUseTheSameFilesAnd")}</p>
 

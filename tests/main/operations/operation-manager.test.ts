@@ -21,7 +21,6 @@ beforeEach(() => {
     gitEmail: "a@example.com",
     hue: 0,
     signing: { format: "none", signCommits: false },
-    rules: [],
   });
 
   owner = { profileId: profile.id, repositoryId: "repo", repositoryName: "fixture" };

@@ -29,7 +29,6 @@ export const identities = sqliteTable(
       .default("none"),
     signingKeyRef: text("signing_key_ref"),
     signCommits: integer("sign_commits").notNull().default(0),
-    rules: text("rules").notNull().default("[]"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },
@@ -39,10 +38,6 @@ export const identities = sqliteTable(
     check("identities_name_key", sql`length(${table.nameKey}) > 0`),
     check("identities_signing_format", sql`${table.signingFormat} IN ('ssh', 'gpg', 'none')`),
     check("identities_sign_commits", sql`${table.signCommits} IN (0, 1)`),
-    check(
-      "identities_rules_json",
-      sql`CASE WHEN json_valid(${table.rules}) THEN json_type(${table.rules}) = 'array' ELSE 0 END`,
-    ),
   ],
 );
 

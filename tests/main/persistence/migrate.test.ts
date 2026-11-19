@@ -302,3 +302,51 @@ it("preserves alphabetical profile order when adding saved positions", () => {
     { id: "work", sort_order: 2 },
   ]);
 });
+
+it("removes profile path rules while preserving profiles, memberships, credentials, and saved work", () => {
+  const sql = import.meta.glob<string>("../../../src/main/persistence/migrations/*/migration.sql", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  });
+  const migrations = Object.entries(sql)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([path, sql]) => ({ id: path.split("/").at(-2)!, sql }));
+  const upgradeIndex = migrations.findIndex((migration) =>
+    migration.id.endsWith("remove_profile_path_rules"),
+  );
+  expect(upgradeIndex).toBeGreaterThan(0);
+  const upgrade = migrations.slice(0, upgradeIndex + 1);
+  const db = new DatabaseSync(":memory:");
+  databases.push(db);
+  applyMigrations(db, migrations.slice(0, upgradeIndex));
+  db.exec(`
+    INSERT INTO identities (id, name, name_key, sort_order, git_name, git_email, ssh_key_path, signing_format, signing_key_ref, sign_commits, rules, created_at, updated_at)
+    VALUES ('work', 'Work', 'work', 4, 'Author', 'work@example.com', '/keys/work', 'ssh', '/keys/work.pub', 1, '["~/Work/*"]', 'created', 'updated');
+    INSERT INTO app_state (id, active_identity_id) VALUES (1, 'work');
+    INSERT INTO repositories (id, identity_id, name, path, created_at) VALUES ('repo', 'work', 'Repo', '/work/repo', 'created');
+    INSERT INTO github_accounts VALUES ('work', '7', 'author', 'secret-ref', 'connected');
+    INSERT INTO profile_sessions VALUES ('work', 'primary', '{}');
+    INSERT INTO profile_drafts VALUES ('work', 'repo', '{"message":"unsent"}');
+    INSERT INTO setting_overrides VALUES ('override', 'work', NULL, 'accentHue', '330');
+  `);
+  const tables = [
+    "app_state",
+    "repositories",
+    "github_accounts",
+    "profile_sessions",
+    "profile_drafts",
+    "setting_overrides",
+  ];
+  const before = tables.map((table) => db.prepare(`SELECT * FROM ${table}`).all());
+  const profile = db.prepare("SELECT * FROM identities").get()!;
+  const { rules, ...expectedProfile } = profile;
+  expect(rules).toBe('["~/Work/*"]');
+
+  applyMigrations(db, upgrade);
+  applyMigrations(db, upgrade);
+
+  expect(db.prepare("SELECT * FROM identities").get()).toEqual(expectedProfile);
+  expect(tables.map((table) => db.prepare(`SELECT * FROM ${table}`).all())).toEqual(before);
+  expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+});

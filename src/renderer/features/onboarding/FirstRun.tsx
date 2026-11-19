@@ -200,7 +200,6 @@ export function FirstRun({ onComplete = () => {} }: { onComplete?: (takeTour?: b
           gitEmail: gitEmail.trim(),
           hue: builtInSetting("accentHue").value,
           signing: { format: "none", signCommits: false },
-          rules: [],
         },
         { syncGlobalGitConfig: sync },
       );

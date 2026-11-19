@@ -107,7 +107,6 @@ it("allows retry after profile saving rejects and retains the input", async () =
             gitName: "Eda",
             gitEmail: "eda@example.com",
             hue: 200,
-            rules: [],
             signing: { format: "none", signCommits: false },
             createdAt: "",
             updatedAt: "",

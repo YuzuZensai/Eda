@@ -58,7 +58,6 @@ try {
         gitEmail: "fixture@example.test",
         hue: 45,
         signing: { format: "none", signCommits: false },
-        rules: [],
       },
       { syncGlobalGitConfig: false },
     );

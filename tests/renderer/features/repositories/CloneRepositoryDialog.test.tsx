@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ok } from "@shared/errors";
+import { builtInSetting, type ResolvedSetting } from "@shared/preferences/settings";
 import type { Identity } from "@shared/identity/identity";
 import type { GitHubStatus } from "@shared/integrations/github";
 import { CloneRepositoryDialog } from "@renderer/features/repositories/CloneRepositoryDialog";
@@ -14,7 +15,6 @@ const profile: Identity = {
   gitEmail: "work@example.com",
   hue: 210,
   signing: { format: "none", signCommits: false },
-  rules: [],
   createdAt: "now",
   updatedAt: "now",
 };
@@ -60,6 +60,11 @@ beforeEach(() => {
       repositories: vi.fn(),
     },
     remotes: { clone },
+    settings: {
+      resolve: vi
+        .fn()
+        .mockResolvedValue(ok({ ...builtInSetting("repositoryRoot"), value: "/default-repos" })),
+    },
     repository: { chooseFolder: vi.fn().mockResolvedValue(ok("/repos")) },
     operations: {
       list: vi.fn().mockResolvedValue(ok([])),
@@ -96,6 +101,85 @@ async function fill(input: HTMLInputElement, value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+
+it("uses the profile repository root for cloning and allows a different destination for one clone", async () => {
+  await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
+  expect(field("Clone parent folder").value).toBe("/default-repos");
+  expect(window.eda.settings.resolve).toHaveBeenCalledWith("repositoryRoot", {
+    profileId: profile.id,
+  });
+  await act(async () => button("team/eda").click());
+  await act(async () => button("Clone repository").click());
+  expect(clone).toHaveBeenLastCalledWith(
+    expect.objectContaining({ parent: "/default-repos", name: "eda" }),
+  );
+
+  await fill(field("Clone parent folder"), "/another-folder");
+  await act(async () => button("Clone repository").click());
+  expect(clone).toHaveBeenLastCalledWith(expect.objectContaining({ parent: "/another-folder" }));
+});
+
+it.each(["work", "home"])("loads the clone root belonging to the %s profile", async (profileId) => {
+  useAppStore.setState({ activeIdentity: { ...profile, id: profileId } });
+  vi.mocked(window.eda.settings.resolve).mockResolvedValueOnce(
+    ok({ ...builtInSetting("repositoryRoot"), value: `/${profileId}-repos` }),
+  );
+  await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
+  expect(window.eda.settings.resolve).toHaveBeenCalledWith("repositoryRoot", { profileId });
+  expect(field("Clone parent folder").value).toBe(`/${profileId}-repos`);
+  await act(async () => button("team/eda").click());
+  await act(async () => button("Clone repository").click());
+  expect(clone).toHaveBeenLastCalledWith(
+    expect.objectContaining({ profileId, parent: `/${profileId}-repos` }),
+  );
+});
+
+it.each(["/custom-repos", ""])(
+  "preserves a manually entered destination when the default loads late: %j",
+  async (destination) => {
+    let finish!: (value: ReturnType<typeof ok<ResolvedSetting<"repositoryRoot">>>) => void;
+    vi.mocked(window.eda.settings.resolve).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+
+    await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
+    await fill(field("Clone parent folder"), "/typed-first");
+    await fill(field("Clone parent folder"), destination);
+    await act(async () =>
+      finish(ok({ ...builtInSetting("repositoryRoot"), value: "/default-repos" })),
+    );
+    expect(field("Clone parent folder").value).toBe(destination);
+  },
+);
+
+it("preserves a browsed destination when the default loads late", async () => {
+  let finish!: (value: ReturnType<typeof ok<ResolvedSetting<"repositoryRoot">>>) => void;
+  vi.mocked(window.eda.settings.resolve).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('[aria-label="Browse folders..."]')!.click(),
+  );
+  await act(async () =>
+    finish(ok({ ...builtInSetting("repositoryRoot"), value: "/default-repos" })),
+  );
+  expect(field("Clone parent folder").value).toBe("/repos");
+});
+
+it("allows choosing a destination if the default cannot be loaded", async () => {
+  vi.mocked(window.eda.settings.resolve).mockRejectedValueOnce(new Error("Unavailable"));
+  await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
+  expect(document.body.textContent).toContain("Could not read application preferences.");
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('[aria-label="Browse folders..."]')!.click(),
+  );
+  expect(field("Clone parent folder").value).toBe("/repos");
+});
 
 it("uses a connected account, filters repositories, suggests the folder and clones with saved authentication", async () => {
   await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));

@@ -37,7 +37,6 @@ function setup() {
     gitName: "Work",
     gitEmail: "work@example.test",
     hue: 210,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
   const memberships = new RepositoryMemberships(db);

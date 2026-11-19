@@ -121,7 +121,6 @@ async function setup(
     gitEmail: "test@eda.invalid",
     hue: 210,
     signing: { format: "none", signCommits: false },
-    rules: [],
   });
 
   identities.setActiveId(profile.id);
@@ -804,7 +803,6 @@ it("rejects changed sources and profile ownership at push confirmation, and pres
     gitEmail: "home@example.com",
     hue: 20,
     signing: { format: "none", signCommits: false },
-    rules: [],
   });
 
   identities.setActiveId(other.id);

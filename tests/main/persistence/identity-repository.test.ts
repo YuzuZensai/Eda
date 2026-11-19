@@ -12,7 +12,6 @@ const draft = (overrides: Partial<IdentityDraft> = {}): IdentityDraft => ({
   gitEmail: "dev@work.example",
   hue: 210,
   signing: { format: "none", signCommits: false },
-  rules: [],
   ...overrides,
 });
 
@@ -79,7 +78,6 @@ describe("creating identities", () => {
         avatarPath: "/avatars/eda.png",
         sshKeyPath: "/home/dev/.ssh/id_work",
         signing: { format: "ssh", keyRef: "/home/dev/.ssh/id_work.pub", signCommits: true },
-        rules: ["~/Projects/Work/*"],
       }),
     );
 
@@ -91,7 +89,6 @@ describe("creating identities", () => {
       avatarPath: "/avatars/eda.png",
       sshKeyPath: "/home/dev/.ssh/id_work",
       hue: 210,
-      rules: ["~/Projects/Work/*"],
     });
     expect(created.signing).toEqual({
       format: "ssh",
@@ -150,16 +147,6 @@ describe("updating identities", () => {
     expect(
       identities.update("3d7cbfac-c122-4457-9e8c-5040dbb7832f", { gitName: "X" }),
     ).toBeUndefined();
-  });
-
-  it("replaces the rules list wholesale", () => {
-    const created = identities.create(draft({ rules: ["a/*", "b/*"] }));
-    expect(identities.update(created.id, { rules: ["c/*"] })?.rules).toEqual(["c/*"]);
-  });
-
-  it("can clear the rules list", () => {
-    const created = identities.create(draft({ rules: ["a/*"] }));
-    expect(identities.update(created.id, { rules: [] })?.rules).toEqual([]);
   });
 });
 

@@ -4,12 +4,10 @@ import { t } from "@shared/i18n";
 import type { Identity } from "@shared/identity/identity";
 import type { InitRepositoryOptions, RepositorySummary } from "@shared/repository/repository";
 import { lstat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { GitService } from "../../git/git-service";
 import { assertValidRefName } from "../../git/validation";
 import type { IdentityManager } from "../../identity/identity-manager";
-import { findIdentityForPath } from "../../identity/path-rules";
 import type { IdentityRepository } from "../../persistence/identity-repository";
 import type { RepositoryRow } from "../../persistence/schema";
 import type { RepositoryMemberships } from "../../persistence/repository-memberships";
@@ -22,11 +20,6 @@ export class RepositoryManager {
     private readonly identity: IdentityManager,
     private readonly identities: IdentityRepository,
   ) {}
-
-  suggestIdentityForPath(path: string): { id: string; name: string } | undefined {
-    const match = findIdentityForPath(path, this.identities.list(), homedir());
-    return match ? { id: match.id, name: match.name } : undefined;
-  }
 
   async listForActiveIdentity(): Promise<RepositorySummary[]> {
     const active = this.identity.getActive();

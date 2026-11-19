@@ -184,6 +184,7 @@ export const FEATURE_COMPONENTS = [
       "features/profiles/ProfileGitSettings.tsx",
       "features/profiles/ProfileRepositoriesSettings.tsx",
       "features/profiles/ProfilesSettings.tsx",
+      "features/profiles/RepositoryRootSettings.tsx",
     ],
   },
   {
@@ -565,6 +566,7 @@ export const COMPONENT_EXPORTS: Record<string, readonly string[]> = {
   "features/profiles/ProfileGitSettings.tsx": ["ProfileGitSettings", "RepositoryGitSettings"],
   "features/profiles/ProfileRepositoriesSettings.tsx": ["ProfileRepositoriesSettings"],
   "features/profiles/ProfilesSettings.tsx": ["ProfilesSettings"],
+  "features/profiles/RepositoryRootSettings.tsx": ["RepositoryRootSettings"],
   "features/references/BranchDeletePanel.tsx": ["BranchDeletePanel"],
   "features/references/BranchMenu.tsx": ["BranchMenu"],
   "features/references/ManageReferencesDialog.tsx": ["ManageReferencesDialog"],

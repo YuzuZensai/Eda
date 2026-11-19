@@ -63,7 +63,6 @@ function setup() {
     gitEmail: "work@example.com",
     hue: 210,
     signing: { format: "none", signCommits: false },
-    rules: [],
   });
 
   const other = identities.create({ ...profile, name: "Personal" });

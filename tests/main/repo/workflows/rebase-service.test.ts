@@ -74,7 +74,6 @@ it("reviews a rebase, resumes conflicts after database reopen, preserves authors
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 0,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 
@@ -138,7 +137,6 @@ it("reviews a rebase, resumes conflicts after database reopen, preserves authors
     gitName: "Eda",
     gitEmail: "alternate@eda.invalid",
     hue: 1,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 
@@ -330,7 +328,6 @@ it("applies reviewed history plans and resumes autosquash/edit stops without los
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 0,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 

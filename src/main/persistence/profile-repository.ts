@@ -81,7 +81,6 @@ export class ProfileRepository {
         gitName: source.gitName,
         gitEmail: source.gitEmail,
         hue: builtInSetting("accentHue").value,
-        rules: [...source.rules],
         signing: { format: "none", signCommits: false },
       });
 

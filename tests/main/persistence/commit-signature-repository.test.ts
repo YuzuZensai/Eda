@@ -21,7 +21,6 @@ function setup(db: Database) {
       gitEmail: `${name.toLowerCase()}@example.test`,
       hue: 210,
       signing: { format: "none", signCommits: false },
-      rules: [],
     });
   const work = profile("Work");
   const home = profile("Home");

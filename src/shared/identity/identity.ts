@@ -69,7 +69,6 @@ export interface Identity {
   hue: AccentColor;
   sshKeyPath?: string;
   signing: SigningConfiguration;
-  rules: string[];
   createdAt: string;
   updatedAt: string;
 }

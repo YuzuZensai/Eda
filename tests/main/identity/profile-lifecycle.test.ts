@@ -49,7 +49,6 @@ async function setup() {
     gitEmail: `${name.toLowerCase()}@example.com`,
     hue: 210,
     signing: { format: "none" as const, signCommits: false },
-    rules: ["/work/*"],
   });
 
   const work = identities.create(draft("Work"));

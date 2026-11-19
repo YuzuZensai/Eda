@@ -272,7 +272,6 @@ const api: EdaApi = {
       ipcRenderer.invoke(IPC_CHANNELS.repositoryClearLocalCommitConfig, id, group),
     assignProfile: (id, targetId, move) =>
       ipcRenderer.invoke(IPC_CHANNELS.repositoryAssignProfile, id, targetId, move),
-    suggestProfile: (path) => ipcRenderer.invoke(IPC_CHANNELS.repositorySuggestProfile, path),
 
     stage: (request) => ipcRenderer.invoke(IPC_CHANNELS.repositoryStage, request),
     unstage: (request) => ipcRenderer.invoke(IPC_CHANNELS.repositoryUnstage, request),

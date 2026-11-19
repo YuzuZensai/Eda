@@ -13,7 +13,6 @@ const draft = (name: string, email: string, extra: Partial<IdentityDraft> = {}):
   gitEmail: email,
   hue: 210,
   signing: { format: "none", signCommits: false },
-  rules: [],
   ...extra,
 });
 

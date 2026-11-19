@@ -28,7 +28,6 @@ it("uses Git signing state rather than the translated Off label to show configur
       gitEmail: "work@example.com",
       hue: 210,
       signing: { format: "none", signCommits: false },
-      rules: [],
       createdAt: "now",
       updatedAt: "now",
     },

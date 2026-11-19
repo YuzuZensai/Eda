@@ -23,7 +23,6 @@ beforeEach(() => {
     gitName: "Author",
     gitEmail: "a@example.com",
     hue: 210,
-    rules: [],
     signing: { format: "none", signCommits: false },
   }).id;
   db.insert(repositories)

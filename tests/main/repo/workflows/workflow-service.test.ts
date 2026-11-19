@@ -35,7 +35,6 @@ it("aborts only a current review and retains working and staged resolution copie
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 0,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 
@@ -163,7 +162,6 @@ it("continues a reviewed merge after hook failure and database reopen while reje
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 0,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 
@@ -268,7 +266,6 @@ it("restores conflicted squash ownership after restart, commits one parent, and 
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 0,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 
@@ -317,7 +314,6 @@ it("restores conflicted squash ownership after restart, commits one parent, and 
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 20,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 
@@ -401,7 +397,6 @@ it("fast-forwards only the reviewed clean branch and preserves an explicit merge
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 0,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 

@@ -27,7 +27,6 @@ export const demoIdentity: Identity = {
   gitEmail: "explorer@example.test",
   hue: 190,
   signing: { format: "none", signCommits: false },
-  rules: [],
   createdAt: "2026-01-01",
   updatedAt: "2026-01-01",
 };

@@ -82,7 +82,6 @@ it("reverses first commits, ordinary commits and amendments across restart while
     gitName: "Eda",
     gitEmail: "test@eda.invalid",
     hue: 0,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 
@@ -183,7 +182,6 @@ it("reverses first commits, ordinary commits and amendments across restart while
     gitName: "Eda",
     gitEmail: "alternate@eda.invalid",
     hue: 1,
-    rules: [],
     signing: { format: "none", signCommits: false },
   });
 

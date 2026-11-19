@@ -63,7 +63,6 @@ try {
         gitEmail: "mika@example.test",
         hue: 330,
         signing: { format: "none", signCommits: false },
-        rules: [],
       },
       { syncGlobalGitConfig: false },
     );

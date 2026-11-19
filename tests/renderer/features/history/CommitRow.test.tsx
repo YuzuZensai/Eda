@@ -249,7 +249,6 @@ it("drops removed membership entries and queued work without retaining late resu
       gitEmail: "work@example.test",
       hue: 210,
       signing: { format: "none", signCommits: false },
-      rules: [],
       createdAt: "now",
       updatedAt: "now",
     },

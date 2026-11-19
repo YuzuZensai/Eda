@@ -13,7 +13,6 @@ const identity: Identity = {
   gitEmail: "work@example.com",
   signing: { format: "gpg", signCommits: true },
   hue: 210,
-  rules: [],
   createdAt: "now",
   updatedAt: "now",
 };

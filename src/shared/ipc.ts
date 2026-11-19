@@ -466,7 +466,6 @@ export interface EdaApi {
       targetProfileId: string,
       move: boolean,
     ): Promise<Result<string>>;
-    suggestProfile(path: string): Promise<Result<{ id: string; name: string } | null>>;
 
     stage(request: StageRequest): Promise<Result<void>>;
     previewPartial(request: PartialStageRequest): Promise<Result<PartialStagePreview>>;
@@ -680,7 +679,6 @@ export const IPC_CHANNELS = {
   repositoryApplyProfile: "repository:applyProfile",
   repositoryClearLocalCommitConfig: "repository:clearLocalCommitConfig",
   repositoryAssignProfile: "repository:assignProfile",
-  repositorySuggestProfile: "repository:suggestProfile",
   identitySetActive: "identity:setActive",
   identityAssignSshKey: "identity:assignSshKey",
   identityConfigureSigning: "identity:configureSigning",

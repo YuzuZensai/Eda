@@ -41,7 +41,6 @@ const setup = (secrets = new MemorySecrets()) => {
     hue: 210,
     sshKeyPath: "/keys/work",
     signing: { format: "none", signCommits: false },
-    rules: [],
   });
 
   identities.setActiveId(identity.id);

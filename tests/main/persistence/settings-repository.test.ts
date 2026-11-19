@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { openInMemoryDatabase } from "@main/persistence/database";
 import { IdentityRepository } from "@main/persistence/identity-repository";
 import { SettingsRepository } from "@main/persistence/settings-repository";
-import { repositories, settingOverrides } from "@main/persistence/schema";
+import { repositories, settingOverrides, settings } from "@main/persistence/schema";
 import type { Database } from "@main/persistence/types";
 
 const nordPreference = { mode: "dark", light: "nord-light", dark: "nord" } as const;
@@ -31,7 +31,6 @@ function setup() {
     gitEmail: "work@example.com",
     hue: 210,
     signing: { format: "none", signCommits: false },
-    rules: [],
   });
 
   const home = profiles.create({
@@ -40,7 +39,6 @@ function setup() {
     gitEmail: "home@example.com",
     hue: 210,
     signing: { format: "none", signCommits: false },
-    rules: [],
   });
 
   db.insert(repositories)
@@ -51,6 +49,33 @@ function setup() {
 }
 
 describe("preference scopes", () => {
+  it("persists independent repository roots per profile without global or repository overrides", () => {
+    const { db, store, work, home } = setup();
+    db.insert(settings).values({ key: "repositoryRoot", value: '"/old-global-root"' }).run();
+    expect(store.resolve("repositoryRoot", { profileId: work.id }).value).toBe("");
+    store.set("repositoryRoot", { kind: "profile", profileId: work.id }, "/work");
+    expect(store.resolve("repositoryRoot", { profileId: home.id }).value).toBe("");
+    store.set("repositoryRoot", { kind: "profile", profileId: home.id }, "/home");
+    const reloaded = new SettingsRepository(db);
+
+    expect(reloaded.resolve("repositoryRoot", { profileId: work.id }).value).toBe("/work");
+    expect(reloaded.resolve("repositoryRoot", { profileId: home.id }).value).toBe("/home");
+    expect(
+      reloaded.resolve("repositoryRoot", { profileId: work.id, repositoryId: "repo" }).value,
+    ).toBe("/work");
+    expect(() => store.set("repositoryRoot", { kind: "application" }, "/global")).toThrow();
+    expect(() =>
+      store.set(
+        "repositoryRoot",
+        { kind: "repository", profileId: work.id, repositoryId: "repo" },
+        "/repo",
+      ),
+    ).toThrow();
+    store.reset("repositoryRoot", { kind: "profile", profileId: work.id });
+    expect(reloaded.resolve("repositoryRoot", { profileId: work.id }).value).toBe("");
+    expect(reloaded.resolve("repositoryRoot", { profileId: home.id }).value).toBe("/home");
+  });
+
   it("persists visible history columns globally across profiles and repositories", () => {
     const { db, store, work, home } = setup();
     const scope = { kind: "application" } as const;

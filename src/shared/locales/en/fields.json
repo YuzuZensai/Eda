@@ -35,7 +35,6 @@
   "fields.repositoryId": "repository id",
   "fields.repositoryName": "repository name",
   "fields.resetTarget": "reset target",
-  "fields.rules": "rules",
   "fields.savedFile": "saved file",
   "fields.selectionIndex": "selection index",
   "fields.sessionGeneration": "session generation",

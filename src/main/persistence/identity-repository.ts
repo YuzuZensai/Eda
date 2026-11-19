@@ -209,7 +209,6 @@ function toColumns(draft: IdentityDraft) {
     signingFormat: draft.signing.format,
     signingKeyRef: draft.signing.keyRef ?? null,
     signCommits: draft.signing.signCommits ? 1 : 0,
-    rules: JSON.stringify(draft.rules),
   };
 }
 
@@ -230,7 +229,6 @@ function toIdentity(row: IdentityRow): Omit<Identity, "hue"> {
       ...(row.signingKeyRef !== null && { keyRef: row.signingKeyRef }),
       signCommits: row.signCommits === 1,
     },
-    rules: parseRules(row.rules),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -238,16 +236,4 @@ function toIdentity(row: IdentityRow): Omit<Identity, "hue"> {
 
 function profileNameKey(name: string): string {
   return name.normalize("NFKC").trim().toLowerCase();
-}
-
-function parseRules(value: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(value);
-
-    return Array.isArray(parsed)
-      ? parsed.filter((rule): rule is string => typeof rule === "string")
-      : [];
-  } catch {
-    return [];
-  }
 }
