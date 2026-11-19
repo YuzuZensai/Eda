@@ -6,12 +6,13 @@ import type { GraphColumn } from "@shared/preferences/graph-view";
 import type {
   CommitDecoration,
   CommitSignatureVerification,
+  RepositoryChange,
 } from "@shared/repository/repository-read";
 import type { DagRow } from "../../repository/dag-layout";
 import { ROW_HEIGHT, edgePath, laneColor, laneX } from "../../repository/graph-geometry";
 import { referenceLabel } from "../../repository/reference-label";
 import { TagIcon } from "../../components/ui/index";
-import { PencilIcon, PlusIcon } from "../../components/ui/icons";
+import { FileStatusIcon, fileStatusTone } from "../../components/ui/display/FileStatusIcon";
 import { CommitSignatureIcon } from "../../components/ui/display/CommitSignatureIcon";
 import { useCommitSignature } from "../../repository/hooks/useCommitSignature";
 import { CommitTitleInput } from "../../components/ui/forms/CommitTitleInput";
@@ -168,8 +169,7 @@ export function CommitRow({
 }
 
 export function WorkingTreeRow({
-  changeCount,
-  addedCount,
+  changes,
   truncated,
   gutter,
   lane,
@@ -179,8 +179,7 @@ export function WorkingTreeRow({
   onTitleChange,
   onSelect,
 }: {
-  changeCount: number;
-  addedCount: number;
+  changes: readonly RepositoryChange[];
   truncated: boolean;
   gutter: number;
   lane: number | undefined;
@@ -193,9 +192,20 @@ export function WorkingTreeRow({
   const descriptionKey = truncated
     ? "commitChangesPanel.workingTreeChangesTruncated"
     : "commitChangesPanel.workingTreeChanges";
-  const description = t(descriptionKey, { count: changeCount });
+  const description = t(descriptionKey, { count: changes.length });
   const nodeLane = lane ?? 0;
-  const otherCount = changeCount - addedCount;
+  let addedCount = 0;
+  let deletedCount = 0;
+
+  for (const change of changes) {
+    if (change.kind === "unmerged" || change.index === "U" || change.worktree === "U") continue;
+
+    if (change.index === "D" || change.worktree === "D") deletedCount += 1;
+    else if (change.kind === "untracked" || change.index === "A" || change.worktree === "?")
+      addedCount += 1;
+  }
+
+  const otherCount = changes.length - addedCount - deletedCount;
 
   return (
     <div
@@ -242,24 +252,35 @@ export function WorkingTreeRow({
         />
       </div>
 
-      {addedCount > 0 && (
-        <span
-          className="flex shrink-0 items-center gap-1.5 pr-3 text-sm text-git-added"
-          title={t("changesPanel.added")}
-        >
-          <PlusIcon size={13} className="shrink-0" aria-hidden="true" />
-          <span>{truncated ? `${addedCount}+` : addedCount}</span>
-        </span>
-      )}
-
-      {otherCount > 0 && (
-        <span
-          className="flex shrink-0 items-center gap-1.5 pr-3 text-sm text-git-modified"
-          title={t(descriptionKey, { count: otherCount })}
-        >
-          <PencilIcon size={13} className="shrink-0" aria-hidden="true" />
-          <span>{truncated ? `${otherCount}+` : otherCount}</span>
-        </span>
+      {(
+        [
+          {
+            count: addedCount,
+            status: "A",
+            label: t("changesPanel.added"),
+          },
+          {
+            count: otherCount,
+            status: "M",
+            label: t(descriptionKey, { count: otherCount }),
+          },
+          {
+            count: deletedCount,
+            status: "D",
+            label: t("changesPanel.deleted"),
+          },
+        ] as const
+      ).map(({ count, status, label }) =>
+        count > 0 ? (
+          <span
+            key={status}
+            className={`flex shrink-0 items-center gap-1.5 pr-3 text-sm ${fileStatusTone(status)}`}
+            title={label}
+          >
+            <FileStatusIcon status={status} />
+            <span>{truncated ? `${count}+` : count}</span>
+          </span>
+        ) : null,
       )}
     </div>
   );

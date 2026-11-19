@@ -362,6 +362,7 @@ export function DiffPreview() {
 const CHANGES: RepositoryChange[] = [
   { kind: "ordinary", path: "src/greeting.ts", index: ".", worktree: "M", submodule: "N..." },
   { kind: "untracked", path: "src/new-file.ts", index: "?", worktree: "?", submodule: "N..." },
+  { kind: "ordinary", path: "src/obsolete.ts", index: ".", worktree: "D", submodule: "N..." },
   {
     kind: "rename",
     path: "README.md",
@@ -473,8 +474,7 @@ export function RepositoryRowsPreview() {
           title={workingTitle}
           titleDisabled={false}
           onTitleChange={setWorkingTitle}
-          changeCount={CHANGES.length}
-          addedCount={1}
+          changes={CHANGES}
           truncated={false}
           gutter={40}
           lane={0}

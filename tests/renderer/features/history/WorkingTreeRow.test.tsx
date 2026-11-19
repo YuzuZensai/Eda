@@ -180,6 +180,59 @@ it("shows only a green added count when all working files are new", async () => 
   expect(workingRow()!.querySelector(".text-git-modified")).toBeNull();
 });
 
+it("separates staged and unstaged deletions from added and other changes, counting each file once", async () => {
+  await act(async () =>
+    useRepositoryStore.setState({
+      status: {
+        ...status,
+        changes: [
+          ...status.changes,
+          { kind: "untracked", path: "new.txt", index: "?", worktree: "?", submodule: "N..." },
+          { kind: "ordinary", path: "staged.txt", index: "D", worktree: ".", submodule: "N..." },
+          { kind: "ordinary", path: "unstaged.txt", index: "M", worktree: "D", submodule: "N..." },
+          {
+            kind: "ordinary",
+            path: "added-deleted.txt",
+            index: "A",
+            worktree: "D",
+            submodule: "N...",
+          },
+          { kind: "unmerged", path: "conflict.txt", index: "D", worktree: "D", submodule: "N..." },
+        ],
+      },
+    }),
+  );
+
+  expect(workingButton().getAttribute("aria-label")).toBe(
+    "View working changes: 6 file changes in working tree",
+  );
+  expect(workingRow()!.querySelector('[title="Added"]')!.textContent).toBe("1");
+  expect(workingRow()!.querySelector(".text-git-modified")!.textContent).toBe("2");
+  const deleted = workingRow()!.querySelector('[title="Deleted"]')!;
+  expect(deleted.classList.contains("text-git-deleted")).toBe(true);
+  expect(deleted.textContent).toBe("3");
+
+  await act(async () => useRepositoryStore.setState({ truncatedChanges: true }));
+  expect(deleted.textContent).toBe("3+");
+});
+
+it("shows only a red deletion count when all working files are deleted", async () => {
+  await act(async () =>
+    useRepositoryStore.setState({
+      status: {
+        ...status,
+        changes: [
+          { kind: "ordinary", path: "deleted.txt", index: ".", worktree: "D", submodule: "N..." },
+        ],
+      },
+    }),
+  );
+
+  expect(workingRow()!.querySelector('[title="Deleted"]')!.textContent).toBe("1");
+  expect(workingRow()!.querySelector('[title="Added"]')).toBeNull();
+  expect(workingRow()!.querySelector(".text-git-modified")).toBeNull();
+});
+
 it("opens working changes and reveals their panel when the graph is maximized", async () => {
   useLayoutStore.setState({
     maximized: "graph",

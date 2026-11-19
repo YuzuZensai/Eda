@@ -415,15 +415,7 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
                 <WorkingTreeDraftRow
                   pending={pending}
                   key="working-tree"
-                  changeCount={status?.changes.length ?? 0}
-                  addedCount={
-                    status?.changes.filter(
-                      (change) =>
-                        change.kind === "untracked" ||
-                        change.index === "A" ||
-                        change.worktree === "?",
-                    ).length ?? 0
-                  }
+                  changes={status?.changes ?? []}
                   truncated={truncatedChanges}
                   gutter={gutter}
                   lane={workingConnection?.lane}
