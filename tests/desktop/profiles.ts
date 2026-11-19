@@ -22,6 +22,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const root = await mkdtemp(join(tmpdir(), "eda-profile-gate-"));
 const config = join(root, "gitconfig");
+const modifier = process.platform === "darwin" ? "Meta" : "Control";
 
 await writeFile(
   config,
@@ -378,11 +379,11 @@ try {
   await page.keyboard.press("Alt+Shift+ArrowLeft");
   assert.deepEqual(await page.getByRole("tab").allTextContents(), ["beta", "alpha"]);
 
-  await page.keyboard.press("Control+1");
+  await page.keyboard.press(`${modifier}+1`);
   await draftIs("Work beta draft");
-  await page.keyboard.press("Control+w");
+  await page.keyboard.press(`${modifier}+w`);
   await draftIs("Work alpha draft\n\nprivate details");
-  await page.keyboard.press("Control+Shift+t");
+  await page.keyboard.press(`${modifier}+Shift+t`);
   await draftIs("Work beta draft");
   assert.deepEqual(await page.getByRole("tab").allTextContents(), ["beta", "alpha"]);
 
@@ -391,7 +392,7 @@ try {
     .dragTo(page.getByRole("tab", { name: "alpha", exact: true }));
   assert.deepEqual(await page.getByRole("tab").allTextContents(), ["alpha", "beta"]);
 
-  await page.keyboard.press("Control+1");
+  await page.keyboard.press(`${modifier}+1`);
   await draftIs("Work alpha draft\n\nprivate details");
 
   await page.getByRole("tab", { name: "beta", exact: true }).click();
@@ -718,7 +719,7 @@ try {
   await draftIs("Work beta draft");
   assert.deepEqual(await page.getByRole("tab").allTextContents(), ["beta", "alpha"]);
 
-  await page.keyboard.press("Control+9");
+  await page.keyboard.press(`${modifier}+9`);
   await draftIs("Work alpha draft\n\nprivate details");
   await view(true);
   await page
