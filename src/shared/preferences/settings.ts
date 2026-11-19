@@ -226,6 +226,11 @@ export const SETTING_DEFINITIONS = {
     scopes: repository,
     validate: isPullStrategy,
   }),
+  browserExecutable: define<string>({
+    defaultValue: "",
+    scopes: profile,
+    validate: optionalAbsolutePath,
+  }),
   editorExecutable: define<string>({
     defaultValue: "",
     scopes: profile,

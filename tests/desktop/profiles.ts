@@ -2,6 +2,7 @@ import { electron } from "../helpers/fixture-electron.ts";
 import { fixtureEnvironment } from "../helpers/fixture-environment.ts";
 import { trustFixture } from "./helpers/trust.ts";
 import { finishOnboarding } from "./helpers/onboarding.ts";
+import { chooseSelect } from "./select-control.ts";
 import assert from "node:assert/strict";
 import { expect } from "playwright/test";
 import { type ElectronApplication } from "playwright";
@@ -181,6 +182,84 @@ try {
   await finishOnboarding(page);
   await page.getByRole("button", { name: /Active profile: Work/ }).waitFor();
   assert.equal(globalEmail(), "work@example.com");
+
+  const browserLog = join(root, "browser-links.jsonl");
+  const browserFixture = join(root, "browser-fixture.cjs");
+  await writeFile(
+    browserFixture,
+    `
+    require("node:fs").appendFileSync(${JSON.stringify(browserLog)}, JSON.stringify(process.argv.slice(1)) + "\\n");
+    process.exit(0);
+  `,
+  );
+  await app.evaluate(({ shell }, fixture) => {
+    const previous = shell.openExternal;
+    const options = process.env["NODE_OPTIONS"];
+    const state = globalThis as typeof globalThis & {
+      browserDefaultUrls: string[];
+      restoreBrowserFixture: () => void;
+    };
+    state.browserDefaultUrls = [];
+    shell.openExternal = async (url) => {
+      state.browserDefaultUrls.push(url);
+    };
+    process.env["NODE_OPTIONS"] = `--require ${JSON.stringify(fixture)}`;
+    state.restoreBrowserFixture = () => {
+      shell.openExternal = previous;
+      if (options === undefined) delete process.env["NODE_OPTIONS"];
+      else process.env["NODE_OPTIONS"] = options;
+    };
+  }, browserFixture);
+
+  await section("Global settings: Application");
+  const browserChoice = page.getByRole("combobox", { name: "Web browser", exact: true });
+  await expect(browserChoice).toHaveText("OS default");
+  await app.evaluate(({ dialog }, executable) => {
+    const previous = dialog.showOpenDialog;
+    dialog.showOpenDialog = async () => {
+      dialog.showOpenDialog = previous;
+      return { canceled: false, filePaths: [executable] };
+    };
+  }, process.execPath);
+  await chooseSelect(browserChoice, "manual");
+  await expect(browserChoice).not.toHaveText("OS default");
+  const link = "https://example.test/browser?first=one&second=two";
+  await page.evaluate((url) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, link);
+  await expect
+    .poll(async () => {
+      try {
+        return JSON.parse((await readFile(browserLog, "utf8")).trim());
+      } catch {
+        return null;
+      }
+    })
+    // Node treats its first argument as a script path and makes it absolute.
+    .toEqual([resolve(await realpath(root), link)]);
+
+  await section("Profile: Application");
+  await expect(browserChoice).toHaveText("Follow global");
+  await chooseSelect(browserChoice, "none");
+  await expect(browserChoice).toHaveText("OS default");
+  await page.evaluate((url) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, link);
+  await expect
+    .poll(() =>
+      app!.evaluate(
+        () =>
+          (globalThis as typeof globalThis & { browserDefaultUrls: string[] }).browserDefaultUrls,
+      ),
+    )
+    .toEqual([link]);
+  await chooseSelect(browserChoice, "global");
+  await expect(browserChoice).toHaveText("Follow global");
+  await app.evaluate(() => {
+    (
+      globalThis as typeof globalThis & { restoreBrowserFixture: () => void }
+    ).restoreBrowserFixture();
+  });
 
   await section("Profile: Appearance");
   await page
@@ -693,6 +772,11 @@ try {
   page = launched.page;
   await page.getByRole("button", { name: /Active profile: Personal/ }).waitFor();
   assert.equal(globalEmail(), "external-after-close@example.com");
+  const restoredBrowser = await page.evaluate(() =>
+    window.eda.settings.resolve("browserExecutable", {}),
+  );
+  assert.ok(restoredBrowser.ok);
+  assert.equal(restoredBrowser.value.value, process.execPath);
   assert.equal((await inspect(home)).theme.value, "eda-light");
   assert.equal((await inspect(home)).motion.value, true);
 

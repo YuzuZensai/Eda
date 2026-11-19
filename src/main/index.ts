@@ -3,7 +3,7 @@ import { errorText } from "@shared/error-codes";
 import { redactDiagnostic } from "@shared/diagnostics";
 import { errorMessage, GitError } from "@shared/errors";
 import { setLocale, t } from "@shared/i18n";
-import { app, BrowserWindow, dialog, Menu, session, shell } from "electron";
+import { app, BrowserWindow, dialog, Menu, session } from "electron";
 import { chmodSync, existsSync, mkdirSync, readdirSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +21,7 @@ import {
   type RepositoryNavigationQueue,
 } from "./repo/lifecycle/navigation";
 import { applyReleaseDataImport } from "./persistence/import-release-data";
-import { createServices } from "./services";
+import { createServices, type Services } from "./services";
 import { migrateMacosKeychain } from "./secrets/migrate-macos-keychain";
 
 if (app.isPackaged) {
@@ -81,7 +81,7 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join("; ");
 
-function createWindow(zoom = 100): BrowserWindow {
+function createWindow(services: Services, zoom = 100): BrowserWindow {
   const window = new BrowserWindow({
     icon: appIcon,
     title: app.getName(),
@@ -116,7 +116,10 @@ function createWindow(zoom = 100): BrowserWindow {
   applyWindowZoom(window.webContents, zoom / 100);
 
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    if (/^https?:\/\//.test(url))
+      void services.browser.open(url, services.identity.getActive()?.id).catch((error: unknown) => {
+        dialog.showErrorBox(t("common.openInBrowser"), errorMessage(error));
+      });
     return { action: "deny" };
   });
 
@@ -243,6 +246,7 @@ async function start(): Promise<void> {
     app.once("will-quit", () => services.db.close());
 
     createWindow(
+      services,
       services.preferences.resolve(
         "uiZoom",
         services.identity.getActive() ? { profileId: services.identity.getActive()!.id } : {},
@@ -252,6 +256,7 @@ async function start(): Promise<void> {
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0)
         createWindow(
+          services,
           services.preferences.resolve(
             "uiZoom",
             services.identity.getActive() ? { profileId: services.identity.getActive()!.id } : {},

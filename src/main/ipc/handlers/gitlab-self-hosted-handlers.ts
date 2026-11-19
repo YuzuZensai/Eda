@@ -1,5 +1,5 @@
 import { errorText } from "@shared/error-codes";
-import { clipboard, shell } from "electron";
+import { clipboard } from "electron";
 import { ok } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { IPC_CHANNELS } from "@shared/ipc";
@@ -68,10 +68,10 @@ export function registerGitLabSelfHostedHandlers(services: Services): void {
       if (form !== "legacy" && form !== "granular" && form !== "older")
         throw invalidRequest(errorText("main.providers.gitlabSelfHosted.invalidUrl"));
 
-      return work(profile, async () => {
+      return work(profile, async (id) => {
         const url = gitlab.tokenSettingsUrl(baseUrl, form);
         if (copyUrl) clipboard.writeText(url);
-        else await shell.openExternal(url);
+        else await services.browser.open(url, id);
       });
     },
   );
@@ -85,7 +85,7 @@ export function registerGitLabSelfHostedHandlers(services: Services): void {
       return work(profile, async (id) => {
         const url = gitlab.profileUrl(id, baseUrl);
         if (copyUrl) clipboard.writeText(url);
-        else await shell.openExternal(url);
+        else await services.browser.open(url, id);
       });
     },
   );

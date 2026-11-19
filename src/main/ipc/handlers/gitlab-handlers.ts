@@ -1,5 +1,5 @@
 import { t } from "@shared/i18n";
-import { clipboard, shell } from "electron";
+import { clipboard } from "electron";
 import { ok } from "@shared/errors";
 import { IPC_CHANNELS } from "@shared/ipc";
 import type { Services } from "../../services";
@@ -59,7 +59,7 @@ export function registerGitLabHandlers(services: Services): void {
       return work(profile, async (owner) => {
         const url = gitlab.authorizationUrl(owner, id);
         if (copyUrl) clipboard.writeText(url);
-        else await shell.openExternal(url);
+        else await services.browser.open(url, owner);
       });
     },
   );
@@ -69,7 +69,7 @@ export function registerGitLabHandlers(services: Services): void {
     return work(profile, async (id) => {
       const url = gitlab.profileUrl(id);
       if (copyUrl) clipboard.writeText(url);
-      else await shell.openExternal(url);
+      else await services.browser.open(url, id);
     });
   });
 }

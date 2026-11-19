@@ -1013,5 +1013,8 @@
   "main.repositoryTrust.detectedFeatures": "Detected features ({count})",
   "main.repositoryTrust.restrictedOperations": "While untrusted, operations requiring filters or custom merge drivers are blocked. Clones that need them remain without checked-out files.",
   "main.signatureKeys.failed": "Could not verify this public key. Check the source and fingerprint, GnuPG installation, network connection, or cancellation, then try again. Only public keys that verify this commit can be saved.",
-  "main.signatureKeys.limit": "This profile already has 256 downloaded signing keys. Forget a downloaded key before adding another."
+  "main.signatureKeys.limit": "This profile already has 256 downloaded signing keys. Forget a downloaded key before adding another.",
+  "main.browser.chooseApplication": "Choose browser application",
+  "main.browser.invalidUrl": "Choose an HTTP or HTTPS URL without embedded credentials.",
+  "main.browser.openFailed": "Could not open the link. Check your browser in Application settings."
 }

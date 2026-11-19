@@ -13,7 +13,8 @@ import { GitError } from "@shared/errors";
 import { setLocale, t } from "@shared/i18n";
 import { IPC_EVENTS } from "@shared/ipc";
 import { updateFeedUrl, type UpdateCapability, type UpdatePlatform } from "@shared/updates";
-import { app, net, powerMonitor } from "electron";
+import { app, net, powerMonitor, shell } from "electron";
+import { ExternalBrowser } from "./application/external-browser";
 import { mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -85,6 +86,7 @@ import type { SecretStore } from "./secrets/secret-store";
 import { SshService } from "./ssh/ssh-service";
 
 export interface Services {
+  browser: ExternalBrowser;
   installation: InstallationInfo;
   updates: UpdateService;
   resetData(): Promise<void>;
@@ -398,6 +400,7 @@ export async function createServices(): Promise<Services> {
     identity.onChange(() => commitSignatures.cancelAll());
 
     return {
+      browser: new ExternalBrowser(preferences, runner, (url) => shell.openExternal(url)),
       installation,
       updates,
       github,

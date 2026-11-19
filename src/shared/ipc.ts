@@ -369,6 +369,7 @@ export interface EdaApi {
     graphicsStatus(): Promise<Result<GraphicsStatus>>;
     detectEditors(): Promise<Result<DetectedEditor[]>>;
     chooseEditor(): Promise<Result<string | null>>;
+    chooseBrowser(): Promise<Result<string | null>>;
     takeNavigation(): Promise<Result<RepositoryNavigation[]>>;
     readonly platform: DesktopPlatform;
     windowControl(
@@ -641,6 +642,7 @@ export const IPC_CHANNELS = {
   appInstallation: "app:installation",
   appDetectEditors: "app:detect-editors",
   appChooseEditor: "app:choose-editor",
+  appChooseBrowser: "app:choose-browser",
   repositoryOpenEditor: "repository:open-editor",
   appTakeNavigation: "app:take-navigation",
   repositoryCommitTemplate: "repository:commit-template",

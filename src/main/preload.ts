@@ -181,6 +181,7 @@ const api: EdaApi = {
     graphicsStatus: () => ipcRenderer.invoke(IPC_CHANNELS.appGraphicsStatus),
     detectEditors: () => ipcRenderer.invoke(IPC_CHANNELS.appDetectEditors),
     chooseEditor: () => ipcRenderer.invoke(IPC_CHANNELS.appChooseEditor),
+    chooseBrowser: () => ipcRenderer.invoke(IPC_CHANNELS.appChooseBrowser),
     takeNavigation: () => ipcRenderer.invoke(IPC_CHANNELS.appTakeNavigation),
     platform:
       process.platform === "darwin" ? "mac" : process.platform === "win32" ? "windows" : "linux",

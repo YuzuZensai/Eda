@@ -4,31 +4,32 @@ import { defaultFileView, isFileView } from "@shared/preferences/file-view";
 import { builtInSetting, validateSetting } from "@shared/preferences/settings";
 import { defaultGraphFilter, isGraphFilter } from "@shared/preferences/graph-view";
 
-it("accepts absolute repository roots and rejects relative paths, control characters, and non-path values", () => {
-  for (const path of [
-    "",
-    "/repos",
-    "/repos with spaces",
-    "C:\\Users\\dev\\repos",
-    "\\\\server\\repos",
-  ])
-    expect(() =>
-      validateSetting("repositoryRoot", { kind: "profile", profileId: "work" }, path),
-    ).not.toThrow();
-  for (const path of [
-    "repos",
-    "~/repos",
-    "/repos\nother",
-    "/repos\0",
-    "x".repeat(4097),
-    null,
-    [],
-    1,
-  ])
-    expect(() =>
-      validateSetting("repositoryRoot", { kind: "profile", profileId: "work" }, path),
-    ).toThrow();
-});
+it.each(["repositoryRoot", "browserExecutable"] as const)(
+  "accepts absolute paths for %s and rejects relative paths, control characters, and non-path values",
+  (key) => {
+    for (const path of [
+      "",
+      "/repos",
+      "/repos with spaces",
+      "C:\\Users\\dev\\repos",
+      "\\\\server\\repos",
+    ])
+      expect(() =>
+        validateSetting(key, { kind: "profile", profileId: "work" }, path),
+      ).not.toThrow();
+    for (const path of [
+      "repos",
+      "~/repos",
+      "/repos\nother",
+      "/repos\0",
+      "x".repeat(4097),
+      null,
+      [],
+      1,
+    ])
+      expect(() => validateSetting(key, { kind: "profile", profileId: "work" }, path)).toThrow();
+  },
+);
 
 it("keeps existing graph views valid and accepts only explicit boolean overrides for internal refs", () => {
   const legacy = defaultGraphFilter();

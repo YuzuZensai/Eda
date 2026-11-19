@@ -149,7 +149,7 @@ export function registerSettingsHandlers(services: Services): void {
   handle(IPC_CHANNELS.settingsSet, async (_e, rawKey, rawScope, value) => {
     const key = requireSettingKey(rawKey);
     const target = scope(rawScope);
-    if (key === "editorExecutable" || key === "mergeTool") {
+    if (key === "editorExecutable" || key === "browserExecutable" || key === "mergeTool") {
       validateSetting(key, target, value);
       const command = isMergeTool(value) ? [value.executable, ...value.args] : [value];
       if (command[0]) {

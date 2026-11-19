@@ -1,5 +1,5 @@
 import { t } from "@shared/i18n";
-import { clipboard, shell } from "electron";
+import { clipboard } from "electron";
 import { ok } from "@shared/errors";
 import { IPC_CHANNELS } from "@shared/ipc";
 import type { Services } from "../../services";
@@ -48,7 +48,7 @@ export function registerGitHubHandlers(services: Services): void {
     return work(profile, async (id) => {
       const url = github.profileUrl(id);
       if (copyUrl) clipboard.writeText(url);
-      else await shell.openExternal(url);
+      else await services.browser.open(url, id);
     });
   });
 
@@ -83,7 +83,7 @@ export function registerGitHubHandlers(services: Services): void {
         if (copyUrl) clipboard.writeText(GITHUB_VERIFICATION_URL);
         else {
           clipboard.writeText(userCode);
-          await shell.openExternal(GITHUB_VERIFICATION_URL);
+          await services.browser.open(GITHUB_VERIFICATION_URL, owner);
         }
       });
     },

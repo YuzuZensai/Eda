@@ -149,6 +149,18 @@ export function registerApplicationHandlers(services: Services): void {
 
   handle(IPC_CHANNELS.appDetectEditors, async () => ok(await detectEditors()));
 
+  handle(IPC_CHANNELS.appChooseBrowser, async (event) => {
+    const result = await showOpenDialog(event, {
+      title: t("main.browser.chooseApplication"),
+      properties: ["openFile"],
+      ...(process.platform === "win32"
+        ? { filters: [{ name: t("main.fileFilters.application"), extensions: ["exe"] }] }
+        : {}),
+    });
+
+    return ok(result.canceled ? null : (result.filePaths[0] ?? null));
+  });
+
   handle(IPC_CHANNELS.appChooseEditor, async (event) => {
     const result = await showOpenDialog(event, {
       title: t("main.applicationHandlers.chooseEditorExecutable"),

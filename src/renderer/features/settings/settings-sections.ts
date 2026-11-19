@@ -63,9 +63,9 @@ export const SETTINGS_SECTIONS: {
   },
   {
     id: "application",
-    keywords: t("settings.applicationKeywords"),
+    keywords: t("settings.app.keywords"),
     title: t("settings.application"),
-    description: t("settings.defaultToolsForYourProfilesAndApplicationGraphics"),
+    description: t("settings.app.hint"),
     icon: Monitor,
     group: "global",
   },
@@ -95,9 +95,9 @@ export const SETTINGS_SECTIONS: {
   },
   {
     id: "workspace-application",
-    keywords: t("settings.profileWorkspaceApplicationExternalEditorMergeToolInheritance"),
+    keywords: t("settings.app.profileKeywords"),
     title: t("settings.application"),
-    description: t("settings.chooseAnEditorAndMergeToolForThisProfileOrFollowGlobalSettings"),
+    description: t("settings.app.profileHint"),
     icon: Monitor,
     group: "profile",
   },

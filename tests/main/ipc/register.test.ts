@@ -196,6 +196,7 @@ function setup() {
   registerApplicationContents(event.sender);
 
   const mocks = {
+    browser: { open: vi.fn((url: string, _profileId: string) => electron.openExternal(url)) },
     git: { history: vi.fn(async () => ({ commits: [], nextOffset: null })) },
     repositoryReader: {
       referenceUrl: vi.fn(async () => null),
@@ -1012,21 +1013,19 @@ it("rejects foreign main documents and child frames before any ordinary IPC side
   expect(electron.writeText).not.toHaveBeenCalled();
 });
 
-it("requires native approval of executable settings even from the main document", async () => {
-  const mocks = setup();
-  electron.showMessageBox.mockResolvedValueOnce({ response: 0 });
+it.each(["editorExecutable", "browserExecutable"])(
+  "requires native approval of %s even from the main document",
+  async (key) => {
+    const mocks = setup();
+    electron.showMessageBox.mockResolvedValueOnce({ response: 0 });
 
-  expect(
-    await invoke(
-      IPC_CHANNELS.settingsSet,
-      "editorExecutable",
-      { kind: "application" },
-      "/tmp/program",
-    ),
-  ).toMatchObject({ ok: false });
+    expect(
+      await invoke(IPC_CHANNELS.settingsSet, key, { kind: "application" }, "/tmp/program"),
+    ).toMatchObject({ ok: false });
 
-  expect(mocks.preferences.set).not.toHaveBeenCalled();
-});
+    expect(mocks.preferences.set).not.toHaveBeenCalled();
+  },
+);
 
 it.each([
   [IPC_CHANNELS.githubOpenProfile, [], "https://github.com/work-user"],
@@ -1050,7 +1049,7 @@ it.each([
 ] as const)(
   "copies %s's validated URL without opening a browser and rejects stale owners and invalid modes",
   async (channel, args, url) => {
-    setup();
+    const { browser } = setup();
     expect(await invoke(channel, repositoryId, ...args, true)).toMatchObject({ ok: false });
     expect(await invoke(channel, profile.id, ...args, "true")).toMatchObject({ ok: false });
     expect(electron.writeText).not.toHaveBeenCalled();
@@ -1059,6 +1058,10 @@ it.each([
     expect(await invoke(channel, profile.id, ...args, true)).toMatchObject({ ok: true });
     expect(electron.writeText).toHaveBeenCalledExactlyOnceWith(url);
     expect(electron.openExternal).not.toHaveBeenCalled();
+    expect(browser.open).not.toHaveBeenCalled();
+
+    expect(await invoke(channel, profile.id, ...args, false)).toMatchObject({ ok: true });
+    expect(browser.open).toHaveBeenCalledExactlyOnceWith(url, profile.id);
   },
 );
 

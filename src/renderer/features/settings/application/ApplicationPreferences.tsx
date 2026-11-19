@@ -14,16 +14,36 @@ export function ApplicationPreferences({
 }: {
   owner?: "application" | "profile";
 }) {
-  const editor = useScopedSetting("editorExecutable", owner);
+  return (
+    <div className="flex flex-col gap-5">
+      {owner === "application" && <LanguageSettings />}
+      <ApplicationPicker owner={owner} kind="browser" />
+      <ApplicationPicker owner={owner} kind="editor" />
+      <MergeToolSettings owner={owner} />
+      {owner === "application" && <GraphicsSettings />}
+    </div>
+  );
+}
+
+function ApplicationPicker({
+  owner,
+  kind,
+}: {
+  owner: "application" | "profile";
+  kind: "editor" | "browser";
+}) {
+  const isEditor = kind === "editor";
+  const setting = useScopedSetting(isEditor ? "editorExecutable" : "browserExecutable", owner);
   const id = useId();
   const [error, setError] = useState<string | null>(null);
   const [editors, setEditors] = useState<DetectedEditor[]>([]);
-  const [detecting, setDetecting] = useState(true);
+  const [detecting, setDetecting] = useState(isEditor);
   const [choosing, setChoosing] = useState(false);
   const saving = usePreferencesStore((state) => state.saving);
-  const selected = editor.resolved.value;
+  const selected = setting.resolved.value;
 
   useEffect(() => {
+    if (!isEditor) return;
     let cancelled = false;
 
     void window.eda.app
@@ -34,10 +54,7 @@ export function ApplicationPreferences({
         else setError(errorMessage(result.error));
       })
       .catch(() => {
-        if (!cancelled)
-          setError(
-            t("settings.applicationPreferences.couldNotDetectEditorsYouCanStillChooseOneManually"),
-          );
+        if (!cancelled) setError(t("settings.app.detectFailed"));
       })
       .finally(() => {
         if (!cancelled) setDetecting(false);
@@ -46,7 +63,7 @@ export function ApplicationPreferences({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isEditor]);
 
   const choose = async (value: string) => {
     setError(null);
@@ -54,18 +71,20 @@ export function ApplicationPreferences({
 
     try {
       if (value === "global") {
-        await editor.reset();
+        await setting.reset();
       } else if (value === "none") {
-        await editor.set("");
+        await setting.set("");
       } else if (value === "manual") {
-        const result = await window.eda.app.chooseEditor();
+        const result = await (isEditor
+          ? window.eda.app.chooseEditor()
+          : window.eda.app.chooseBrowser());
         if (!result.ok) setError(errorMessage(result.error));
-        else if (result.value) await editor.set(result.value);
+        else if (result.value) await setting.set(result.value);
       } else {
-        await editor.set(value);
+        await setting.set(value);
       }
     } catch {
-      setError(t("settings.applicationPreferences.couldNotSelectTheEditorTryAgain"));
+      setError(t("settings.app.selectFailed"));
     } finally {
       setChoosing(false);
     }
@@ -73,56 +92,52 @@ export function ApplicationPreferences({
 
   return (
     <fieldset
-      inert={saving || choosing || editor.unavailable}
-      aria-busy={saving || choosing || editor.reading}
-      className="flex flex-col gap-5"
+      disabled={saving || choosing || setting.unavailable}
+      aria-busy={saving || choosing || setting.reading}
+      className="space-y-2"
     >
-      {owner === "application" && <LanguageSettings />}
-      <div className="space-y-2">
-        <label htmlFor={id} className="text-sm font-medium">
-          {t("settings.applicationPreferences.externalEditor")}
-        </label>
-        <p className="text-xs text-text-secondary">
-          {t("settings.applicationPreferences.openRepositoriesInYourPreferredEditor")}
-        </p>
-        <Select
-          id={id}
-          value={editor.following ? "global" : selected || "none"}
-          onValueChange={(value) => void choose(value)}
-          surface="base"
-        >
-          {owner === "profile" && <option value="global">{t("common.followGlobal")}</option>}
-          <option value="none">{t("common.none")}</option>
-          {editors.map((editor) => (
-            <option key={editor.executable} value={editor.executable}>
-              {editor.name}
-            </option>
-          ))}
-          {selected && !editors.some((editor) => editor.executable === selected) && (
-            <option value={selected}>
-              {t("settings.applicationPreferences.customEditor", {
-                value1: selected.split(/[\\/]/).pop(),
-              })}
-            </option>
-          )}
-          <option value="manual">{t("settings.applicationPreferences.chooseManually")}</option>
-        </Select>
-        {detecting ? (
+      <label htmlFor={id} className="text-sm font-medium">
+        {t(isEditor ? "settings.app.editor" : "settings.browser.label")}
+      </label>
+      <p className="text-xs text-text-secondary">
+        {t(isEditor ? "settings.app.editorHint" : "settings.browser.description")}
+      </p>
+      <Select
+        id={id}
+        value={setting.following ? "global" : selected || "none"}
+        onValueChange={(value) => void choose(value)}
+        surface="base"
+      >
+        {owner === "profile" && <option value="global">{t("common.followGlobal")}</option>}
+        <option value="none">{t(isEditor ? "common.none" : "settings.browser.system")}</option>
+        {editors.map((editor) => (
+          <option key={editor.executable} value={editor.executable}>
+            {editor.name}
+          </option>
+        ))}
+        {selected && !editors.some((editor) => editor.executable === selected) && (
+          <option value={selected}>
+            {isEditor
+              ? t("settings.app.customEditor", {
+                  value1: selected.split(/[\\/]/).pop(),
+                })
+              : selected.split(/[\\/]/).pop()}
+          </option>
+        )}
+        <option value="manual">{t("settings.app.choose")}</option>
+      </Select>
+      {isEditor &&
+        (detecting ? (
           <p role="status" className="text-xs text-text-tertiary">
-            {t("settings.applicationPreferences.lookingForInstalledEditors")}
+            {t("settings.app.detecting")}
           </p>
         ) : (
           editors.length === 0 && (
-            <p className="text-xs text-text-tertiary">
-              {t("settings.applicationPreferences.noEditorsDetectedChooseAnExecutableManually")}
-            </p>
+            <p className="text-xs text-text-tertiary">{t("settings.app.noEditors")}</p>
           )
-        )}
-        {selected && <p className="break-all text-xs text-text-tertiary">{selected}</p>}
-        <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>
-      </div>
-      <MergeToolSettings owner={owner} />
-      {owner === "application" && <GraphicsSettings />}
+        ))}
+      {selected && <p className="break-all text-xs text-text-tertiary">{selected}</p>}
+      <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>
     </fieldset>
   );
 }
