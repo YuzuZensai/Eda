@@ -188,7 +188,7 @@ try {
   await writeFile(
     browserFixture,
     `
-    require("node:fs").appendFileSync(${JSON.stringify(browserLog)}, JSON.stringify(process.argv.slice(1)) + "\\n");
+    require("node:fs").appendFileSync(${JSON.stringify(browserLog)}, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(1) }) + "\\n");
     process.exit(0);
   `,
   );
@@ -227,16 +227,13 @@ try {
   await page.evaluate((url) => {
     window.open(url, "_blank", "noopener,noreferrer");
   }, link);
-  await expect
-    .poll(async () => {
-      try {
-        return JSON.parse((await readFile(browserLog, "utf8")).trim());
-      } catch {
-        return null;
-      }
-    })
-    // Node treats its first argument as a script path and makes it absolute.
-    .toEqual([resolve(await realpath(root), link)]);
+  await expect(async () => {
+    const { cwd, args } = JSON.parse((await readFile(browserLog, "utf8")).trim());
+
+    expect(await realpath(cwd)).toBe(await realpath(root));
+    // Node resolves its script argument against the child's cwd, which may use a Windows short path.
+    expect(args).toEqual([resolve(cwd, link)]);
+  }).toPass({ timeout: 5000 });
 
   await section("Profile: Application");
   await expect(browserChoice).toHaveText("Follow global");
