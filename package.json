@@ -47,7 +47,7 @@
     "@vitejs/plugin-react": "^6.3.0",
     "drizzle-kit": "1.0.0-rc.5",
     "drizzle-orm": "1.0.0-rc.5",
-    "electron": "^45.3.2",
+    "electron": "^45.3.4",
     "electron-builder": "^26.18.1",
     "eslint": "^10.15.0",
     "happy-dom": "^21.0.4",
