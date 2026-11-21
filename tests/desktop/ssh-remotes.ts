@@ -19,6 +19,7 @@ const root = await mkdtemp(join(tmpdir(), "eda-ssh-remotes-"));
 const source = join(root, "source");
 const remote = join(root, "remote.git");
 const key = join(root, "client-key");
+const fixturePassphrase = "eda-disposable-key-fixture";
 const wrongKey = join(root, "wrong-key");
 const hostKey = join(root, "host-key");
 const gpgHome = join(root, "gnupg");
@@ -65,10 +66,14 @@ try {
   );
 
   for (const path of [key, wrongKey, hostKey])
-    execFileSync("ssh-keygen", ["-t", "ed25519", "-f", path, "-N", "", "-C", "Eda", "-q"], {
-      env,
-      stdio: "pipe",
-    });
+    execFileSync(
+      "ssh-keygen",
+      ["-t", "ed25519", "-f", path, "-N", path === key ? fixturePassphrase : "", "-C", "Eda", "-q"],
+      {
+        env,
+        stdio: "pipe",
+      },
+    );
 
   git(source, "init", "-b", "main");
   await writeFile(join(source, "initial.txt"), "initial\n");
@@ -153,12 +158,9 @@ try {
 
   if (process.platform !== "win32") {
     // On Unix, OpenSSH gets ~ from passwd rather than HOME.
-    const sshExecutable = (env["PATH"] ?? "")
-      .split(delimiter)
-      .map((directory) => join(directory, "ssh"))
-      .find((candidate) => existsSync(candidate));
-
-    assert.ok(sshExecutable, "OpenSSH must be installed for the SSH desktop gate");
+    const os = process.platform === "darwin" ? "mac" : "linux";
+    const sshExecutable = resolve("vendor/git", `${os}-${process.arch}`, "openssh/bin/ssh");
+    assert.ok(existsSync(sshExecutable), "Prepare the bundled OpenSSH client before this gate.");
 
     const bin = join(root, "bin");
 
@@ -181,6 +183,27 @@ try {
     env,
   });
 
+  if (process.platform !== "win32") {
+    const setupPage = await app.firstWindow();
+    await setupPage.waitForFunction(() => Boolean(window.eda));
+    await app.evaluate(({ dialog }) => {
+      const previous = dialog.showMessageBox;
+      dialog.showMessageBox = async () => {
+        dialog.showMessageBox = previous;
+        return { response: 1, checkboxChecked: false };
+      };
+    });
+    const configured = await setupPage.evaluate(
+      (path) => window.eda.settings.set("sshExecutable", { kind: "application" }, path),
+      join(root, "bin", "ssh"),
+    );
+    assert.ok(configured.ok, JSON.stringify(configured));
+    await app.close();
+    app = await electron.launch({
+      args: ["dist/main/index.js", `--user-data-dir=${join(root, "user-data")}`],
+      env,
+    });
+  }
   await trustFixture(app, root);
   const page = await app.firstWindow();
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -218,6 +241,19 @@ try {
   );
 
   assert.equal(configured.ok, true, JSON.stringify(configured));
+  const unlocked = await page.evaluate(
+    ({ id, passphrase }) =>
+      window.eda.credentials.unlockActiveKey(
+        { remember: false, lifetimeSeconds: 600 },
+        passphrase,
+        id,
+      ),
+    { id: profile.id, passphrase: fixturePassphrase },
+  );
+  assert.ok(
+    unlocked.ok && unlocked.value.available && unlocked.value.keys.length === 1,
+    JSON.stringify(unlocked),
+  );
 
   await page.getByRole("button", { name: "Clone repository", exact: true }).click();
 
@@ -293,7 +329,7 @@ try {
   await page.getByRole("menuitem", { name: "Verify tag signature...", exact: true }).click();
   const tag = page.getByRole("dialog", { name: "Verify tag", exact: true });
 
-  await tag.getByText("Signature verified", { exact: true }).waitFor();
+  await tag.getByText("Valid signature · trusted signer", { exact: true }).waitFor();
   await page.keyboard.press("Escape");
 
   const signedPush = await page.evaluate(async (id) => {

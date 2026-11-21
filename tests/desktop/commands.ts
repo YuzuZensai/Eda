@@ -82,6 +82,26 @@ try {
 
   await page.keyboard.press(`${modifier}+Shift+p`);
   await expect(search).toBeFocused();
+  await search.fill("Create a profile");
+  await page.keyboard.press("Enter");
+  const profile = page.getByRole("dialog", { name: "New profile", exact: true });
+  const profileName = profile.getByRole("textbox", { name: /^Profile name/ });
+  await expect(profileName).toBeFocused();
+  await page.keyboard.type("Personal");
+  await expect(profileName).toHaveValue("Personal");
+  for (const key of ["Tab", "Tab", "Tab", "Tab", "Shift+Tab"]) {
+    await page.keyboard.press(key);
+    assert.ok(await profile.evaluate((element) => element.contains(document.activeElement)));
+  }
+  const gitName = profile.getByRole("textbox", { name: /^Git name/ });
+  await gitName.fill("x".repeat(129));
+  await expect(gitName).toHaveAttribute("aria-invalid", "true");
+  await expect(profile.getByText("Use 128 characters or fewer.")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Command palette", exact: true })).toBeFocused();
+  await page.keyboard.press(`${modifier}+Shift+p`);
+  await expect(search).toBeFocused();
   await page.keyboard.type("manage profiles");
   await expect(search).toHaveValue("manage profiles");
   await page.keyboard.press("ArrowDown");
@@ -91,6 +111,7 @@ try {
 
   const help = page.getByRole("dialog", { name: "Keyboard shortcuts", exact: true });
 
+  await expect(help.getByRole("searchbox", { name: "Search shortcuts" })).toBeFocused();
   await help.getByRole("searchbox", { name: "Search shortcuts" }).fill("reopen");
   assert.match(
     await help.innerText(),
@@ -102,6 +123,23 @@ try {
 
   await page.keyboard.press("Escape");
   await expect(help).toHaveCount(0);
+  await page.keyboard.press(`${modifier}+/`);
+  await help.getByText("Customize profile shortcuts", { exact: true }).click();
+  await help.getByRole("button", { name: /Focus here and press/ }).press(`${modifier}+j`);
+  await expect(
+    help.getByText(process.platform === "darwin" ? "Cmd+J" : "Ctrl+J", { exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press(`${modifier}+j`);
+  await expect(search).toBeFocused();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press(`${modifier}+/`);
+  await help.getByText("Customize profile shortcuts", { exact: true }).click();
+  await help.getByRole("button", { name: "Restore default" }).click();
+  await expect(
+    help.getByText(process.platform === "darwin" ? "Cmd+Shift+P" : "Ctrl+Shift+P", { exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
   await page.keyboard.press(`${modifier}+,`);
   await expect(page.getByRole("navigation", { name: "Settings sections" })).toHaveCount(0);
 
@@ -168,6 +206,12 @@ try {
   await expect(page.getByRole("tab", { name: "commands-repo", exact: true })).toHaveCount(1);
   await expect(page.getByRole("tab", { selected: true })).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "Open a repository", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Inspect status of commands-repo" }).click();
+  await expect(page.getByText("Changed paths: 1", { exact: true })).toBeVisible();
+  await writeFile(join(repository, "second.txt"), "status refresh");
+  await page.getByRole("button", { name: "Refresh repository", exact: true }).click();
+  await expect(page.getByText("Changed paths: 2", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^Checked at /)).toBeVisible();
   await page.getByRole("button", { name: "Clone repository", exact: true }).click();
   await page.getByRole("dialog", { name: "Clone repository", exact: true }).waitFor();
   await page.keyboard.press("Escape");
@@ -206,16 +250,9 @@ try {
     true,
   );
 
-  const staleError = page.getByRole("dialog", {
-    name: "Could not complete the action",
-    exact: true,
-  });
-
-  await staleError
-    .getByRole("alert")
-    .filter({ hasText: "profile or repository changed" })
-    .waitFor();
-  await staleError.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await expect(palette.getByRole("alert")).toContainText("profile or repository changed");
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await palette.getByRole("button", { name: "Dismiss", exact: true }).click();
   assert.equal(await palette.getByRole("option").first().getAttribute("aria-disabled"), "true");
 
   await page.keyboard.press("Enter");

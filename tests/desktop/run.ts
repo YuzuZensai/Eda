@@ -12,6 +12,7 @@ const suites = [
   "updates",
   "homebrew-updates",
   "workspace",
+  "git-tools",
   "foundations",
   "local",
   "signing-keys",
@@ -33,7 +34,7 @@ if (!args.length || args.some((arg) => ["-h", "--help"].includes(arg))) {
 Suites: ${suites.join(", ")}
 
 Run pnpm build first. Suites run sequentially and stop at the first failure.
-Use --packaged with bundled-git after pnpm package --dir (Windows only).
+Use --packaged with bundled-git after pnpm package --dir. Set EDA_PACKAGED_EXECUTABLE when using a custom output path.
 Remotes requires OpenSSL and Git http-backend; gitlab-tls requires OpenSSL; ssh-remotes requires ssh-keygen and GPG.
 Homebrew-updates requires macOS and Homebrew, builds two disposable dev packages, and runs only when selected explicitly.`);
 } else {

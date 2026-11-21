@@ -392,6 +392,14 @@ try {
   await manage.getByRole("checkbox", { name: "feature/new", exact: true }).check();
   await manage.getByRole("checkbox", { name: "feature/renamed", exact: true }).check();
   await manage.getByRole("checkbox", { name: "release/new", exact: true }).check();
+  await manage.getByRole("textbox", { name: "Filter reference groups" }).fill("unmatched-query");
+  await expect(manage.getByText("No matching references.")).toBeVisible();
+  for (const label of ["Branch · feature/new", "Branch · feature/renamed", "Tag · release/new"]) {
+    await expect(manage.getByRole("listitem").filter({ hasText: label })).toContainText(
+      "Outside current list",
+    );
+  }
+
   await manage
     .getByRole("checkbox", { name: "Delete these local references", exact: true })
     .check();
@@ -486,21 +494,25 @@ try {
   git("commit", "-m", "Preserve editor fixture files");
   git("checkout", "-b", "workflow-topic");
   await writeFile(join(repository, "file.txt"), "topic conflict\n");
-  git("add", "file.txt");
+  await writeFile(join(repository, "another.txt"), "topic title\ntopic version\n");
+  git("add", "file.txt", "another.txt");
   git("commit", "-m", "topic conflict");
   git("checkout", "main");
   await writeFile(join(repository, "file.txt"), "main conflict\n");
-  git("add", "file.txt");
+  await writeFile(join(repository, "another.txt"), "main title\nmain version\n");
+  git("add", "file.txt", "another.txt");
   git("commit", "-m", "main conflict");
   await app.evaluate(
     ({ app }, { link, cwd }) => app.emit("second-instance", {}, ["electron", "main.js", link], cwd),
     { link: `eda://open?path=${encodeURIComponent(repository)}`, cwd: root },
   );
+  await page.getByRole("button", { name: "Inspect branch workflow-topic", exact: true }).click();
   await page
-    .getByRole("button", { name: "Inspect branch workflow-topic", exact: true })
+    .getByTestId("commit-graph")
+    .getByRole("button", { name: /^topic conflict\./ })
     .click({ button: "right" });
   await page
-    .getByRole("menu", { name: "Branch actions" })
+    .getByRole("menu", { name: "Commit actions" })
     .getByRole("menuitem", { name: "Merge into current branch...", exact: true })
     .click();
 
@@ -511,22 +523,78 @@ try {
       exact: true,
     })
     .waitFor();
-  assert.equal(
-    await mergeReview.getByLabel("Merge prediction").getByRole("listitem").innerText(),
+  await expect(mergeReview.getByLabel("Merge prediction").getByRole("listitem")).toHaveText([
+    "another.txt",
     "file.txt",
-  );
+  ]);
   assert.equal(git("ls-files", "--unmerged"), "");
   assert.equal(await readFile(join(repository, "file.txt"), "utf8"), "main conflict\n");
 
   await mergeReview.getByRole("button", { name: "Start merge", exact: true }).click();
   await mergeReview.waitFor({ state: "hidden" });
   await page.getByText("merge in progress", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Resolve 1 conflicts", exact: true }).click();
+  await expect(page.getByText("workflow-topic into main", { exact: true })).toBeVisible();
+  const workingFiles = page.getByRole("region", { name: /^Working files\./ });
+  await workingFiles.focus();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("ArrowDown");
+  await expect(workingFiles).toBeFocused();
+  await page.keyboard.press("Enter");
 
-  const conflict = page.getByRole("dialog", { name: "Resolve conflicts", exact: true });
+  const conflict = page.getByRole("region", { name: "Resolve conflicts", exact: true });
+  await expect(conflict.getByRole("heading", { name: "file.txt", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(conflict.getByText("workflow-topic", { exact: true })).toBeVisible();
   const conflictIndex = git("ls-files", "--stage");
   const conflictWorking = await readFile(join(repository, "file.txt"), "utf8");
 
+  const originalSize = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0]!.getContentSize(),
+  );
+  for (const size of [[940, 600], [1440, 900], originalSize]) {
+    await app.evaluate(
+      ({ BrowserWindow }, [width, height]) =>
+        BrowserWindow.getAllWindows()[0]!.setContentSize(width!, height!),
+      size,
+    );
+    await expect
+      .poll(async () =>
+        conflict.evaluate((element) => {
+          const action = [...element.querySelectorAll("button")].find(
+            (button) => button.textContent === "Save and mark resolved",
+          )!;
+          return (
+            action.getBoundingClientRect().bottom <=
+            Math.min(element.getBoundingClientRect().bottom, innerHeight)
+          );
+        }),
+      )
+      .toBe(true);
+  }
+  const resolutionChoice = conflict.getByRole("combobox", {
+    name: "Resolution choice",
+    exact: true,
+  });
+  await chooseSelect(resolutionChoice, "worktree");
+  await expect(conflict.getByText(/The working file contains conflict markers/)).toBeVisible();
+  await expect(conflict.getByRole("button", { name: "Save and mark resolved" })).toBeDisabled();
+  await chooseSelect(resolutionChoice, "delete");
+  await expect(
+    conflict.getByText("Record the deletion of file.txt.", { exact: true }),
+  ).toBeVisible();
+  await chooseSelect(resolutionChoice, "text");
+  assert.equal(await readFile(join(repository, "file.txt"), "utf8"), conflictWorking);
+
+  const resultEditor = conflict.getByRole("textbox", { name: "Resolved output" });
+  await conflict.getByRole("button", { name: "Use both in order" }).click();
+  await expect(resultEditor).toHaveValue("main conflict\ntopic conflict\n");
+  await expect(conflict.getByRole("button", { name: "Save and mark resolved" })).toBeEnabled();
+  await conflict.getByRole("button", { name: "Back to working tree", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Discard unsaved resolution edits?" })
+    .getByRole("button", { name: "Discard editor edits" })
+    .click();
+  await page.getByRole("button", { name: "Resolve conflict in file.txt", exact: true }).click();
   await conflict.getByRole("button", { name: "Open external merge tool...", exact: true }).click();
   await conflict.getByRole("status").filter({ hasText: "External tool finished" }).waitFor();
   assert.equal(git("ls-files", "--stage"), conflictIndex);
@@ -542,10 +610,23 @@ try {
   assert.notEqual(git("ls-files", "--unmerged"), "");
 
   await conflict.getByRole("button", { name: "Save and mark resolved", exact: true }).click();
-  await conflict.getByRole("status").filter({ hasText: "Resolved file.txt" }).waitFor();
+  await expect(conflict.getByRole("heading", { name: "another.txt", exact: true })).toBeVisible();
   assert.equal(git("show", ":file.txt"), "topic conflict\n");
 
-  await conflict.getByRole("button", { name: "Close", exact: true }).click();
+  const currentLine = conflict.getByRole("checkbox", {
+    name: "Current history, line 1",
+    exact: true,
+  });
+  await currentLine.focus();
+  await page.keyboard.press("Space");
+  await expect(currentLine).toBeChecked();
+  await conflict.getByRole("checkbox", { name: "Incoming history, line 2", exact: true }).check();
+  await expect(resultEditor).toHaveValue("main title\ntopic version\n");
+  await expect(resultEditor).toBeEditable();
+  await conflict.getByRole("button", { name: "Save and mark resolved", exact: true }).click();
+  await expect(conflict).toBeHidden();
+  assert.equal(git("show", ":another.txt"), "main title\ntopic version\n");
+  await expect(page.getByRole("button", { name: "Continue merge", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Refresh repository", exact: true }).click();
   await page.getByText("merge in progress", { exact: true }).waitFor();
   await app.close();
@@ -645,14 +726,13 @@ try {
   await abortPage.getByText("squash in progress", { exact: true }).waitFor();
   assert.throws(() => git("rev-parse", "--verify", "MERGE_HEAD"));
 
-  await abortPage.getByRole("button", { name: "Resolve 1 conflicts", exact: true }).click();
+  await abortPage.getByRole("button", { name: "Resolve 1 conflict", exact: true }).click();
 
-  const squashConflict = abortPage.getByRole("dialog", { name: "Resolve conflicts", exact: true });
+  const squashConflict = abortPage.getByRole("region", { name: "Resolve conflicts", exact: true });
 
   await squashConflict.getByRole("button", { name: "Use squashed source", exact: true }).click();
   await squashConflict.getByRole("button", { name: "Save and mark resolved", exact: true }).click();
-  await squashConflict.getByRole("status").filter({ hasText: "Resolved file.txt" }).waitFor();
-  await squashConflict.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(squashConflict).toBeHidden();
   await app.close();
   app = await electron.launch({ args: ["dist/main/index.js", `--user-data-dir=${root}`], env });
 
@@ -682,7 +762,6 @@ try {
   await writeFile(join(repository, "scope-unrelated.txt"), "keep unrelated staged work\n");
   git("add", "scope-unrelated.txt");
   await squashPage.getByRole("button", { name: "Refresh repository", exact: true }).click();
-  await squashPage.getByRole("button", { name: "View changes", exact: true }).click();
   await squashPage.getByRole("checkbox", { name: "Select unstaged file.txt", exact: true }).check();
   await squashPage
     .getByRole("checkbox", { name: "Select untracked stash-untracked.txt", exact: true })
@@ -726,14 +805,13 @@ try {
   const stashPage = await foundationWindow(app);
 
   await stashPage.getByText("stash in progress", { exact: true }).waitFor();
-  await stashPage.getByRole("button", { name: "Resolve 1 conflicts", exact: true }).click();
+  await stashPage.getByRole("button", { name: "Resolve 1 conflict", exact: true }).click();
 
-  const stashConflict = stashPage.getByRole("dialog", { name: "Resolve conflicts", exact: true });
+  const stashConflict = stashPage.getByRole("region", { name: "Resolve conflicts", exact: true });
 
   await stashConflict.getByRole("button", { name: "Use stashed changes", exact: true }).click();
   await stashConflict.getByRole("button", { name: "Save and mark resolved", exact: true }).click();
-  await stashConflict.getByRole("status").filter({ hasText: "Resolved file.txt" }).waitFor();
-  await stashConflict.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(stashConflict).toBeHidden();
   await stashPage.getByRole("button", { name: "Finish stash application", exact: true }).click();
   await stashPage.getByText("stash in progress", { exact: true }).waitFor({ state: "hidden" });
   assert.equal(git("rev-parse", "HEAD"), stashHead);
@@ -839,6 +917,17 @@ try {
     "drop",
   );
   await rebaseReview.getByRole("checkbox", { name: "I reviewed this rebase action" }).check();
+  await rebaseReview.getByRole("button", { name: "Review current state" }).click();
+  await expect(
+    rebaseReview.getByRole("checkbox", { name: "I reviewed this rebase action" }),
+  ).not.toBeChecked();
+  await expect(
+    rebaseReview.getByRole("textbox", { name: "Message for " + planIds[0] }),
+  ).toHaveValue("Combined plan b and a");
+  await expect(
+    rebaseReview.getByRole("textbox", { name: "Message for " + rebaseTopic.slice(0, 8) }),
+  ).toHaveValue("Reviewed topic after restart");
+  await rebaseReview.getByRole("checkbox", { name: "I reviewed this rebase action" }).check();
   await rebaseReview.getByRole("button", { name: "Rebase current branch", exact: true }).click();
   await rebaseReview.waitFor({ state: "hidden" });
   await stashPage.getByText(/rebase in progress/).waitFor();
@@ -848,15 +937,14 @@ try {
   let rebasePage = await foundationWindow(app);
 
   await rebasePage.getByText(/rebase in progress/).waitFor();
-  await rebasePage.getByRole("button", { name: "Resolve 1 conflicts", exact: true }).click();
+  await rebasePage.getByRole("button", { name: "Resolve 1 conflict", exact: true }).click();
 
-  const rebaseConflict = rebasePage.getByRole("dialog", { name: "Resolve conflicts", exact: true });
+  const rebaseConflict = rebasePage.getByRole("region", { name: "Resolve conflicts", exact: true });
 
   await rebaseConflict.getByText(/ours does not mean your original branch/).waitFor();
   await rebaseConflict.getByRole("button", { name: "Use replayed commit", exact: true }).click();
   await rebaseConflict.getByRole("button", { name: "Save and mark resolved", exact: true }).click();
-  await rebaseConflict.getByRole("status").filter({ hasText: "Resolved file.txt" }).waitFor();
-  await rebaseConflict.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(rebaseConflict).toBeHidden();
   await rebasePage.getByRole("button", { name: "Continue rebase...", exact: true }).click();
 
   const rebaseContinue = rebasePage.getByRole("dialog", { name: "Continue rebase", exact: true });
@@ -1031,9 +1119,9 @@ try {
   );
 
   await stashGraphPage.getByRole("button", { name: "Refresh repository", exact: true }).click();
-  await stashGraphPage.getByRole("button", { name: "Resolve 1 conflicts", exact: true }).click();
+  await stashGraphPage.getByRole("button", { name: "Resolve 1 conflict", exact: true }).click();
 
-  const largeConflict = stashGraphPage.getByRole("dialog", {
+  const largeConflict = stashGraphPage.getByRole("region", {
     name: "Resolve conflicts",
     exact: true,
   });
@@ -1044,12 +1132,11 @@ try {
     "incoming",
   );
   await largeConflict.getByRole("button", { name: "Save and mark resolved", exact: true }).click();
-  await largeConflict.getByRole("status").filter({ hasText: "Resolved large.bin" }).waitFor();
+  await expect(largeConflict).toBeHidden();
   assert.equal(git("ls-files", "--unmerged"), "");
   assert.equal(git("rev-parse", ":large.bin"), git("rev-parse", "large-conflict-source:large.bin"));
   assert.ok((await readFile(join(repository, "large.bin"))).equals(largeIncoming));
 
-  await largeConflict.getByRole("button", { name: "Close", exact: true }).click();
   git("commit", "-m", "Resolve large binary merge");
 
   const replayBase = git("rev-parse", "HEAD").trim();
@@ -1100,17 +1187,16 @@ try {
 
   const replayPage = await foundationWindow(app);
 
-  await replayPage.getByRole("button", { name: "Resolve 1 conflicts", exact: true }).click();
+  await replayPage.getByRole("button", { name: "Resolve 1 conflict", exact: true }).click();
 
-  const pickConflict = replayPage.getByRole("dialog", { name: "Resolve conflicts", exact: true });
+  const pickConflict = replayPage.getByRole("region", { name: "Resolve conflicts", exact: true });
 
   await chooseSelect(
     pickConflict.getByRole("combobox", { name: "Resolution choice", exact: true }),
     "incoming",
   );
   await pickConflict.getByRole("button", { name: "Save and mark resolved", exact: true }).click();
-  await pickConflict.getByRole("status").filter({ hasText: "Resolved file.txt" }).waitFor();
-  await pickConflict.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(pickConflict).toBeHidden();
   await replayPage.getByRole("button", { name: "Continue cherry-pick...", exact: true }).click();
 
   const pickContinue = replayPage.getByRole("dialog", {

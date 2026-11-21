@@ -40,7 +40,7 @@ const original = Array.from({ length: 30 }, (_, i) => `line ${i}`).join("\n") + 
 
 await writeFile(join(repository, "file.txt"), original);
 git("add", ".");
-git("commit", "-m", "Initial");
+git("commit", "-m", "Initial", "-m", "Reusable fixture body");
 
 const template = join(root, "commit-template.txt");
 
@@ -112,6 +112,19 @@ try {
   const draft = page.getByRole("textbox", { name: "Commit title" });
 
   await page.getByText("Commit options", { exact: true }).click();
+  await page.getByRole("button", { name: "Reuse commit message" }).click();
+  const history = page.getByRole("dialog", { name: "Reuse commit message" });
+  await history.getByRole("button", { name: /Initial/ }).click();
+  assert.equal(await draft.inputValue(), "Initial");
+  assert.equal(
+    (await page.getByRole("textbox", { name: "Commit description" }).inputValue()).trim(),
+    "Reusable fixture body",
+  );
+  await draft.fill("A".repeat(110));
+  await page.getByText(/Title is 110 characters/).waitFor();
+  assert.equal(await draft.getAttribute("spellcheck"), "true");
+  await draft.fill("");
+  await page.getByRole("textbox", { name: "Commit description" }).fill("");
   await page.getByRole("button", { name: "Insert Git template", exact: true }).click();
   await page.waitForFunction(() =>
     document

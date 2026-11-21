@@ -263,7 +263,8 @@ try {
   await page.getByRole("region", { name: "GitHub connection", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Connect", exact: true }).count(), 0);
   assert.equal(await page.locator('details[aria-label="SSH setup"]').getAttribute("open"), null);
-  assert.equal(await page.locator("summary").getByText("Coming soon", { exact: true }).count(), 2);
+  await page.getByText("Additional Git hosts", { exact: true }).waitFor();
+  assert.equal(await page.locator("summary").getByText("Coming soon", { exact: true }).count(), 0);
 
   assert.equal(
     await page

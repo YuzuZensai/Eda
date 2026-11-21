@@ -4,9 +4,10 @@ import { trustFixture } from "./helpers/trust.ts";
 import { finishOnboarding } from "./helpers/onboarding.ts";
 import { assertSmoothResize, sampleResize } from "../helpers/motion.ts";
 import assert from "node:assert/strict";
+import { expect } from "playwright/test";
 import { type ElectronApplication, type Page } from "playwright";
 import { execFileSync } from "node:child_process";
-import { copyFile, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { tinyPng, pngVersion } from "../fixtures/images.ts";
@@ -51,6 +52,9 @@ git("commit", "-m", "Make branch navigation visible");
 const feature = git("rev-parse", "HEAD");
 
 git("tag", "-a", "v1.0", "-m", "Annotated release");
+const linked = join(root, "linked directory");
+git("worktree", "add", "--detach", linked, feature);
+git("worktree", "lock", "--reason", "offline drive", linked);
 git("update-ref", "refs/remotes/origin/feature/clear-branch-navigation", feature);
 git("checkout", "main");
 await writeFile(join(repository, "main.txt"), "main\n");
@@ -84,7 +88,10 @@ git("config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*");
 git("branch", "--set-upstream-to=origin/main", "main");
 await writeFile(join(repository, "file.txt"), "staged change\n");
 git("add", "file.txt");
-await writeFile(join(repository, "main.txt"), "working change\n");
+await writeFile(
+  join(repository, "main.txt"),
+  "working change " + "on this line ".repeat(70) + "\n",
+);
 await writeFile(join(repository, "preview.png"), pngVersion("index"));
 git("add", "preview.png");
 await writeFile(join(repository, "preview.png"), pngVersion("working"));
@@ -252,6 +259,15 @@ try {
 
   const overview = page.getByLabel("Repository overview", { exact: true });
 
+  await overview.getByRole("button", { name: "Worktrees" }).click();
+  const worktrees = page.getByRole("dialog", { name: "Worktrees" });
+  await expect(worktrees.getByText(linked, { exact: true })).toBeVisible();
+  await expect(worktrees.getByText("Locked offline drive", { exact: true })).toBeVisible();
+  await expect(
+    worktrees.getByText("Detached HEAD " + feature.slice(0, 8), { exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+
   assert.doesNotMatch(await overview.innerText(), /Tracking origin\/main/);
 
   assert.equal(
@@ -301,6 +317,76 @@ try {
   assert.equal(await graph.isVisible(), true, "Selecting a commit keeps history visible");
   assert.equal(await page.getByRole("textbox", { name: "Commit title" }).count(), 0);
 
+  await graph
+    .getByRole("button", { name: /Make branch navigation visible/ })
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Inspect range from selected commit" }).click();
+  const range = page.getByRole("dialog", { name: /^Inspect \d+ commits$/ });
+  await expect(range.getByText("Make branch navigation visible", { exact: false })).toBeVisible();
+  await expect(
+    range.getByText("Keep working changes beside the commit editor", { exact: false }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await graph
+    .getByRole("button", { name: /Make branch navigation visible/ })
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Compare with selected commit", exact: true }).click();
+
+  const comparison = page.getByRole("region", { name: "Compare revisions", exact: true });
+  const comparedMain = comparison.getByRole("button", {
+    name: "View comparison for main.txt",
+    exact: true,
+  });
+  const comparedFeature = comparison.getByRole("button", {
+    name: "View comparison for feature.txt",
+    exact: true,
+  });
+  await expect(comparison.getByLabel("From revision", { exact: true })).toHaveValue(before.head);
+  await expect(comparison.getByLabel("To revision", { exact: true })).toHaveValue(feature);
+  await comparedMain.click();
+  await expect(comparison.locator("[data-diff-text]").filter({ hasText: /^main$/ })).toBeVisible();
+  await expect(comparedFeature).toBeVisible();
+
+  await comparison.getByRole("button", { name: "From merge base", exact: true }).click();
+  await expect(
+    comparison.getByRole("heading", { name: "1 changed file", exact: true }),
+  ).toBeVisible();
+  await expect(comparedMain).toHaveCount(0);
+  await expect(comparedFeature).toBeVisible();
+  await expect(
+    comparison.locator("[data-diff-text]").filter({ hasText: /^feature$/ }),
+  ).toBeVisible();
+
+  await comparison.getByRole("button", { name: "Back to history", exact: true }).click();
+  await expect(
+    graph.getByRole("button", { name: /Keep working changes beside the commit editor/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(commitFiles.getByTitle(before.head, { exact: true })).toBeVisible();
+
+  await commitFiles.getByRole("button", { name: "Browse commit files" }).click();
+  const browser = page.getByRole("region", { name: "Browse commit files", exact: true });
+  await browser.getByRole("button", { name: "file.txt", exact: true }).click();
+  await expect(browser.getByRole("region", { name: "file.txt", exact: true })).toHaveText(
+    "initial",
+  );
+  await browser.getByRole("button", { name: "Line blame" }).click();
+  await expect(browser.getByText("initial", { exact: true })).toBeVisible();
+  await browser.getByRole("button", { name: "Back to history" }).click();
+  await graph.getByRole("button", { name: "Search commit history" }).click();
+  const search = page.getByRole("dialog", { name: "Search commit history" });
+  await search.getByRole("textbox", { name: "Commit message" }).fill("History fixture 3");
+  await search.getByRole("button", { name: "Search", exact: true }).click();
+  await search.getByText("History fixture 3", { exact: true }).click();
+  await expect(
+    graph
+      .getByRole("button", { name: /History fixture 3,|History fixture 3 ·|History fixture 3\./ })
+      .first(),
+  ).toHaveAttribute("aria-pressed", "true");
+  await graph.getByRole("button", { name: "Back in selection history" }).click();
+  await expect(
+    graph.getByRole("button", { name: /Keep working changes beside the commit editor/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+
   const detailsToggle = commitFiles.getByRole("button", { name: "Commit details", exact: true });
   const detailsId = await detailsToggle.getAttribute("aria-controls");
   assert.ok(detailsId);
@@ -345,6 +431,7 @@ try {
     .click();
 
   await page.getByText("Binary file changed: no text preview.", { exact: true }).waitFor();
+  await page.getByRole("region", { name: "Binary file details" }).getByText("5 bytes").waitFor();
   assert.equal(await graph.isVisible(), false, "Selecting a file replaces history with its diff");
 
   await page.getByRole("button", { name: "Back to history", exact: true }).click();
@@ -551,6 +638,43 @@ try {
     "Preserve this draft",
   );
 
+  const patchPath = join(root, "working.patch");
+  await app.evaluate(({ dialog }, filePath) => {
+    const previous = dialog.showSaveDialog;
+    dialog.showSaveDialog = async () => {
+      dialog.showSaveDialog = previous;
+      return { canceled: false, filePath };
+    };
+  }, patchPath);
+  await page.getByRole("button", { name: "Export file patch" }).click();
+  await expect.poll(() => readFile(patchPath, "utf8").catch(() => "")).toContain("working change");
+  git("apply", "--check", "--reverse", patchPath);
+  const wrap = page.getByRole("checkbox", { name: "Wrap long lines" });
+  await wrap.check();
+  const longLine = page
+    .locator("[data-row-index] [data-diff-text]")
+    .filter({ hasText: "working change" });
+  await expect.poll(async () => (await longLine.boundingBox())?.height ?? 0).toBeGreaterThan(24);
+  await wrap.uncheck();
+  const whitespace = page.getByRole("checkbox", { name: "Ignore whitespace" });
+  await whitespace.check();
+  await expect(
+    page.getByText("Choose Hunks and show whitespace to stage individual changes."),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stage hunk 1", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Stage file", exact: true })).toBeVisible();
+  await whitespace.uncheck();
+  await expect(page.getByRole("button", { name: "Stage hunk 1", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Stage file", exact: true }).click();
+  await page.getByRole("button", { name: "Staged main.txt, status M", exact: true }).click();
+  assert.equal(
+    git("show", ":main.txt"),
+    (await readFile(join(repository, "main.txt"), "utf8")).trim(),
+  );
+  await page.getByRole("button", { name: "Unstage file", exact: true }).click();
+  await page.getByRole("button", { name: "Unstaged main.txt, status M", exact: true }).click();
+  assert.equal(git("show", ":main.txt"), git("show", "HEAD:main.txt"));
+
   const divider = page.getByRole("separator").first();
   const oldSize = Number(await divider.getAttribute("aria-valuenow"));
 
@@ -562,6 +686,8 @@ try {
 
   assert.ok(Number(await divider.getAttribute("aria-valuenow")) > oldSize);
 
+  await expect(page.getByRole("button", { name: "Show branches and tags" })).toBeVisible();
+  await page.getByRole("button", { name: "Back to history", exact: true }).click();
   await page.locator("summary").filter({ hasText: "Remote branches" }).click();
   await page.getByRole("button", { name: "Hide branches and tags", exact: true }).click();
   await page.getByRole("button", { name: "Show branches and tags", exact: true }).waitFor();
@@ -584,6 +710,8 @@ try {
     "Preserve this draft",
   );
 
+  await page.getByTitle("Working tree: main.txt", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Back to history", exact: true }).click();
   await page.getByRole("button", { name: "Show branches and tags", exact: true }).click();
 
   await page.waitForFunction(
@@ -601,6 +729,8 @@ try {
   );
 
   await page.locator("summary").filter({ hasText: "Remote branches" }).click();
+
+  await page.getByRole("button", { name: "Unstaged main.txt, status M", exact: true }).click();
 
   for (const width of [1440, 940]) {
     await page.setViewportSize({ width, height: 850 });
@@ -677,6 +807,77 @@ try {
       await page.getByRole("button", { name: "Restore diff viewer", exact: true }).click();
     }
   }
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const openWorktrees = page.getByRole("button", { name: "Worktrees", exact: true });
+  const linkedDialog = page.getByRole("dialog", { name: "Worktrees", exact: true });
+  const terminalReady = join(root, "terminal-ready");
+  const terminalContinue = join(root, "terminal-continue");
+  const terminalResult = join(root, "terminal-result");
+  if (process.platform !== "win32") {
+    const program = join(root, "terminal-fixture.cjs");
+    await writeFile(
+      program,
+      [
+        "#!" + process.execPath,
+        'const fs = require("node:fs");',
+        "fs.writeFileSync(" + JSON.stringify(terminalReady) + ",process.cwd());",
+        "const interval = setInterval(() => {",
+        " if (fs.existsSync(" + JSON.stringify(terminalContinue) + ")) {",
+        "  fs.writeFileSync(" +
+          JSON.stringify(terminalResult) +
+          ",process.cwd()); clearInterval(interval);",
+        " }",
+        "}, 50);",
+        "setTimeout(() => clearInterval(interval),15000).unref();",
+      ].join("\n"),
+      { mode: 0o700 },
+    );
+    const configured = await page.evaluate(
+      (path) => window.eda.settings.set("terminalExecutable", { kind: "application" }, path),
+      program,
+    );
+    assert.ok(configured.ok, JSON.stringify(configured));
+  }
+  await writeFile(join(linked, "separate-worktree.txt"), "local change");
+  await openWorktrees.click();
+  if (process.platform !== "win32") {
+    await linkedDialog
+      .getByRole("listitem")
+      .filter({ has: page.getByText(linked, { exact: true }) })
+      .getByRole("button", { name: "External terminal" })
+      .click();
+    await expect.poll(() => readFile(terminalReady, "utf8").catch(() => "")).toBe(linked);
+  }
+  await linkedDialog
+    .getByRole("listitem")
+    .filter({ has: page.getByText(linked, { exact: true }) })
+    .getByRole("button", { name: "Open in another tab" })
+    .click();
+  await expect(page.getByRole("heading", { name: "linked directory", exact: true })).toBeVisible();
+  const linkedDraft = page.getByRole("textbox", { name: "Commit title", exact: true });
+  await expect(linkedDraft).toHaveValue("");
+  if (process.platform !== "win32") {
+    await writeFile(terminalContinue, "continue");
+    await expect.poll(() => readFile(terminalResult, "utf8").catch(() => "")).toBe(linked);
+  }
+  await linkedDraft.fill("Draft in linked worktree");
+  await openWorktrees.click();
+  await linkedDialog
+    .getByRole("listitem")
+    .filter({ has: page.getByText(repository, { exact: true }) })
+    .getByRole("button", { name: "Open in this tab" })
+    .click();
+  await expect(page.getByRole("heading", { name: "workspace-repo", exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Commit title", exact: true })).toHaveValue(
+    "Preserve this draft",
+  );
+  await page.getByRole("button", { name: "Back to history", exact: true }).click();
+  await page
+    .getByRole("list", { name: "Linked worktree changes" })
+    .getByRole("button", { name: /Changed files \(1\)/ })
+    .click();
+  await expect(linkedDraft).toHaveValue("Draft in linked worktree");
 
   assert.equal(git("symbolic-ref", "--short", "HEAD"), "main");
 

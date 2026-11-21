@@ -336,7 +336,7 @@ try {
   await page.getByRole("menuitem", { name: "Push tag", exact: true }).click();
   await httpsAuthentication.getByLabel("Username", { exact: true }).fill("fixture");
   await httpsAuthentication.getByLabel("Access token", { exact: true }).fill(token);
-  await httpsAuthentication.getByRole("button", { name: "Retry push", exact: true }).click();
+  await httpsAuthentication.getByLabel("Access token", { exact: true }).press("Enter");
   await httpsAuthentication.waitFor({ state: "hidden" });
   await expect.poll(() => git(remote, "tag", "--list", "release")).toBe("release");
   assert.equal(

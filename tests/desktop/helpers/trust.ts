@@ -1,6 +1,6 @@
 import type { RepositoryTrustRequest } from "../../../src/shared/repository/repository";
 import { realpath } from "node:fs/promises";
-import type { ElectronApplication } from "playwright";
+import type { ElectronApplication, Page } from "playwright";
 
 export async function trustFixture(app: ElectronApplication, root: string) {
   const roots = [root, await realpath(root)];
@@ -34,7 +34,10 @@ export async function trustFixture(app: ElectronApplication, root: string) {
       windows: process.platform === "win32",
     },
   );
-  const page = await app.firstWindow();
+  await trustFixturePage(await app.firstWindow(), roots);
+}
+
+export async function trustFixturePage(page: Page, roots: string[]) {
   const approveFixtures = ({ roots, windows }: { roots: string[]; windows: boolean }) => {
     const normalize = (path: string) => {
       const normalized = path.replaceAll("\\", "/");
