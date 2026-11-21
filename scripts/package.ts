@@ -59,7 +59,11 @@ if (!args.includes("--dir")) {
   await mkdir(".cache", { recursive: true });
 
   const notes = resolve(".cache/eda-release-notes.md");
-  await writeFile(notes, `Eda ${buildInfo.displayVersion}\n`);
+  const releaseNotes = process.env["EDA_RELEASE_NOTES"];
+  await writeFile(
+    notes,
+    releaseNotes ? await readFile(resolve(releaseNotes)) : `Eda ${buildInfo.displayVersion}\n`,
+  );
 
   const packArgs = [
     "--skip-updates",
@@ -95,6 +99,15 @@ if (!args.includes("--dir")) {
       resolve("build/icon.png"),
     );
   } else if (platform === "win") {
+    const thumbprint = process.env["EDA_WINDOWS_CERT_SHA1"];
+    if (thumbprint) {
+      if (!/^[a-f0-9]{40}$/i.test(thumbprint))
+        throw new Error("Invalid signing certificate thumbprint.");
+      packArgs.push(
+        "--signParams",
+        `/sha1 ${thumbprint} /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com`,
+      );
+    }
     // Electron's bootstrap lives in JS/N-API rather than the stock Electron executable.
     packArgs.push(
       "--mainExe",
@@ -207,7 +220,40 @@ if (!args.includes("--dir")) {
 
     await rm(staging, { recursive: true, force: true });
     await rm(join(output, `Eda-${buildInfo.version}-${channel}-Portable.zip`));
+    const diskImage = join(output, `Eda-${buildInfo.version}-${channel}.dmg`);
+    const signer = process.env["EDA_MAC_SIGN_IDENTITY"];
+    const notary = process.env["EDA_MAC_NOTARY_PROFILE"];
+    if (signer && signer !== "-")
+      execFileSync("codesign", ["--force", "--timestamp", "--sign", signer, diskImage], {
+        stdio: "inherit",
+      });
+    if (notary) {
+      execFileSync(
+        "xcrun",
+        [
+          "notarytool",
+          "submit",
+          diskImage,
+          "--keychain-profile",
+          notary,
+          "--wait",
+          "--output-format",
+          "json",
+        ],
+        { stdio: "inherit" },
+      );
+      execFileSync("xcrun", ["stapler", "staple", diskImage], { stdio: "inherit" });
+      execFileSync("xcrun", ["stapler", "validate", diskImage], { stdio: "inherit" });
+    }
   }
 
+  const checksums: string[] = [];
+  for (const name of (await readdir(output)).sort()) {
+    if (name === `SHA256SUMS-${channel}` || !(await stat(join(output, name))).isFile()) continue;
+    const hash = createHash("sha256");
+    for await (const chunk of createReadStream(join(output, name))) hash.update(chunk);
+    checksums.push(hash.digest("hex") + "  " + name);
+  }
+  await writeFile(join(output, `SHA256SUMS-${channel}`), checksums.join("\n") + "\n");
   console.log(`Velopack ${sdkVersion}: verified ${channel} packages are in ${output}`);
 }
