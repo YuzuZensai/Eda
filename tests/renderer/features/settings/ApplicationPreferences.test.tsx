@@ -103,7 +103,13 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const browser = () => container.querySelector<HTMLElement>('[role="combobox"]')!;
+const picker = (name: string) => {
+  const label = Array.from(container.querySelectorAll("label")).find(
+    (item) => item.textContent === name,
+  );
+  return document.getElementById(label!.htmlFor)!;
+};
+const browser = () => picker("Web browser");
 
 async function choose(label: string, control = browser()) {
   await act(async () =>
@@ -200,7 +206,7 @@ it("does not apply a browser chosen for a profile after switching profiles", asy
 
 it("keeps detected editor selection working without changing the browser", async () => {
   await act(async () => root.render(<ApplicationPreferences owner="profile" />));
-  const editor = container.querySelectorAll<HTMLElement>('[role="combobox"]')[1]!;
+  const editor = picker("External editor");
   await choose("Test editor", editor);
   expect(save).toHaveBeenLastCalledWith(
     "editorExecutable",

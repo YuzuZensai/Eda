@@ -115,7 +115,7 @@ export function useCommitDraft(pending: boolean) {
     !transitioning &&
     !snapshot?.recovery;
 
-  const submit = async (push = false) => {
+  const submit = async (push = false, skipCommitHooks = false) => {
     if (!canCommit || !repositoryId) return;
 
     const owner = snapshot?.context.profileId;
@@ -141,7 +141,11 @@ export function useCommitDraft(pending: boolean) {
     )
       return;
 
-    const committed = await commit(message, { amend, signOff: draft.signOff ?? false });
+    const committed = await commit(message, {
+      amend,
+      signOff: draft.signOff ?? false,
+      ...(skipCommitHooks && { skipCommitHooks }),
+    });
 
     if (committed) {
       const current = useSessionStore.getState();

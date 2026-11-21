@@ -21,7 +21,7 @@ export function MergeAbortDialog({
     [repositoryId, kind],
   );
 
-  const { preview, busy, error, setError, review, execute } = useReviewedOperation(
+  const { preview, preparing, busy, error, setError, review, execute } = useReviewedOperation(
     repositoryId,
     prepare,
   );
@@ -44,6 +44,7 @@ export function MergeAbortDialog({
       onClose={onClose}
       footer={
         <ReviewActions
+          preparing={preparing}
           busy={busy}
           onClose={onClose}
           onReview={() => void review()}

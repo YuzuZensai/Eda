@@ -3,6 +3,7 @@ import { ErrorDialog } from "../components/ui/index";
 import { useId, useRef, useState } from "react";
 import { ArrowUpDownIcon as ArrowUpDown } from "../components/ui/icons";
 import {
+  configuredCommands,
   commandReason,
   sameCommandContext,
   searchCommands,
@@ -14,22 +15,29 @@ import {
 import { Dialog, SearchField, ListItemButton } from "../components/ui/index";
 import { useListNavigation } from "../components/ui/hooks/useListNavigation";
 
+import { usePreferencesStore } from "../stores/preferences-store";
+
 export function CommandPalette({
   context,
   platform,
   onClose,
   onRun,
+  onAfterClose,
 }: {
   context: CommandContext;
   platform: DesktopPlatform;
   onClose: () => void;
+  onAfterClose?: () => void;
   onRun: (id: ShellCommandId, expected: CommandContext) => void;
 }) {
   const acceptedContext = useRef(context);
   const [query, setQuery] = useState("");
   const listId = useId();
   const commandRows = useRef(new Map<ShellCommandId, HTMLButtonElement>());
-  const commands = searchCommands(query).filter((command) => command.id !== "commands.open");
+  const overrides = usePreferencesStore((state) => state.values.shortcutOverrides.value);
+  const commands = searchCommands(query, configuredCommands(overrides)).filter(
+    (command) => command.id !== "commands.open",
+  );
   const { index, setHighlight, onKeyDown } = useListNavigation(
     commands.length,
     (position) => {
@@ -54,6 +62,7 @@ export function CommandPalette({
       title={t("commandPalette.commandPalette")}
       description={t("commandPalette.searchActionsForTheCurrentProfileAndRepository")}
       onClose={onClose}
+      onAfterClose={onAfterClose}
     >
       <SearchField
         autoFocus

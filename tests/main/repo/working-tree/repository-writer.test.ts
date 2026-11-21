@@ -9,7 +9,7 @@ import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 import { RepositoryWriter } from "@main/repo/working-tree/repository-writer";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { chmod, readFile, writeFile } from "node:fs/promises";
+import { chmod, readFile, stat, writeFile } from "node:fs/promises";
 
 let repos: TempRepo[] = [];
 
@@ -66,6 +66,259 @@ async function setup(options: { gitName?: string; gitEmail?: string } = {}) {
 }
 
 describe("staging and committing through the writer", () => {
+  it("previews Gitflow release merges and tag, resumes a conflicted finish and respects branch retention", async () => {
+    const { repo, writer } = await setup();
+    await writer.gitflow("r1", {
+      kind: "configure",
+      config: {
+        production: "main",
+        development: "next",
+        feature: "feat/",
+        release: "rel/",
+        hotfix: "fix/",
+      },
+    });
+    await writer.gitflow("r1", { kind: "start", type: "release", name: "v1", retain: true });
+    await repo.writeFile("a.txt", "release");
+    await repo.commit("release");
+    await repo.run(["switch", "main"]);
+    await repo.writeFile("a.txt", "other");
+    await repo.commit("production");
+    const plan = await writer.gitflow("r1", {
+      kind: "preview",
+      type: "release",
+      name: "v1",
+      retain: true,
+    });
+    expect(plan?.targets.map((target) => target.name)).toEqual(["main", "next"]);
+    expect(plan?.tag).toBe("v1");
+    await expect(writer.gitflow("r1", { kind: "finish", plan: plan! })).rejects.toThrow();
+    expect((await writer.flowState("r1")).pending).toEqual(plan);
+    await repo.writeFile("a.txt", "resolved");
+    await repo.commit("resolved release");
+    await writer.gitflow("r1", { kind: "resume" });
+    expect((await writer.flowState("r1")).pending).toBeNull();
+    expect(await repo.run(["rev-parse", "v1"])).toBe(await repo.run(["rev-parse", "main"]));
+    expect(await repo.run(["branch", "--merged", "next"])).toContain("rel/v1");
+    await writer.gitflow("r1", { kind: "start", type: "feature", name: "change", retain: false });
+    await repo.writeFile("new", "feature");
+    await repo.commit("feature");
+    const feature = await writer.gitflow("r1", {
+      kind: "preview",
+      type: "feature",
+      name: "change",
+      retain: false,
+    });
+    await writer.gitflow("r1", { kind: "finish", plan: feature! });
+    expect(await repo.run(["branch", "--list", "feat/change"])).toBe("");
+  });
+
+  it("stages parent gitlinks and protects child changes when updating, syncing and removing submodules", async () => {
+    const { repo, writer } = await setup();
+    const child = await createTempRepo();
+    repos.push(child);
+    await child.writeFile("sub.txt", "one");
+    await child.commit("sub");
+    await writer.changeSubmodule("r1", { kind: "add", path: "module", url: child.path });
+    expect(await repo.run(["ls-files", "--stage", "module"])).toContain("160000");
+    await repo.commit("add module");
+    const request = { path: "module", recursive: true, mode: "checkout" } as const;
+    await writer.changeSubmodule("r1", { kind: "init", ...request });
+    await writer.changeSubmodule("r1", { kind: "sync", ...request });
+    await writer.changeSubmodule("r1", { kind: "update", ...request });
+    await writer.changeSubmodule("r1", { kind: "update", ...request, mode: "merge" });
+    expect(await repo.git.readConfig("eda.submoduleUpdateMode", { cwd: repo.path })).toBe("merge");
+    await writer.changeSubmodule("r1", { kind: "automatic", enabled: true });
+    await repo.run(["checkout", "-b", "new-pointer"]);
+    const moduleDir = join(repo.path, "module");
+    await writeFile(join(moduleDir, "sub.txt"), "two");
+    await repo.run(["add", "sub.txt"], moduleDir);
+    await repo.run(["commit", "-m", "updated child"], moduleDir);
+    await repo.commit("advance module");
+    await writer.checkoutBranch("r1", "main");
+    expect(await readFile(join(moduleDir, "sub.txt"), "utf8")).toBe("one");
+    await writeFile(join(repo.path, "module", "sub.txt"), "dirty");
+    await expect(writer.checkoutBranch("r1", "new-pointer")).rejects.toThrow();
+    expect(await readFile(join(moduleDir, "sub.txt"), "utf8")).toBe("dirty");
+    await expect(
+      writer.changeSubmodule("r1", { kind: "remove", path: "module" }),
+    ).rejects.toThrow();
+    await expect(writer.changeSubmodule("r1", { kind: "update", ...request })).rejects.toThrow();
+    await repo.run(["checkout", "--", "sub.txt"], join(repo.path, "module"));
+    await writer.changeSubmodule("r1", { kind: "remove", path: "module" });
+    expect(await repo.run(["ls-files", "module"])).toBe("");
+  });
+  it("creates working files exclusively and rejects paths into metadata, symlinks and directories before deletion", async () => {
+    const { repo, writer } = await setup();
+    const trash = vi.fn();
+    await writer.changeWorkingFile("r1", "new.txt");
+    await expect(writer.changeWorkingFile("r1", "new.txt")).rejects.toMatchObject({
+      code: "EEXIST",
+    });
+    await expect(writer.changeWorkingFile("r1", ".git/config", trash)).rejects.toThrow();
+    await expect(writer.changeWorkingFile("r1", "../elsewhere")).rejects.toThrow();
+    if (process.platform !== "win32") {
+      const { symlink } = await import("node:fs/promises");
+      await symlink(repo.home, join(repo.path, "outside"));
+      await expect(writer.changeWorkingFile("r1", "outside/file")).rejects.toThrow();
+    }
+    expect(trash).not.toHaveBeenCalled();
+    await writer.changeWorkingFile("r1", "new.txt", trash);
+    expect(trash).toHaveBeenCalledWith(join(repo.path, "new.txt"));
+    expect(await repo.run(["diff", "--cached", "--name-only"])).toBe("");
+  });
+
+  it("preserves mailbox authors, checks the recovery token, continues a staged resolution, and aborts an interrupted series", async () => {
+    const { repo, writer } = await setup();
+    const base = (await repo.run(["rev-parse", "HEAD"])).trim();
+    await repo.run(["switch", "-c", "series"]);
+    await repo.run(["config", "user.name", "Original Author"]);
+    await repo.writeFile("a.txt", "series");
+    await repo.commit("first patch");
+    await repo.writeFile("b.txt", "second");
+    await repo.commit("second patch");
+    const oid = (await repo.run(["rev-parse", "HEAD"])).trim();
+    const { RepositoryReader } = await import("@main/repo/repository-reader");
+    const reader = new RepositoryReader(
+      repo.git,
+      {
+        resolveActiveRepository: () => ({ id: "r1", path: repo.path, identityId: "profile" }),
+      } as never,
+      () => [],
+    );
+    const bytes = await reader.mailboxPatch("r1", oid, base);
+    await repo.run(["switch", "main"]);
+    await writer.mailbox("r1", { bytes });
+    expect((await repo.run(["log", "-2", "--format=%an:%s"])).trim().split("\n")).toEqual([
+      "Original Author:second patch",
+      "Original Author:first patch",
+    ]);
+    await repo.run(["reset", "--hard", base]);
+    await repo.writeFile("a.txt", "diverged");
+    await repo.commit("diverged");
+    const before = (await repo.run(["rev-parse", "HEAD"])).trim();
+    const { readWorkflowState } = await import("@main/git/operations/workflow-state");
+    const state = async () =>
+      readWorkflowState(repo.git, repo.path, await repo.git.status(repo.path));
+    for (const action of ["abort", "continue"] as const) {
+      await expect(writer.mailbox("r1", { bytes })).rejects.toThrow();
+      expect((await state())?.kind).toBe("am");
+      await expect(writer.mailbox("r1", { action, token: "stale" })).rejects.toThrow();
+      if (action === "continue") {
+        await repo.writeFile("a.txt", "resolved");
+        await repo.git.stage(repo.path, ["a.txt"]);
+      }
+      await writer.mailbox("r1", { action, token: (await state())!.token });
+      expect(await state()).toBeNull();
+      if (action === "abort") expect((await repo.run(["rev-parse", "HEAD"])).trim()).toBe(before);
+      else expect(await readFile(join(repo.path, "b.txt"), "utf8")).toBe("second");
+    }
+  });
+  it.each(["worktree", "index", "both"] as const)(
+    "restores two literal historical files into %s only",
+    async (destination) => {
+      const { repo, writer } = await setup();
+      for (const path of ["a[1]", "a1", "folder/other"]) await repo.writeFile(path, "original");
+      await repo.commit("baseline");
+      const oid = (await repo.run(["rev-parse", "HEAD"])).trim();
+      for (const path of ["a[1]", "a1", "folder/other"]) {
+        await repo.writeFile(path, "indexed");
+        await repo.git.stage(repo.path, [path]);
+        await repo.writeFile(path, "working");
+      }
+      await writer.restoreRevision("r1", oid, ["a[1]", "folder/other"], destination);
+      for (const path of ["a[1]", "folder/other"]) {
+        expect(await repo.run(["show", ":" + path])).toBe(
+          destination === "worktree" ? "indexed" : "original",
+        );
+        expect(await readFile(join(repo.path, path), "utf8")).toBe(
+          destination === "index" ? "working" : "original",
+        );
+      }
+      expect(await readFile(join(repo.path, "a1"), "utf8")).toBe("working");
+      await expect(writer.restoreRevision("r1", oid, ["a1", "folder"], "both")).rejects.toThrow();
+      expect(await repo.run(["show", ":a1"])).toBe("indexed");
+    },
+  );
+
+  it("skips pre-commit and commit-msg for just the explicit commit while retaining post-commit", async () => {
+    const { repo, writer } = await setup();
+    for (const name of ["pre-commit", "commit-msg", "post-commit"]) {
+      const path = ".git/hooks/" + name;
+      await repo.writeFile(path, "#!/bin/sh\necho " + name + " >> hooks-ran\n");
+      await chmod(join(repo.path, path), 0o755);
+    }
+    for (const skipCommitHooks of [true, false]) {
+      await repo.writeFile("a.txt", String(skipCommitHooks));
+      await repo.git.stage(repo.path, ["a.txt"]);
+      await writer.commit("r1", "hook check", { skipCommitHooks });
+    }
+    expect((await readFile(join(repo.path, "hooks-ran"), "utf8")).trim().split(/\r?\n/)).toEqual([
+      "post-commit",
+      "pre-commit",
+      "commit-msg",
+      "post-commit",
+    ]);
+  });
+
+  it("creates existing and new branch worktrees, protects dirty and locked paths, and retains merged tips on cleanup", async () => {
+    const { repo, writer } = await setup();
+    const path = join(repo.home, "linked");
+    const oid = (await repo.run(["rev-parse", "HEAD"])).trim();
+    await expect(
+      writer.changeWorktree("r1", {
+        kind: "create",
+        path: join(repo.path, "nested"),
+        branch: "nest",
+        base: "HEAD",
+      }),
+    ).rejects.toThrow();
+    await writer.changeWorktree("r1", { kind: "create", path, branch: "topic", base: oid });
+    expect((await repo.run(["symbolic-ref", "--short", "HEAD"], path)).trim()).toBe("topic");
+    await writer.changeWorktree("r1", { kind: "lock", path });
+    const cleanup = { kind: "cleanup", path, oid, branch: "topic" } as const;
+    await expect(writer.changeWorktree("r1", cleanup)).rejects.toThrow();
+    await writer.changeWorktree("r1", { kind: "unlock", path });
+    await writeFile(join(path, "dirty"), "local data");
+    await expect(writer.changeWorktree("r1", cleanup)).rejects.toThrow();
+    const { unlink, rm } = await import("node:fs/promises");
+    await unlink(join(path, "dirty"));
+    const recovery = await writer.changeWorktree("r1", cleanup);
+    expect((await repo.run(["rev-parse", recovery!])).trim()).toBe(oid);
+    expect(await repo.run(["branch", "--list", "topic"])).toBe("");
+    await repo.run(["branch", "existing"]);
+    await writer.changeWorktree("r1", { kind: "create", path, branch: "existing" });
+    await rm(path, { recursive: true });
+    await writer.changeWorktree("r1", { kind: "prune" });
+    expect(await repo.run(["worktree", "list"])).not.toContain(path);
+  });
+  it("applies a binary rename and mode change to the worktree while preserving the index on success and rejection", async () => {
+    const { repo, writer } = await setup();
+    await writeFile(join(repo.path, "old.bin"), Buffer.alloc(2048, 0));
+    await repo.commit("binary");
+    await repo.run(["mv", "--", "old.bin", "new.bin"]);
+    const data = Buffer.alloc(2048, 0);
+    data[0] = 17;
+    await writeFile(join(repo.path, "new.bin"), data);
+    await repo.run(["add", "new.bin"]);
+    await repo.run(["update-index", "--chmod=+x", "new.bin"]);
+    const patch = await repo.git.filePatch(repo.path, {
+      repositoryId: "r1",
+      area: "staged",
+      path: "new.bin",
+    });
+    await repo.run(["reset", "--hard", "HEAD"]);
+    const index = await repo.run(["write-tree"]);
+    await writer.applyPatch("r1", patch);
+    expect(await readFile(join(repo.path, "new.bin"))).toEqual(data);
+    await expect(readFile(join(repo.path, "old.bin"))).rejects.toMatchObject({ code: "ENOENT" });
+    if (process.platform !== "win32")
+      expect((await stat(join(repo.path, "new.bin"))).mode & 0o100).toBeTruthy();
+    await expect(writer.applyPatch("r1", patch)).rejects.toThrow();
+    expect(await repo.run(["write-tree"])).toBe(index);
+    expect(await readFile(join(repo.path, "new.bin"))).toEqual(data);
+  });
+
   it("stages, commits, and reports the new oid", async () => {
     const { repo, writer } = await setup();
 

@@ -450,12 +450,13 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     },
     loadMore: history.loadMore,
     loadPrevious: history.loadPrevious,
-    selectChange(change, area) {
-      set({ contentView: "diff", commitFilePath: null });
-      useLayoutStore.getState().reveal("diff");
+    selectChange(change, area, openConflict = true) {
+      const focused = area !== "conflicted" || openConflict;
+      set({ contentView: focused ? "diff" : "history", commitFilePath: null });
+      useLayoutStore.getState().reveal(focused ? "diff" : "graph");
       const selection = { kind: "change" as const, path: change.path, area };
       remember(selection);
-      return loadDiff(selection);
+      return loadDiff(selection, { openConflict });
     },
     selectCommit(oid) {
       set({ contentView: "history", commitFilePath: null });
@@ -465,9 +466,20 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
       return loadDiff(selection);
     },
     selectCommitFile: diff.selectFile,
+    async retryDiff() {
+      const { selection, commitFilePath } = get();
+      if (selection?.kind === "commit" && commitFilePath) await diff.selectFile(commitFilePath);
+      else if (selection) await loadDiff(selection);
+    },
     showHistory() {
       set({ contentView: "history" });
       useLayoutStore.getState().reveal("graph");
+    },
+
+    compareRevisions(left = "", right) {
+      const { selection } = get();
+      const target = right ?? (selection?.kind === "commit" ? selection.oid : "HEAD");
+      set({ contentView: { kind: "comparison", left, right: target } });
     },
     showWorkingTree() {
       diff.invalidate();
@@ -543,6 +555,7 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
           repositoryId,
           message,
           ...(options.amend ? { amend: true } : {}),
+          ...(options.skipCommitHooks ? { skipCommitHooks: true } : {}),
           ...(options.signOff ? { signOff: true } : {}),
           ...(options.stagePaths ? { stagePaths: options.stagePaths } : {}),
         });

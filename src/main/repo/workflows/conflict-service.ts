@@ -1,4 +1,5 @@
 import { isFullObjectId } from "@shared/repository/object-id";
+import { scanConflictMarkers } from "@shared/workflows/conflict-markers";
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -94,7 +95,7 @@ export class ConflictService {
     return target;
   }
 
-  private async working(target: string) {
+  private async working(target: string, markerSize?: number) {
     const info = await lstat(target).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return null;
       throw error;
@@ -122,7 +123,7 @@ export class ConflictService {
         const prefix: Buffer[] = [];
         let total = 0;
         let retained = 0;
-        let tail = "";
+        const scan = markerSize === undefined ? null : scanConflictMarkers(markerSize);
         let hasMarkers = false;
 
         for (;;) {
@@ -134,10 +135,7 @@ export class ConflictService {
 
           digest.update(chunk);
 
-          const scan = `${total ? "x" : ""}${tail}${chunk.toString("utf8")}`;
-
-          hasMarkers ||= /(?:^|\n)(?:<{7}|={7}|>{7}|\|{7})(?: |\r?\n)/.test(scan);
-          tail = scan.slice(-64);
+          if (scan && !hasMarkers) hasMarkers = scan(chunk.toString("utf8"));
           total += bytesRead;
 
           if (total > info.size)
@@ -164,9 +162,7 @@ export class ConflictService {
             errorText("main.conflictService.theConflictFileChangedWhileReadingInspectItAgain"),
           );
 
-        hasMarkers ||= /(?:^|\n)(?:<{7}|={7}|>{7}|\|{7})(?: |\r?$)/.test(
-          `${total > tail.length ? "x" : ""}${tail}`,
-        );
+        if (scan && !hasMarkers) hasMarkers = scan("", true);
 
         return { kind, bytes: Buffer.concat(prefix), hash: digest.digest("hex"), hasMarkers };
       } finally {
@@ -215,9 +211,19 @@ export class ConflictService {
   async inspect(repositoryId: string, path: string): Promise<ConflictPreview> {
     const repository = this.repositories.resolveActiveRepository(repositoryId);
     const target = await this.target(repository.path, path);
+    const attribute = await this.git.exec(
+      ["check-attr", "-z", "conflict-marker-size", "--", path],
+      {
+        cwd: repository.path,
+        operation: t("operations.inspectConflictEntries"),
+        maxStdoutBytes: 64 * 1024,
+      },
+    );
+    const size = Number(attribute.stdout.split("\0")[2]);
+    const markerSize = Number.isInteger(size) && size > 0 && size <= 0x7fffffff ? size : 7;
     const [index, file, status] = await Promise.all([
       this.index(repository.path, path),
-      this.working(target),
+      this.working(target, markerSize),
       this.git.status(repository.path),
     ]);
 
@@ -265,6 +271,8 @@ export class ConflictService {
     const preview: ConflictPreview = {
       token: randomUUID(),
       path,
+      markerSize,
+      hasMarkers: file.hasMarkers,
       workflow: this.workflows
         ? await this.workflows.observe(repository.path, status)
         : await readWorkflowState(this.git, repository.path, status),
@@ -385,7 +393,10 @@ export class ConflictService {
         const target = await this.target(root, preview.path);
         const [index, file, status] = await Promise.all([
           this.index(root, preview.path),
-          this.working(target),
+          this.working(
+            target,
+            request.stage && request.choice === "worktree" ? preview.markerSize : undefined,
+          ),
           this.git.status(root),
         ]);
         const workflow = this.workflows
@@ -442,7 +453,7 @@ export class ConflictService {
           (request.choice === "text" || request.choice === "worktree") &&
           (request.choice === "worktree"
             ? file.hasMarkers
-            : /^(?:<{7}|={7}|>{7}|\|{7})(?: |\r?$)/m.test(bytes?.toString("utf8") ?? ""))
+            : scanConflictMarkers(preview.markerSize)(request.text ?? "", true))
         )
           throw invalid(
             errorText("main.conflictService.removeConflictMarkersBeforeMarkingThisPathResolved"),

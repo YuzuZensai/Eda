@@ -1,3 +1,4 @@
+import { errorMessage } from "@shared/errors";
 import { categorizeChanges } from "../../repository/working-changes";
 import { t } from "@shared/i18n";
 import { MAX_FILE_VIEW_PATHS, defaultFileView, type FileView } from "@shared/preferences/file-view";
@@ -15,7 +16,7 @@ import {
   Trash2Icon as Trash2,
   CloseIcon as X,
 } from "../../components/ui/icons";
-import { useEffect, useMemo, useState } from "react";
+import { type Ref, useEffect, useMemo, useState } from "react";
 import { PanelHeader } from "../../components/layout/PanelHeader";
 import { usePanel } from "../../components/layout/hooks/usePanel";
 import { LoadingContent, Skeleton } from "../../components/ui/feedback/Skeleton";
@@ -27,6 +28,9 @@ import {
   MenuItem,
   TreeIcon,
 } from "../../components/ui/index";
+import { WorkingFileDialog } from "./WorkingFileDialog";
+import { MailboxDialog } from "./MailboxDialog";
+import { usePreferencesStore } from "../../stores/preferences-store";
 import { useRepositoryStore, type ChangeArea } from "../../stores/repository-store";
 import { useSessionStore } from "../../stores/session-store";
 import { copyText } from "../../utils/clipboard";
@@ -37,7 +41,17 @@ import { buildChangeRows, type ChangeListRow } from "./change-list-model";
 
 import { IgnoredFilesDialog } from "./IgnoredFilesDialog";
 
-export function ChangesPanel({ pending = false }: { pending?: boolean }) {
+export function ChangesPanel({
+  pending = false,
+  ref,
+}: {
+  pending?: boolean;
+  ref?: Ref<HTMLElement>;
+}) {
+  const mailbox = usePreferencesStore((state) => state.values.mailboxPreview.value);
+  const [workingFile, setWorkingFile] = useState<{ id: string; path: string } | null>(null);
+  const [mailboxId, setMailboxId] = useState<string | null>(null);
+  const [applyingPatch, setApplyingPatch] = useState(false);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [ignoredRepository, setIgnoredRepository] = useState<string | null>(null);
 
@@ -128,6 +142,7 @@ export function ChangesPanel({ pending = false }: { pending?: boolean }) {
 
   return (
     <section
+      ref={ref}
       data-tour="changes"
       tabIndex={0}
       aria-label={t("changesPanel.workingFilesUpAndDownSelectFilesSpace")}
@@ -172,6 +187,13 @@ export function ChangesPanel({ pending = false }: { pending?: boolean }) {
         if (index >= 0) {
           event.preventDefault();
           event.currentTarget.focus();
+          void selectChange(row.change, row.area, false);
+        } else if (
+          event.target === event.currentTarget &&
+          row.area === "conflicted" &&
+          event.key === "Enter"
+        ) {
+          event.preventDefault();
           void selectChange(row.change, row.area);
         } else if (event.target === event.currentTarget && row.area !== "conflicted") {
           if (event.key === " ") {
@@ -193,6 +215,22 @@ export function ChangesPanel({ pending = false }: { pending?: boolean }) {
         }
       }}
     >
+      {repositoryId && workingFile?.id === repositoryId && (
+        <WorkingFileDialog
+          id={repositoryId}
+          initialPath={workingFile.path}
+          onClose={() => setWorkingFile(null)}
+        />
+      )}
+      {repositoryId && mailboxId === repositoryId && (
+        <MailboxDialog
+          id={repositoryId}
+          head={status?.branch.oid ?? ""}
+          state={status?.workflow ?? null}
+          enabled={mailbox}
+          onClose={() => setMailboxId(null)}
+        />
+      )}
       <PanelHeader
         title={t("changesPanel.workingTree")}
         controls={{
@@ -239,6 +277,50 @@ export function ChangesPanel({ pending = false }: { pending?: boolean }) {
           )}
         </div>
 
+        <IconButton
+          size="xs"
+          title={t("workingFile.title")}
+          aria-label={t("workingFile.title")}
+          icon={<Plus />}
+          disabled={!repositoryId || pending || writing}
+          onClick={() => repositoryId && setWorkingFile({ id: repositoryId, path: "" })}
+        />
+        {(mailbox || status?.workflow?.kind === "am") && (
+          <Button
+            size="sm"
+            disabled={!repositoryId || pending || writing}
+            onClick={() => setMailboxId(repositoryId)}
+          >
+            {t("mailbox.preview")}
+          </Button>
+        )}
+        <IconButton
+          size="xs"
+          title={t("patch.apply")}
+          aria-label={t("patch.apply")}
+          icon={<FileDiff />}
+          disabled={
+            !repositoryId ||
+            pending ||
+            writing ||
+            applyingPatch ||
+            status?.capabilities?.write === false
+          }
+          onClick={async () => {
+            if (!repositoryId) return;
+            setApplyingPatch(true);
+            try {
+              const result = await window.eda.repository.applyPatch(repositoryId);
+              if (!result.ok && useRepositoryStore.getState().repositoryId === repositoryId)
+                setCopyError(errorMessage(result.error));
+            } catch (failure) {
+              if (useRepositoryStore.getState().repositoryId === repositoryId)
+                setCopyError(errorMessage(failure));
+            } finally {
+              setApplyingPatch(false);
+            }
+          }}
+        />
         <IconButton
           size="xs"
           onClick={() => {
@@ -440,9 +522,19 @@ export function ChangesPanel({ pending = false }: { pending?: boolean }) {
             }}
           >
             <FileDiff size={14} />
-            {t("changesPanel.inspectFile")}
+            {menu.area === "conflicted"
+              ? t("changes.changeRows.resolveConflict", { path: menu.change.path })
+              : t("changesPanel.inspectFile")}
           </MenuItem>
 
+          <MenuItem
+            onClick={() => {
+              setWorkingFile({ id: menu.repositoryId, path: menu.change.path });
+              setMenu(null);
+            }}
+          >
+            {t("workingFile.title")}
+          </MenuItem>
           {menu.stagePaths.length > 0 && (
             <MenuItem
               disabled={writing || menu.stagePaths.length > 256}
@@ -489,6 +581,14 @@ export function ChangesPanel({ pending = false }: { pending?: boolean }) {
             </MenuItem>
           )}
 
+          <MenuItem
+            onClick={() => {
+              setWorkingFile({ id: menu.repositoryId, path: menu.change.path });
+              setMenu(null);
+            }}
+          >
+            {t("workingFile.title")}
+          </MenuItem>
           {menu.stagePaths.length > 0 && (
             <MenuItem
               disabled={writing}

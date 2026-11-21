@@ -1,6 +1,5 @@
 import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
-import { stateLabel } from "@shared/i18n/labels";
 import {
   UNVERIFIED_COMMIT_SIGNATURE,
   type CommitInspection,
@@ -8,7 +7,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { PanelHeader } from "../../components/layout/PanelHeader";
 import { usePanel } from "../../components/layout/hooks/usePanel";
-import { FileStatusIcon, fileStatusTone } from "../../components/ui/display/FileStatusIcon";
+import { ChangedFileButton } from "./ChangedFileButton";
 import { VirtualRows } from "../../components/ui/display/VirtualRows";
 import { LoadingContent } from "../../components/ui/feedback/Skeleton";
 import {
@@ -19,6 +18,7 @@ import {
   TextButton,
 } from "../../components/ui/index";
 import { useRepositoryStore } from "../../stores/repository-store";
+import { ExportPatchButton } from "../diff/ExportPatchButton";
 import { CommitDetails } from "../diff/CommitDetails";
 import { cacheCommitSignature } from "../../repository/hooks/useCommitSignature";
 
@@ -129,7 +129,23 @@ export function CommitChangesPanel() {
           onToggleCollapse: panel.toggleCollapse,
           collapseDirection: "right",
         }}
-      />
+      >
+        {oid && changeCount === 0 && (
+          <TextButton onClick={showWorkingTree}>{t("commitChangesPanel.workingTree")}</TextButton>
+        )}
+        {oid && (
+          <TextButton
+            onClick={() => useRepositoryStore.setState({ contentView: { kind: "tree", oid } })}
+          >
+            {t("revision.browse")}
+          </TextButton>
+        )}
+      </PanelHeader>
+      {oid && repositoryId && !!diff?.files.length && (
+        <div className="px-3">
+          <ExportPatchButton key={oid} request={{ repositoryId, oid }} />
+        </div>
+      )}
 
       {changeCount > 0 && (
         <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-accent-border bg-accent-muted px-3 py-1.5 text-xs text-text-primary">
@@ -160,6 +176,9 @@ export function CommitChangesPanel() {
             verifying={details?.oid !== oid}
             onVerify={() => setVerificationRevision((revision) => revision + 1)}
             onSelectParent={(parent) => void useRepositoryStore.getState().jumpToCommit(parent)}
+            onCompareParent={(parent) =>
+              useRepositoryStore.getState().compareRevisions(parent, commit.oid)
+            }
           />
         )}
 
@@ -210,37 +229,16 @@ export function CommitChangesPanel() {
           horizontalScroll={false}
           renderRow={(file) => {
             const path = file.newPath ?? file.oldPath!;
-            const renamed = file.oldPath && file.newPath && file.oldPath !== file.newPath;
-
             return (
-              <ButtonBase
+              <ChangedFileButton
                 key={path}
-                data-tour={path === "README.md" ? "commit-file-readme" : undefined}
-                aria-label={t("commitChangesPanel.viewCommitDiffFor", { path: path })}
-                aria-pressed={selectedPath === path}
-                title={`${stateLabel(file.status)}: ${renamed ? t("commitChangesPanel.to", { oldPath: file.oldPath, path: path }) : path}`}
-                onClick={() => void selectFile(path)}
-                className={`ui-interactive flex h-9 w-full min-w-0 items-center gap-2 px-3 text-left text-xs hover:bg-bg-raised ${selectedPath === path ? "bg-accent-muted text-accent-text" : "text-text-secondary"}`}
-              >
-                <span
-                  aria-label={stateLabel(file.status)}
-                  className={`mono flex w-3.5 shrink-0 items-center justify-center ${fileStatusTone(file.status)}`}
-                >
-                  <FileStatusIcon status={file.status} />
-                </span>
-
-                <span className="min-w-0 flex-1 truncate">
-                  {renamed
-                    ? t("commitChangesPanel.to", { oldPath: file.oldPath, path: path })
-                    : path}
-                </span>
-
-                {file.binary && (
-                  <span className="shrink-0 text-text-tertiary">
-                    {t("commitChangesPanel.binary")}
-                  </span>
-                )}
-              </ButtonBase>
+                file={file}
+                path={path}
+                tour={path === "README.md" ? "commit-file-readme" : undefined}
+                label={t("commitChangesPanel.viewCommitDiffFor", { path })}
+                selected={selectedPath === path}
+                onSelect={() => void selectFile(path)}
+              />
             );
           }}
         />

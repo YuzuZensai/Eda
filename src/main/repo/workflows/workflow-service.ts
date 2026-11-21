@@ -351,6 +351,23 @@ export class WorkflowService {
     );
   }
 
+  async predictUpstream(repositoryId: string) {
+    const owner = this.repositories.resolveActiveRepository(repositoryId);
+    const revisions = await this.git.exec(["rev-parse", "HEAD^{commit}", "@{upstream}^{commit}"], {
+      cwd: owner.path,
+      operation: t("operations.predictMergeConflicts"),
+      maxStdoutBytes: 1024,
+    });
+    const [head, upstream] = revisions.stdout.trim().split(/\r?\n/);
+    if (!isFullObjectId(head) || !isFullObjectId(upstream))
+      throw invalid(errorText("main.repositoryManager.theRepositoryChangedRefreshAndTryAgain"));
+    const prediction = await this.predictMerge(owner.path, head, upstream);
+    const current = this.repositories.resolveActiveRepository(repositoryId);
+    if (current.identityId !== owner.identityId || current.path !== owner.path)
+      throw invalid(errorText("main.repositoryManager.theRepositoryChangedRefreshAndTryAgain"));
+    return prediction;
+  }
+
   private async predictMerge(
     root: string,
     head: string,

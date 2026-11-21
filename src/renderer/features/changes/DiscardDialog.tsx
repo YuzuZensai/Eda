@@ -10,6 +10,7 @@ import {
   CodeBlock,
   Dialog,
   ErrorDialog,
+  StateMessage,
   TextButton,
 } from "../../components/ui/index";
 import { useRepositoryStore } from "../../stores/repository-store";
@@ -30,12 +31,20 @@ export function DiscardDialog({
   const [records, setRecords] = useState<RecoverySummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [readState, setReadState] = useState<"loading" | "failed" | "ready">("loading");
+  const [revision, setRevision] = useState(0);
   const [confirmed, setConfirmed] = useState(false);
   const [forgetId, setForgetId] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
 
+    setReadState("loading");
+    setError(null);
+    setPreview(null);
+    setConfirmed(false);
+    setForgetId(null);
+    setRecords([]);
     const load = async () => {
       if (paths) {
         const result = partial
@@ -43,22 +52,29 @@ export function DiscardDialog({
           : await window.eda.repository.previewDiscard(repositoryId, paths);
 
         if (!alive) return;
+        setReadState(result.ok ? "ready" : "failed");
         if (result.ok) setPreview(result.value);
         else setError(errorMessage(result.error));
       } else {
         const result = await window.eda.repository.listRecovery(repositoryId);
         if (!alive) return;
+        setReadState(result.ok ? "ready" : "failed");
         if (result.ok) setRecords(result.value);
         else setError(errorMessage(result.error));
       }
     };
 
-    void load();
+    void load().catch((failure) => {
+      if (alive) {
+        setReadState("failed");
+        setError(errorMessage(failure));
+      }
+    });
 
     return () => {
       alive = false;
     };
-  }, [repositoryId, paths, partial]);
+  }, [repositoryId, paths, partial, revision]);
 
   const run = async (snapshot?: string) => {
     setBusy(true);
@@ -109,6 +125,19 @@ export function DiscardDialog({
       }
     >
       <div className="space-y-3 text-sm">
+        {readState === "loading" && (
+          <StateMessage tone="loading" title={t("discardDialog.reading")} />
+        )}
+        {readState === "failed" && (
+          <StateMessage
+            tone="error"
+            title={t("discardDialog.readFailed")}
+            description={error}
+            action={
+              <Button onClick={() => setRevision((value) => value + 1)}>{t("common.retry")}</Button>
+            }
+          />
+        )}
         {preview && (
           <>
             {preview.patch ? (
@@ -145,7 +174,7 @@ export function DiscardDialog({
           </>
         )}
 
-        {!paths && (
+        {readState === "ready" && !paths && (
           <>
             <p>{t("discardDialog.restoreChecksTheFilesHaveNotChangedSince")}</p>
             {records.length === 0 && <p>{t("discardDialog.noSavedRecoverySnapshots")}</p>}
@@ -273,7 +302,7 @@ export function DiscardDialog({
           </>
         )}
 
-        <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>
+        <ErrorDialog onDismiss={() => setError(null)}>{readState === "ready" && error}</ErrorDialog>
       </div>
     </Dialog>
   );

@@ -41,6 +41,7 @@ describe.each([
     poll: vi.fn(),
     cancel: vi.fn(),
     disconnect: vi.fn(),
+    selectAccount: vi.fn(),
     openProfile: vi.fn(),
     openVerification: vi.fn(),
     openAuthorization: vi.fn(),
@@ -176,6 +177,34 @@ describe.each([
     expect(container.textContent).toContain(`Sign in with ${provider}`);
     await act(async () => vi.advanceTimersByTimeAsync(5000));
     expect(api.poll).toHaveBeenCalledOnce();
+  });
+
+  it("clears a failed account switch when the user retries successfully", async () => {
+    const alternative = { ...connected.account, id: "8", login: "second.user" };
+    api.status.mockResolvedValue(ok({ ...connected, alternatives: [alternative] }));
+    api.selectAccount
+      .mockRejectedValueOnce(new Error("Switch failed"))
+      .mockResolvedValueOnce(ok({ secureStorage: true, account: alternative }));
+    await render("work");
+
+    const switchAccount = async () => {
+      const control = container.querySelector<HTMLElement>(
+        '[role="combobox"][aria-label="Switch account"]',
+      )!;
+      await act(async () =>
+        control.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
+      );
+      await act(async () =>
+        document.querySelector<HTMLElement>('[data-eda-select-value="8"]')!.click(),
+      );
+    };
+
+    await switchAccount();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    await switchAccount();
+    expect(api.selectAccount).toHaveBeenLastCalledWith("work", "8");
+    expect(container.textContent).toContain("@second.user");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
   it("ignores disconnect completion from the previous profile", async () => {

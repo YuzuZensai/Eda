@@ -1,7 +1,10 @@
 import { errorAction, errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { GitHubStatus } from "@shared/integrations/github";
-import type { RepositoryProvider } from "@shared/integrations/provider-repositories";
+import {
+  discoveryProviders,
+  type RepositoryProvider,
+} from "@shared/integrations/provider-repositories";
 import type { TransportCredentials } from "@shared/integrations/remotes";
 import {
   ArrowDownToLineIcon as ArrowDownToLine,
@@ -9,10 +12,13 @@ import {
   LinkIcon as Link,
   PlusIcon as Plus,
 } from "../../components/ui/icons";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  Checkbox,
+  Textarea,
   Button,
   Dialog,
+  Disclosure,
   ErrorDialog,
   Field,
   IconButton,
@@ -22,6 +28,7 @@ import {
 } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
 import { useShellStore } from "../../stores/shell-store";
+import { AdditionalGitHosts } from "../connections/AdditionalGitHosts";
 import { ProviderIcon } from "../connections/ProviderIcon";
 import { TransferProgress, TransportFields } from "../sync/TransportFields";
 import { ProviderRepositoryBrowser } from "./ProviderRepositoryBrowser";
@@ -58,6 +65,12 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
   const [parent, setParent] = useState<string | null>(null);
   const parentPath = parent ?? "";
   const [name, setName] = useState("");
+  const [branch, setBranch] = useState("");
+  const [depth, setDepth] = useState("");
+  const [sparse, setSparse] = useState(false);
+  const [directories, setDirectories] = useState("");
+  const [blobless, setBlobless] = useState(false);
+  const [since, setSince] = useState("");
   const [nameEdited, setNameEdited] = useState(false);
   const [auth, setAuth] = useState<TransportCredentials>({ username: "", password: "" });
 
@@ -98,7 +111,7 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
     let active = true;
 
     const load = async () => {
-      const providers = ["github", "gitlab"] as const;
+      const providers = discoveryProviders;
 
       const results = await Promise.allSettled([
         ...providers.map((provider) => window.eda[provider].status(profileId)),
@@ -185,9 +198,31 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
     useShellStore.getState().openSettings("integrations");
   };
 
+  const foreground = useRef(true);
+  useEffect(() => {
+    foreground.current = true;
+    return () => {
+      foreground.current = false;
+    };
+  }, []);
+  const dismiss = () => {
+    foreground.current = false;
+    onClose();
+  };
+
   const clone = async () => {
     if (busy || !url.trim() || !parentPath.trim() || !name.trim()) return;
 
+    const selection = useAppStore.getState().selectedRepositoryId;
+    const canOpen = () => {
+      const state = useAppStore.getState();
+      return (
+        foreground.current &&
+        state.activeIdentity?.id === profileId &&
+        state.switchingIdentityId === null &&
+        state.selectedRepositoryId === selection
+      );
+    };
     setBusy(true);
     setError(null);
 
@@ -197,12 +232,18 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
         url: url.trim(),
         parent: parentPath.trim(),
         name: name.trim(),
+        ...(branch.trim() && { branch: branch.trim() }),
+        ...(depth && { depth: Number(depth) }),
+        ...(sparse && { sparseDirectories: directories.split("\n").filter(Boolean) }),
+        ...(blobless && { blobless }),
+        ...(since && { since }),
         ...(auth.username || auth.password ? { credentials: auth } : {}),
       });
 
       setAuth({ username: "", password: "" });
 
       if (!result.ok) {
+        if (!foreground.current) return;
         setError(
           t("cloneRepositoryDialog.anyIncompleteDestinationIsPreservedInspectItBefore", {
             message: errorMessage(result.error),
@@ -215,7 +256,9 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
 
       if (useAppStore.getState().activeIdentity?.id !== profileId) return;
 
+      const openOnCompletion = canOpen();
       await useAppStore.getState().refreshRepositories();
+      if (!openOnCompletion || !canOpen()) return;
       useAppStore.getState().selectRepository(result.value.id);
       onClose();
     } catch {
@@ -229,7 +272,7 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
     <Dialog
       size="xl"
       title={t("cloneRepositoryDialog.cloneRepository")}
-      onClose={onClose}
+      onClose={dismiss}
       footer={
         <>
           {busy && (
@@ -238,15 +281,23 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          <Button variant="quiet" onClick={onClose}>
-            {t("common.close")}
+          <Button variant="quiet" onClick={dismiss}>
+            {busy ? t("cloneRepositoryDialog.background") : t("common.close")}
           </Button>
 
           <Button
             variant="primary"
             icon={<ArrowDownToLine size={15} />}
             busy={busy}
-            disabled={!url.trim() || !parentPath.trim() || !name.trim()}
+            disabled={
+              !url.trim() ||
+              !parentPath.trim() ||
+              !name.trim() ||
+              (!!depth &&
+                (!Number.isSafeInteger(Number(depth)) ||
+                  Number(depth) < 1 ||
+                  Number(depth) > 2147483647))
+            }
             onClick={() => void clone()}
           >
             {busy ? t("cloneRepositoryDialog.cloning") : t("cloneRepositoryDialog.cloneRepository")}
@@ -351,6 +402,9 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
                   )}
                 </Field>
 
+                {profileId && (
+                  <AdditionalGitHosts key={profileId} profileId={profileId} onSelect={updateUrl} />
+                )}
                 <TransportFields value={auth} onChange={setAuth} disabled={busy} />
               </div>
             ) : !connections ? (
@@ -444,6 +498,72 @@ export function CloneRepositoryDialog({ onClose }: { onClose: () => void }) {
                 />
               )}
             </Field>
+            <Disclosure title={t("sparse.title")}>
+              <Checkbox
+                checked={sparse}
+                disabled={busy}
+                onChange={(event) => setSparse(event.target.checked)}
+              >
+                {t("sparse.clone")}
+              </Checkbox>
+              {sparse && (
+                <Field label={t("sparse.directories")}>
+                  {(field) => (
+                    <Textarea
+                      {...field}
+                      value={directories}
+                      disabled={busy}
+                      onChange={(event) => setDirectories(event.target.value)}
+                    />
+                  )}
+                </Field>
+              )}
+              <Checkbox
+                checked={blobless}
+                disabled={busy}
+                onChange={(event) => setBlobless(event.target.checked)}
+              >
+                {t("sparse.blobless")}
+              </Checkbox>
+            </Disclosure>
+            <Disclosure title={t("shallow.cloneHistory")}>
+              <div className="space-y-2">
+                <Field label={t("shallow.branch")}>
+                  {(field) => (
+                    <Input
+                      {...field}
+                      value={branch}
+                      disabled={busy}
+                      onChange={(event) => setBranch(event.target.value)}
+                    />
+                  )}
+                </Field>
+                <Field label={t("shallow.depth")}>
+                  {(field) => (
+                    <Input
+                      {...field}
+                      type="number"
+                      min={1}
+                      max={2147483647}
+                      value={depth}
+                      disabled={busy || !!since}
+                      onChange={(event) => setDepth(event.target.value)}
+                    />
+                  )}
+                </Field>
+                <Field label={t("shallow.since")}>
+                  {(field) => (
+                    <Input
+                      {...field}
+                      type="date"
+                      value={since}
+                      disabled={busy || !!depth}
+                      onChange={(event) => setSince(event.target.value)}
+                    />
+                  )}
+                </Field>
+              </div>
+            </Disclosure>
           </section>
         </div>
 

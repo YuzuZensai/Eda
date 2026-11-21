@@ -1,5 +1,4 @@
 export { CloneRepositoryDialog } from "./repositories/CloneRepositoryDialog";
-export { ConflictDialog } from "./changes/ConflictDialog";
 export { ReferenceMenu } from "./references/ReferenceMenu";
 export { ManageReferencesDialog } from "./references/ManageReferencesDialog";
 export { CommitMenu } from "./history/CommitMenu";
@@ -10,3 +9,4 @@ export { MergeAbortDialog } from "./workflows/MergeAbortDialog";
 export { MergeContinueDialog } from "./workflows/MergeContinueDialog";
 export { RebaseDialog } from "./workflows/RebaseDialog";
 export { ReplayDialog } from "./workflows/ReplayDialog";
+export { HistorySearch } from "./history/HistorySearch";

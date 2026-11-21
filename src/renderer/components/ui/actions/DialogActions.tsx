@@ -8,6 +8,7 @@ export interface DialogActionsProps {
   confirmLabel: ReactNode;
   busy?: boolean;
   confirmDisabled?: boolean;
+  confirming?: boolean;
   confirmVariant?: ButtonVariant;
   closeLabel?: string;
   closeVariant?: ButtonVariant;
@@ -19,6 +20,7 @@ export function DialogActions({
   onConfirm,
   confirmLabel,
   busy = false,
+  confirming = busy,
   confirmDisabled = false,
   confirmVariant = "primary",
   closeLabel = t("common.cancel"),
@@ -31,7 +33,12 @@ export function DialogActions({
         {closeLabel}
       </Button>
       {children}
-      <Button variant={confirmVariant} busy={busy} disabled={confirmDisabled} onClick={onConfirm}>
+      <Button
+        variant={confirmVariant}
+        busy={confirming}
+        disabled={busy || confirmDisabled}
+        onClick={onConfirm}
+      >
         {confirmLabel}
       </Button>
     </>
@@ -40,6 +47,7 @@ export function DialogActions({
 
 export interface ReviewActionsProps extends Omit<DialogActionsProps, "children"> {
   busy: boolean;
+  preparing?: boolean;
   onReview: () => void;
   confirmDisabled: boolean;
   reviewLabel?: string;
@@ -48,14 +56,15 @@ export interface ReviewActionsProps extends Omit<DialogActionsProps, "children">
 
 export function ReviewActions({
   busy,
+  preparing = false,
   onReview,
   reviewLabel = t("reviewActions.reviewCurrentState"),
   reviewDisabled = false,
   ...props
 }: ReviewActionsProps) {
   return (
-    <DialogActions {...props} busy={busy}>
-      <Button disabled={busy || reviewDisabled} onClick={onReview}>
+    <DialogActions {...props} busy={busy} confirming={busy && !preparing}>
+      <Button busy={preparing} disabled={busy || reviewDisabled} onClick={onReview}>
         {reviewLabel}
       </Button>
     </DialogActions>

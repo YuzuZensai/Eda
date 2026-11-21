@@ -1,5 +1,6 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { deferred } from "../../../helpers/deferred";
 import { ok } from "@shared/errors";
 import { builtInSetting, type ResolvedSetting } from "@shared/preferences/settings";
 import type { Identity } from "@shared/identity/identity";
@@ -427,4 +428,32 @@ it("shows only compact cloning controls without logs or a repeated destination",
   await act(async () => button("Cancel operation").click());
   expect(window.eda.operations.cancel).toHaveBeenCalledExactlyOnceWith("clone-operation");
   await act(async () => finish());
+});
+
+it("keeps the chosen repository active when a background clone completes after the clone dialog has closed", async () => {
+  const completion = deferred<ReturnType<typeof ok<{ id: string }>>>();
+  clone.mockReturnValueOnce(completion.promise);
+  await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
+  await act(async () => button("team/eda").click());
+  await act(async () => button("Clone repository").click());
+  await act(async () => button("Continue in background").click());
+  expect(onClose).toHaveBeenCalledTimes(1);
+  await act(async () => root.render(null));
+  useAppStore.setState({ selectedRepositoryId: "different-repository" });
+  await act(async () => completion.resolve(ok({ id: "cloned" })));
+  expect(selectRepository).not.toHaveBeenCalled();
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("keeps a repository chosen while the completed clone refreshes the list", async () => {
+  const refreshed = deferred<void>();
+  refreshRepositories.mockReturnValueOnce(refreshed.promise);
+  await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
+  await act(async () => button("team/eda").click());
+  await act(async () => button("Clone repository").click());
+  expect(refreshRepositories).toHaveBeenCalledOnce();
+  useAppStore.setState({ selectedRepositoryId: "chosen" });
+  await act(async () => refreshed.resolve());
+  expect(selectRepository).not.toHaveBeenCalled();
+  expect(onClose).not.toHaveBeenCalled();
 });

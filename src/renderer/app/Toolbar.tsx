@@ -3,7 +3,12 @@ import type { ReactNode } from "react";
 import { IdentitySwitcher } from "../features/profiles/IdentitySwitcher";
 import { Button, SettingsIcon, cx } from "../components/ui/index";
 import { ArrowLeftIcon as ArrowLeft, SearchIcon as Search } from "../components/ui/icons";
-import { shortcutLabel, type DesktopPlatform } from "../commands/shell-commands";
+import { usePreferencesStore } from "../stores/preferences-store";
+import {
+  configuredCommands,
+  shortcutLabel,
+  type DesktopPlatform,
+} from "../commands/shell-commands";
 import { WindowTitlebar } from "./WindowControls";
 
 export function Toolbar({
@@ -23,6 +28,11 @@ export function Toolbar({
   settingsOpen: boolean;
   tabs?: ReactNode;
 }) {
+  const labels = usePreferencesStore((state) => state.values.toolbarLabels.value);
+  const overrides = usePreferencesStore((state) => state.values.shortcutOverrides.value);
+  const shortcut = configuredCommands(overrides).find(
+    (command) => command.id === "commands.open",
+  )?.shortcut;
   return (
     <WindowTitlebar>
       {settingsOpen && (
@@ -39,28 +49,34 @@ export function Toolbar({
 
       <Button
         variant="ghost"
-        size="icon"
+        size={labels ? "sm" : "icon"}
         onClick={onOpenCommands}
         data-tour="commands"
         aria-label={t("toolbar.commandPalette")}
-        title={t("toolbar.commandPaletteShortcut", {
-          value1: shortcutLabel({ key: "p", shift: true }, platform),
-        })}
+        title={
+          shortcut
+            ? t("toolbar.commandPaletteShortcut", { value1: shortcutLabel(shortcut, platform) })
+            : t("toolbar.commandPalette")
+        }
         icon={<Search size={15} />}
-        className="size-8 shrink-0"
-      />
+        className={labels ? "shrink-0" : "size-8 shrink-0"}
+      >
+        {labels && t("toolbar.commandPalette")}
+      </Button>
 
       <Button
         variant="ghost"
-        size="icon"
+        size={labels ? "sm" : "icon"}
         onClick={onOpenSettings}
         data-tour="settings"
         aria-label={t("common.settings")}
         aria-current={settingsOpen ? "page" : undefined}
         title={t("common.settings")}
         icon={<SettingsIcon />}
-        className={cx("size-8", settingsOpen && "bg-bg-raised text-text-primary")}
-      />
+        className={cx(!labels && "size-8", settingsOpen && "bg-bg-raised text-text-primary")}
+      >
+        {labels && t("common.settings")}
+      </Button>
 
       <IdentitySwitcher onAddIdentity={onAddIdentity} onManageProfiles={onManageProfiles} />
     </WindowTitlebar>

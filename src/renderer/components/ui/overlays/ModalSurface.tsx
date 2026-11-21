@@ -8,6 +8,7 @@ export const ModalSurfaceContext = createContext<RefObject<HTMLDivElement | null
 
 export function ModalSurface({
   onClose,
+  onAfterClose,
   placement = "center",
   className,
   descriptionId,
@@ -15,6 +16,7 @@ export function ModalSurface({
   children,
 }: {
   onClose: () => void;
+  onAfterClose?: (() => void) | undefined;
   placement?: "center" | "right" | "top";
   className?: string;
   descriptionId?: string | undefined;
@@ -45,6 +47,7 @@ export function ModalSurface({
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             opener.current?.focus();
+            onAfterClose?.();
           }}
           onInteractOutside={(event) => {
             if (!modal || !dismissible) event.preventDefault();

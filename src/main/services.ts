@@ -1,3 +1,6 @@
+import { RepositoryExternalTools } from "./repo/external-tools";
+import { GitHosts } from "./providers/git-hosts";
+import { TerminalSessions } from "./git/terminal-sessions";
 import { SignerRepository } from "./persistence/signer-repository";
 import { SignerService } from "./repo/history/signer-service";
 import { PublicKeyVerifier } from "./git/security/public-key-verifier";
@@ -16,7 +19,7 @@ import { updateFeedUrl, type UpdateCapability, type UpdatePlatform } from "@shar
 import { app, net, powerMonitor, shell } from "electron";
 import { ExternalBrowser } from "./application/external-browser";
 import { mkdir, rm } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createVelopackUpdater, type VelopackUpdater } from "./application/velopack-updater";
 import { detectInstallation } from "./application/installation";
@@ -102,6 +105,9 @@ export interface Services {
   replay: ReplayService;
   reset: ResetService;
   historyReversal: HistoryReversalService;
+  externalTools: RepositoryExternalTools;
+  gitHosts: GitHosts;
+  terminals: TerminalSessions;
   historyRecovery: HistoryRecoveryService;
   commitSignatures: CommitSignatureService;
   stashes: StashService;
@@ -149,17 +155,27 @@ export async function createServices(): Promise<Services> {
 
     const engine = await resolveGitEngine(runner, {
       preferred: preferences.resolve("gitEngine").value,
+      customPath: preferences.resolve("gitExecutable").value,
       bundledPath: bundledGitBinary(bundle),
       bundledEnvironment: bundledGitEnvironment(bundle),
     });
 
     const operations = new OperationManager(new OperationRepository(db));
-    // Git for Windows includes the OpenSSH/MSYS tools we need.
     const sshEnvironment =
-      process.platform === "win32" ? { PATH: bundledGitEnvironment(bundle)["PATH"]! } : {};
+      process.platform === "win32"
+        ? { PATH: bundledGitEnvironment(bundle)["PATH"]! }
+        : {
+            PATH: [join(bundle, "openssh/bin"), process.env["PATH"] ?? ""].join(delimiter),
+            SSH_SK_HELPER: join(bundle, "openssh/libexec/ssh-sk-helper"),
+          };
     sshAgent = new SshAgent(preferences.resolve("sshAgent").value, "ssh-agent", sshEnvironment);
     await sshAgent.start();
-    const transportEnvironment = Object.assign(sshAgent.environment, sshEnvironment);
+    const transportEnvironment = Object.assign(sshAgent.environment, sshEnvironment, {
+      ...(engine.source === "bundled" &&
+        engine.environment?.["PATH"] && { PATH: engine.environment["PATH"] }),
+      EDA_SSH_EXECUTABLE: preferences.resolve("sshExecutable").value,
+      EDA_GPG_EXECUTABLE: preferences.resolve("gpgExecutable").value,
+    });
     const sshHostTrust = new WindowTrustPrompts<SshHostPrompt>(IPC_EVENTS.sshHostTrustChanged);
     const transportRunner = new SshHostTrustRunner(runner, sshHostTrust.confirm);
     const neutralDirectory = join(app.getPath("userData"), "git-cwd");
@@ -211,6 +227,11 @@ export async function createServices(): Promise<Services> {
     const recovery = new ContentRecoveryRepository(db);
     const journal = new WorkflowJournal(db);
 
+    const signers = new SignerService(
+      new SignerRepository(db),
+      new PublicKeyVerifier(runner, git, transportEnvironment),
+      new PublicSigningKeys(request),
+    );
     const writer = new RepositoryWriter(
       git,
       repositories,
@@ -219,6 +240,7 @@ export async function createServices(): Promise<Services> {
       operations,
       recovery,
       journal,
+      signers,
     );
 
     const sessionStore = new ProfileSessionRepository(db);
@@ -242,6 +264,7 @@ export async function createServices(): Promise<Services> {
       recovery,
     );
 
+    const gitHosts = new GitHosts(secrets);
     const remotes = new RemoteService(
       git,
       repositories,
@@ -253,6 +276,8 @@ export async function createServices(): Promise<Services> {
       github,
       gitlab,
       gitlabSelfHosted,
+      (profileId) => preferences.resolve("httpsHelper", { profileId }).value,
+      gitHosts,
     );
 
     let suspended = false;
@@ -391,11 +416,7 @@ export async function createServices(): Promise<Services> {
       git,
       repositories,
       new CommitSignatureRepository(db),
-      new SignerService(
-        new SignerRepository(db),
-        new PublicKeyVerifier(runner, git, transportEnvironment),
-        new PublicSigningKeys(request),
-      ),
+      signers,
     );
     identity.onChange(() => commitSignatures.cancelAll());
 
@@ -414,9 +435,22 @@ export async function createServices(): Promise<Services> {
         journal,
         recovery,
       ),
+      gitHosts,
+      externalTools: new RepositoryExternalTools(
+        runner,
+        git,
+        repositories,
+        preferences,
+        operations,
+      ),
+      terminals: new TerminalSessions(),
       historyRecovery: new HistoryRecoveryService(git, repositories, writer, journal),
-      repositoryReader: new RepositoryReader(git, repositories, (profileId) =>
-        gitlabSelfHosted.status(profileId).accounts.map((account) => account.baseUrl),
+      repositoryReader: new RepositoryReader(
+        git,
+        repositories,
+        (profileId) =>
+          gitlabSelfHosted.status(profileId).accounts.map((account) => account.baseUrl),
+        (profileId) => gitHosts.accounts(profileId),
       ),
       commitSignatures,
       backgroundFetch,

@@ -6,7 +6,7 @@ import { IPC_CHANNELS, IPC_EVENTS } from "@shared/ipc";
 import { app, BrowserWindow } from "electron";
 import { randomUUID } from "node:crypto";
 import type { Services } from "../../services";
-import { invalidRequest } from "../request-errors";
+import { invalidRequest } from "../../request-errors";
 import { handle } from "../transport";
 import { optionalInteger, requireId, requireRecord, requireString } from "../validate";
 

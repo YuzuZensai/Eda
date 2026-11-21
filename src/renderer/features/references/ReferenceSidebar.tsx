@@ -1,3 +1,4 @@
+import { lazyRepositoryDialog } from "../repository-dialogs.lazy";
 import { ReferenceRow } from "./ReferenceRow";
 import { errorAction, errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -9,7 +10,7 @@ import {
   PanelLeftOpenIcon as PanelLeftOpen,
   TagIcon as Tag,
 } from "../../components/ui/icons";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useLayoutTransition } from "../../components/layout/hooks/useLayoutTransition";
 import {
   captureRepositoryCommand,
@@ -33,13 +34,9 @@ import type { ReferenceTarget } from "./ReferenceMenu";
 
 const defaults = { hidden: false, locals: true, remotes: true, tags: true };
 
-const ReferenceMenu = lazy(() =>
-  import("../repository-dialogs").then((module) => ({ default: module.ReferenceMenu })),
-);
+const ReferenceMenu = lazyRepositoryDialog("ReferenceMenu");
 
-const ManageReferencesDialog = lazy(() =>
-  import("../repository-dialogs").then((module) => ({ default: module.ManageReferencesDialog })),
-);
+const ManageReferencesDialog = lazyRepositoryDialog("ManageReferencesDialog");
 
 export function ReferenceSidebar({
   repositoryId,
@@ -304,6 +301,7 @@ export function ReferenceSidebar({
         {manageOpen && (
           <Suspense fallback={null}>
             <ManageReferencesDialog
+              key={repositoryId}
               repositoryId={repositoryId}
               onClose={() => setManageOpen(false)}
             />

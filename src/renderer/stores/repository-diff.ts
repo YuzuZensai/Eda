@@ -1,9 +1,20 @@
+import { err } from "@shared/errors";
+import { errorText } from "@shared/error-codes";
+import { t } from "@shared/i18n";
 import { boundDiff } from "../repository/diff-model";
 import { useLayoutStore } from "./layout-store";
 import { useSessionStore } from "./session-store";
 
 import type { StoreApi } from "zustand";
 import type { RepositoryReadState, RepositorySelection } from "./repository-state";
+
+function readFailure(kind: "commit" | "change") {
+  return err({
+    kind: "unknown",
+    operation: t(kind === "commit" ? "operations.readCommitDiff" : "operations.readWorkingDiff"),
+    message: errorText("errors.unexpected"),
+  });
+}
 
 export function createRepositoryDiff(
   get: StoreApi<RepositoryReadState>["getState"],
@@ -15,7 +26,7 @@ export function createRepositoryDiff(
 
   const loadDiff = async (
     selection: Exclude<RepositorySelection, null>,
-    { background = false } = {},
+    { background = false, openConflict = true } = {},
   ) => {
     const { repositoryId, generation } = get();
 
@@ -26,15 +37,17 @@ export function createRepositoryDiff(
     if (diffRequestKey === key && diffRequest) return diffRequest;
 
     const changed = JSON.stringify(get().selection) !== JSON.stringify(selection);
+    const conflict = selection.kind === "change" && selection.area === "conflicted";
+    const focused = selection.kind === "change" && (!conflict || openConflict);
     const keepDiff = background && !changed && get().diff !== null;
 
     set({
       selection,
       ...(!keepDiff && { diff: null }),
-      diffLoading: !keepDiff,
+      diffLoading: !conflict && !keepDiff,
       error: null,
       ...(changed && {
-        contentView: selection.kind === "change" ? "diff" : "history",
+        contentView: focused ? "diff" : "history",
         commitFilePath: null,
         commitFileDiff: null,
         commitFileLoading: false,
@@ -42,19 +55,22 @@ export function createRepositoryDiff(
       }),
     });
 
-    if (changed) useLayoutStore.getState().reveal(selection.kind === "change" ? "diff" : "graph");
+    if (changed) useLayoutStore.getState().reveal(focused ? "diff" : "graph");
     if (get().identityId === useSessionStore.getState().snapshot?.context.profileId)
       useSessionStore.getState().setView(repositoryId, { selection });
 
+    if (conflict) return;
+
     const request = (async () => {
-      const result =
+      const result = await (
         selection.kind === "commit"
-          ? await window.eda.repository.commitDiff({ repositoryId, oid: selection.oid })
-          : await window.eda.repository.workingDiff({
+          ? window.eda.repository.commitDiff({ repositoryId, oid: selection.oid })
+          : window.eda.repository.workingDiff({
               repositoryId,
               paths: [selection.path],
               area: selection.area === "staged" ? "staged" : "unstaged",
-            });
+            })
+      ).catch(() => readFailure(selection.kind));
 
       if (
         get().generation !== generation ||
@@ -99,11 +115,13 @@ export function createRepositoryDiff(
 
     useLayoutStore.getState().reveal("diff");
 
-    const result = await window.eda.repository.commitDiff({
-      repositoryId,
-      oid: selection.oid,
-      paths: [...new Set([path, ...(file.oldPath ? [file.oldPath] : [])])],
-    });
+    const result = await window.eda.repository
+      .commitDiff({
+        repositoryId,
+        oid: selection.oid,
+        paths: [...new Set([path, ...(file.oldPath ? [file.oldPath] : [])])],
+      })
+      .catch(() => readFailure("commit"));
 
     const current = get();
 

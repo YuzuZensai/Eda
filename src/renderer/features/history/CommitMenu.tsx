@@ -4,6 +4,7 @@ import { t } from "@shared/i18n";
 import {
   CherryIcon as Cherry,
   CopyIcon as Copy,
+  DiffIcon,
   BranchIcon as GitBranch,
   GitCommitHorizontalIcon as GitCommitHorizontal,
   GitMergeIcon as GitMerge,
@@ -21,6 +22,7 @@ import {
 import {
   Button,
   Checkbox,
+  Dialog,
   ErrorDialog,
   Input,
   MenuItem,
@@ -54,9 +56,16 @@ export function CommitMenu({
   const dispatch = repositoryCommandDispatcher(commandContext);
   const commandUnavailable = repositoryCommandReason(commandContext);
   const refresh = useRepositoryStore((state) => state.refresh);
+  const selection = useRepositoryStore((state) => state.selection);
+  const compareFrom =
+    selection?.kind === "commit" && selection.oid !== target.oid ? selection.oid : "";
 
+  const commits = useRepositoryStore((state) => state.pages).flatMap((page) => page.commits);
+  const first = commits.findIndex((c) => c.oid === compareFrom);
+  const last = commits.findIndex((c) => c.oid === target.oid);
+  const [range, setRange] = useState<typeof commits>([]);
   const [mode, setMode] = useState<
-    "menu" | "tag" | "branch" | "merge" | "cherry-pick" | "revert" | "reset"
+    "menu" | "tag" | "branch" | "merge" | "cherry-pick" | "revert" | "reset" | "range"
   >(initialMode);
 
   const [name, setName] = useState("");
@@ -76,10 +85,65 @@ export function CommitMenu({
         repositoryId={repositoryId}
         kind={mode}
         action="start"
-        initialCommit={target.oid}
+        initialCommits={
+          range.length
+            ? (mode === "revert" ? range : [...range].reverse()).map((c) => c.oid)
+            : [target.oid]
+        }
         onClose={onClose}
       />
     );
+
+  if (mode === "range") {
+    const oldest = range.at(-1);
+    const parent = oldest?.parents[0];
+    const linear = range.every(
+      (c, i) =>
+        i === range.length - 1 || (c.parents.length === 1 && c.parents[0] === range[i + 1]?.oid),
+    );
+    return (
+      <Dialog
+        title={t("range.inspect", { count: range.length })}
+        onClose={onClose}
+        footer={
+          <>
+            {linear && parent && (
+              <Button
+                onClick={() => {
+                  onClose();
+                  useRepositoryStore.getState().compareRevisions(parent, range[0]!.oid);
+                }}
+              >
+                {t("comparison.title")}
+              </Button>
+            )}
+            <Button
+              disabled={!!commandUnavailable || range.length > 100}
+              onClick={() => setMode("cherry-pick")}
+            >
+              {t("commitMenu.cherryPick")}
+            </Button>
+            <Button
+              disabled={!!commandUnavailable || range.length > 100}
+              onClick={() => setMode("revert")}
+            >
+              {t("commitMenu.revert")}
+            </Button>
+          </>
+        }
+      >
+        {range.length > 100 && <p>{t("range.limit")}</p>}
+        <ol className="divide-y divide-border-subtle">
+          {range.map((c) => (
+            <li key={c.oid} className="flex gap-3 py-1">
+              <span className="mono">{c.oid.slice(0, 8)}</span>
+              {c.subject}
+            </li>
+          ))}
+        </ol>
+      </Dialog>
+    );
+  }
 
   if (mode === "merge")
     return <MergeStartDialog repositoryId={repositoryId} source={target.oid} onClose={onClose} />;
@@ -162,6 +226,27 @@ export function CommitMenu({
             <Copy size={13} className="shrink-0" aria-hidden="true" />
             {t("commitMenu.copyCommitSha")}
           </MenuItem>
+
+          <MenuItem
+            onClick={() => {
+              onClose();
+              useRepositoryStore.getState().compareRevisions(compareFrom, target.oid);
+            }}
+          >
+            <DiffIcon size={13} aria-hidden="true" />
+            {compareFrom ? t("comparison.withSelected") : t("comparison.title")}
+          </MenuItem>
+
+          {first >= 0 && last >= 0 && (
+            <MenuItem
+              onClick={() => {
+                setRange(commits.slice(Math.min(first, last), Math.max(first, last) + 1));
+                setMode("range");
+              }}
+            >
+              {t("range.select")}
+            </MenuItem>
+          )}
 
           <MenuItem onClick={() => setMode("branch")}>
             <GitBranch size={13} className="shrink-0" aria-hidden="true" />

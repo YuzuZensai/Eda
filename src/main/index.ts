@@ -243,7 +243,10 @@ async function start(): Promise<void> {
         .catch((error: unknown) => console.error("[Eda Shutdown]", error));
     });
 
-    app.once("will-quit", () => services.db.close());
+    app.once("will-quit", () => {
+      services.terminals.dispose();
+      services.db.close();
+    });
 
     createWindow(
       services,

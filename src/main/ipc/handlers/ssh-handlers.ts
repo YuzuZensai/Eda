@@ -2,10 +2,9 @@ import { errorText } from "@shared/error-codes";
 import { GitError, ok } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { IPC_CHANNELS } from "@shared/ipc";
-import { BrowserWindow, dialog } from "electron";
 import type { Services } from "../../services";
-import { showOpenDialog } from "../dialogs";
-import { invalidRequest } from "../request-errors";
+import { showOpenDialog, showSaveDialog } from "../dialogs";
+import { invalidRequest } from "../../request-errors";
 import { handle } from "../transport";
 import { optionalRecord, requireAbsolutePath, requireId, requireString } from "../validate";
 
@@ -113,11 +112,8 @@ export function registerSshHandlers(services: Services): void {
   });
 
   handle(IPC_CHANNELS.sshChooseKeyDestination, async (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
     const options = { title: t("main.sshHandlers.createSshKey"), defaultPath: "id_ed25519" };
-    const result = window
-      ? await dialog.showSaveDialog(window, options)
-      : await dialog.showSaveDialog(options);
+    const result = await showSaveDialog(event, options);
     keyDestinations.delete(event.sender);
     if (!result.canceled && result.filePath) keyDestinations.set(event.sender, result.filePath);
     return ok(result.canceled ? null : (result.filePath ?? null));

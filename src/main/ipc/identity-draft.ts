@@ -1,7 +1,11 @@
 import { t } from "@shared/i18n";
 import { errorText } from "@shared/error-codes";
-import { invalidRequest } from "./request-errors";
-import type { IdentityDraft } from "@shared/identity/identity";
+import { invalidRequest } from "../request-errors";
+import {
+  PROFILE_NAME_LIMIT,
+  GIT_AUTHOR_NAME_LIMIT,
+  type IdentityDraft,
+} from "@shared/identity/identity";
 import { isHexColor } from "@shared/preferences/accent";
 import {
   optionalRecord,
@@ -43,8 +47,12 @@ export function parseDraft(raw: unknown): IdentityDraft {
   const sshKeyPath = optionalString(input["sshKeyPath"], t("main.identityDraft.sshKeyPath"));
 
   return {
-    name: requireString(input["name"], t("fields.identityName"), 64),
-    gitName: requireString(input["gitName"], t("main.identityDraft.gitName"), 128),
+    name: requireString(input["name"], t("fields.identityName"), PROFILE_NAME_LIMIT),
+    gitName: requireString(
+      input["gitName"],
+      t("main.identityDraft.gitName"),
+      GIT_AUTHOR_NAME_LIMIT,
+    ),
     gitEmail: requireEmail(input["gitEmail"], t("main.identityDraft.gitEmail")),
     ...(username !== undefined && { username }),
     ...(avatarPath !== undefined && { avatarPath }),
@@ -62,9 +70,13 @@ export function parsePartialDraft(raw: unknown): Partial<IdentityDraft> {
   const draft: Partial<IdentityDraft> = {};
 
   if (input["name"] !== undefined)
-    draft.name = requireString(input["name"], t("fields.identityName"), 64);
+    draft.name = requireString(input["name"], t("fields.identityName"), PROFILE_NAME_LIMIT);
   if (input["gitName"] !== undefined)
-    draft.gitName = requireString(input["gitName"], t("main.identityDraft.gitName"), 128);
+    draft.gitName = requireString(
+      input["gitName"],
+      t("main.identityDraft.gitName"),
+      GIT_AUTHOR_NAME_LIMIT,
+    );
   if (input["gitEmail"] !== undefined)
     draft.gitEmail = requireEmail(input["gitEmail"], t("main.identityDraft.gitEmail"));
   if (input["hue"] !== undefined) draft.hue = parseAccent(input["hue"]);

@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { errorFixture } from "../../../helpers/error";
 import { err, ok } from "@shared/errors";
 import { GitLabConnection } from "@renderer/features/connections/GitLabConnection";
-import { IntegrationsSettings } from "@renderer/features/settings/integrations/IntegrationsSettings";
+import { ProviderConnections } from "@renderer/features/connections/ProviderConnections";
 
 const gitlab = {
   profile: vi.fn(),
@@ -153,7 +153,7 @@ it("ignores a late poll response after cancellation", async () => {
 });
 
 it("offers self-hosted PAT setup alongside GitLab.com browser sign-in", async () => {
-  await act(async () => root.render(<IntegrationsSettings profileId="work" />));
+  await act(async () => root.render(<ProviderConnections profileId="work" />));
   const hosted = container.querySelector('[aria-label="GitLab connection"]')!;
   const selfHosted = container.querySelector('[aria-label="GitLab Self-Hosted connection"]')!;
   expect(hosted.textContent).toContain("Sign in with GitLab");
@@ -161,8 +161,7 @@ it("offers self-hosted PAT setup alongside GitLab.com browser sign-in", async ()
   expect(selfHosted.querySelector("input")).toBeNull();
   expect(selfHosted.textContent).not.toContain("Coming soon");
   expect(container.querySelectorAll('section[aria-label$=" connection"]')).toHaveLength(3);
-  expect(container.textContent).toContain("More integrations coming soon");
-  expect(button("Connect Bitbucket")).toBeUndefined();
+  expect(container.textContent).toContain("Additional Git hosts");
 });
 
 it("reveals the cached profile and avatar together without flashing initials during loading", async () => {

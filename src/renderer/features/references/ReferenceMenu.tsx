@@ -1,3 +1,4 @@
+import { commitSignatureLabel } from "../../components/ui/display/commit-signature-label";
 import { ERROR_CODE, errorText } from "@shared/error-codes";
 import type { Result } from "@shared/errors";
 import { AppError, errorAction, errorMessage, GitError } from "@shared/errors";
@@ -528,11 +529,9 @@ export function ReferenceMenu({
           {verification && (
             <>
               <p role="status">
-                {verification.status === "verified"
-                  ? t("referenceMenu.signatureVerified")
-                  : verification.status === "unsigned"
-                    ? t("referenceMenu.unsignedTag")
-                    : t("referenceMenu.signatureNotVerified")}
+                {verification.status === "unsigned"
+                  ? t("referenceMenu.unsignedTag")
+                  : commitSignatureLabel(verification)}
               </p>
 
               <CodeBlock label={t("referenceMenu.signatureVerificationOutput")} wrap>

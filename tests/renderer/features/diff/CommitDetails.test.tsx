@@ -111,6 +111,45 @@ it.each([
   },
 );
 
+it("compares a merge to the chosen parent while retaining the inspected commit", async () => {
+  const previous = useRepositoryStore.getState();
+  const parents = ["b".repeat(40), "c".repeat(40)];
+  const merge = { ...commit, parents };
+  const selected = { kind: "commit", oid: merge.oid } as const;
+  vi.stubGlobal("eda", {
+    repository: {
+      inspectCommit: async () =>
+        ok({
+          ...inspection({ status: "unsigned", format: null, reasonCode: null, diagnostics: "" }),
+          commit: merge,
+        }),
+    },
+  });
+  try {
+    useRepositoryStore.setState({
+      repositoryId: "repo",
+      selection: selected,
+      pages: [{ commits: [merge], nextOffset: null }],
+    });
+    await act(async () => root.render(<CommitChangesPanel />));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("button[aria-controls]")!.click(),
+    );
+    for (const [index, parent] of parents.entries()) {
+      const label = `Compare with parent ${index + 1} (${parent.slice(0, 8)})`;
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click(),
+      );
+      expect(useRepositoryStore.getState()).toMatchObject({
+        selection: selected,
+        contentView: { kind: "comparison", left: parent, right: merge.oid },
+      });
+    }
+  } finally {
+    await act(async () => useRepositoryStore.setState(previous));
+  }
+});
+
 it("rechecks trust without clearing the file filter and ignores a response for the previous commit", async () => {
   const previous = useRepositoryStore.getState();
   const pending: Array<(value: Result<CommitInspection>) => void> = [];

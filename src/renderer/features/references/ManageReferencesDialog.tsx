@@ -12,11 +12,17 @@ import {
   CheckboxControl,
   Dialog,
   ErrorDialog,
+  StateMessage,
   Input,
 } from "../../components/ui/index";
+import { useLocalReferences } from "../../repository/hooks/useLocalReferences";
 import { useRepositoryStore } from "../../stores/repository-store";
 
 type Item = { name: string; kind: "branch" | "tag"; unavailable?: string };
+
+function itemKey(item: Item) {
+  return `${item.kind}:${item.name}`;
+}
 
 export function ManageReferencesDialog({
   repositoryId,
@@ -28,7 +34,8 @@ export function ManageReferencesDialog({
   const commandContext = captureRepositoryCommand(repositoryId ?? "");
   const dispatch = repositoryCommandDispatcher(commandContext);
   const commandUnavailable = repositoryCommandReason(commandContext);
-  const [items, setItems] = useState<Item[]>([]);
+  const { references, loadError, retry } = useLocalReferences(repositoryId);
+  const [deleted, setDeleted] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [confirmed, setConfirmed] = useState(false);
@@ -39,19 +46,14 @@ export function ManageReferencesDialog({
 
   useEffect(() => {
     alive.current = true;
-    void Promise.all([
-      window.eda.repository.listBranches(repositoryId),
-      window.eda.repository.listTags(repositoryId),
-    ]).then(([branches, tags]) => {
-      if (!alive.current) return;
+    return () => {
+      alive.current = false;
+    };
+  }, [repositoryId]);
 
-      if (!branches.ok || !tags.ok) {
-        setError(t("manageReferencesDialog.referencesCouldNotBeLoaded"));
-        return;
-      }
-
-      setItems([
-        ...branches.value
+  const items = references
+    ? [
+        ...references.branches
           .filter((ref) => !ref.remote)
           .map((ref): Item => ({
             name: ref.name,
@@ -66,25 +68,20 @@ export function ManageReferencesDialog({
                 }
               : {}),
           })),
-        ...tags.value.map((ref): Item => ({ name: ref.name, kind: "tag" })),
-      ]);
-    });
-
-    return () => {
-      alive.current = false;
-    };
-  }, [repositoryId]);
-
+        ...references.tags.map((ref): Item => ({ name: ref.name, kind: "tag" })),
+      ].filter((item) => !deleted.includes(itemKey(item)))
+    : [];
   const matches = items.filter((item) => item.name.toLowerCase().includes(query.toLowerCase()));
+  const visible = matches.slice(0, 200);
   const groups = new Map<string, Item[]>();
 
-  for (const item of matches.slice(0, 200)) {
+  for (const item of visible) {
     const key = `${item.kind}, ${item.name.includes("/") ? item.name.slice(0, item.name.lastIndexOf("/")) : "(root)"}`;
     groups.set(key, [...(groups.get(key) ?? []), item]);
   }
 
   const remove = async () => {
-    if (!confirmed) return;
+    if (!confirmed || !references || busy) return;
 
     if (commandUnavailable) {
       setError(commandUnavailable);
@@ -95,7 +92,7 @@ export function ManageReferencesDialog({
     setResults([]);
 
     try {
-      for (const item of items.filter((item) => selected.includes(`${item.kind}:${item.name}`))) {
+      for (const item of items.filter((item) => selected.includes(itemKey(item)))) {
         if (!alive.current) break;
 
         const result =
@@ -108,14 +105,14 @@ export function ManageReferencesDialog({
         setResults((rows) => [
           ...rows,
           {
-            key: `${item.kind}:${item.name}`,
+            key: itemKey(item),
             message: result.ok
               ? t("manageReferencesDialog.deletedLocally")
               : errorMessage(result.error),
           },
         ]);
 
-        if (result.ok) setItems((rows) => rows.filter((row) => row !== item));
+        if (result.ok) setDeleted((keys) => [...keys, itemKey(item)]);
       }
 
       if (alive.current && useRepositoryStore.getState().repositoryId === repositoryId)
@@ -140,7 +137,10 @@ export function ManageReferencesDialog({
             {busy ? t("manageReferencesDialog.stopAfterCurrentAction") : t("common.close")}
           </Button>
           <Button
-            disabled={!!commandUnavailable || busy || !confirmed || selected.length === 0}
+            variant="danger"
+            disabled={
+              !references || !!commandUnavailable || busy || !confirmed || selected.length === 0
+            }
             onClick={() => void remove()}
           >
             {t("manageReferencesDialog.deleteSelectedReferences", { length: selected.length })}
@@ -155,12 +155,25 @@ export function ManageReferencesDialog({
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t("manageReferencesDialog.branchTagOrFolder")}
         />
+        {!references && (
+          <StateMessage
+            tone={loadError ? "error" : "loading"}
+            title={
+              loadError
+                ? t("manageReferencesDialog.referencesCouldNotBeLoaded")
+                : t("references.loading")
+            }
+            description={loadError}
+            action={loadError && <Button onClick={retry}>{t("common.retry")}</Button>}
+          />
+        )}
+        {references && !matches.length && <p role="status">{t("references.noMatches")}</p>}
         <div className="max-h-64 overflow-auto">
           {[...groups].map(([group, rows]) => (
             <fieldset key={group} className="mb-3">
               <legend className="py-1 text-xs font-semibold text-text-tertiary">{group}</legend>
               {rows.map((item) => {
-                const key = `${item.kind}:${item.name}`;
+                const key = itemKey(item);
 
                 return (
                   <label key={key} className="flex gap-2 py-1 text-xs" title={item.unavailable}>
@@ -196,10 +209,45 @@ export function ManageReferencesDialog({
             {t("manageReferencesDialog.showing200MatchesRefineTheFilterToSeeMore")}
           </p>
         )}
+        {selected.length > 0 && (
+          <section className="rounded border border-border-default p-2">
+            <h3 className="mb-1 text-xs font-semibold">
+              {t("manageReferencesDialog.selectedTargets", { count: selected.length })}
+            </h3>
+            <ul className="max-h-32 overflow-auto">
+              {items
+                .filter((item) => selected.includes(itemKey(item)))
+                .map((item) => (
+                  <li key={itemKey(item)} className="flex items-center gap-2 py-1 text-xs">
+                    <span className="min-w-0 flex-1 break-all">
+                      {item.kind === "branch"
+                        ? t("manageReferencesDialog.branchTarget", { name: item.name })
+                        : t("manageReferencesDialog.tagTarget", { name: item.name })}
+                    </span>
+                    {!visible.includes(item) && (
+                      <span>{t("manageReferencesDialog.outsideFilter")}</span>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="quiet"
+                      disabled={busy}
+                      aria-label={t("manageReferencesDialog.removeTarget", { name: item.name })}
+                      onClick={() => {
+                        setSelected((keys) => keys.filter((key) => key !== itemKey(item)));
+                        setConfirmed(false);
+                      }}
+                    >
+                      {t("common.remove")}
+                    </Button>
+                  </li>
+                ))}
+            </ul>
+          </section>
+        )}
         <Checkbox
           className="flex gap-2"
           checked={confirmed}
-          disabled={busy || !!commandUnavailable}
+          disabled={busy || !selected.length || !!commandUnavailable}
           onChange={(event) => setConfirmed(event.target.checked)}
         >
           {t("manageReferencesDialog.deleteTheseLocalReferences")}

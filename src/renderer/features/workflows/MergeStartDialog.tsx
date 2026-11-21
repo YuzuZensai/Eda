@@ -2,7 +2,9 @@ import { Localized } from "@renderer/i18n/Localized";
 import { t } from "@shared/i18n";
 import type { MergeMode } from "@shared/workflows/workflow";
 import { useCallback, useState } from "react";
-import { Dialog, ErrorDialog, ReviewActions, Select } from "../../components/ui/index";
+import { Checkbox, Dialog, ErrorDialog, ReviewActions, Select } from "../../components/ui/index";
+import { revisionLabel } from "../../repository/reference-label";
+import { useRepositoryStore } from "../../stores/repository-store";
 import { useReviewedOperation } from "../../repository/hooks/useReviewedOperation";
 
 export function MergeStartDialog({
@@ -14,6 +16,8 @@ export function MergeStartDialog({
   source: string;
   onClose: () => void;
 }) {
+  const sourceName = useRepositoryStore((state) => revisionLabel(state.pages, source));
+  const [reviewWorktrees, setReviewWorktrees] = useState(false);
   const [mode, setMode] = useState<MergeMode>("ff");
 
   const prepare = useCallback(
@@ -21,13 +25,25 @@ export function MergeStartDialog({
     [repositoryId, source, mode],
   );
 
-  const { preview, setPreview, busy, error, setError, review, execute } = useReviewedOperation(
-    repositoryId,
-    prepare,
-  );
+  const { preview, setPreview, preparing, busy, error, setError, review, execute } =
+    useReviewedOperation(repositoryId, prepare);
 
   const start = () =>
-    execute((preview) => window.eda.workflows.startMerge(repositoryId, preview.token), onClose);
+    execute(
+      (preview) => window.eda.workflows.startMerge(repositoryId, preview.token),
+      (result) => {
+        if (result.state !== "completed") useRepositoryStore.getState().showWorkingTree();
+        onClose();
+        if (
+          result.state === "completed" &&
+          reviewWorktrees &&
+          useRepositoryStore.getState().repositoryId === repositoryId
+        )
+          useRepositoryStore.setState({
+            commandDialog: { kind: "repository.worktrees", oid: undefined },
+          });
+      },
+    );
 
   return (
     <Dialog
@@ -37,6 +53,7 @@ export function MergeStartDialog({
       onClose={onClose}
       footer={
         <ReviewActions
+          preparing={preparing}
           busy={busy}
           onClose={onClose}
           onReview={() => void review()}
@@ -46,6 +63,9 @@ export function MergeStartDialog({
         />
       }
     >
+      <Checkbox checked={reviewWorktrees} onChange={(e) => setReviewWorktrees(e.target.checked)}>
+        {t("worktrees.reviewAfterMerge")}
+      </Checkbox>
       <div className="space-y-3 text-xs">
         <label className="block">
           {t("mergeStartDialog.mergePolicy")}
@@ -68,7 +88,18 @@ export function MergeStartDialog({
         </label>
 
         <p className="break-all">
-          <Localized id="mergeStartDialog.sourceCommit" values={{ code: <code>{source}</code> }} />
+          <Localized
+            id="mergeStartDialog.sourceCommit"
+            values={{
+              code: (
+                <code title={source}>
+                  {sourceName === source.slice(0, 8)
+                    ? source.slice(0, 12)
+                    : `${sourceName} (${source.slice(0, 12)})`}
+                </code>
+              ),
+            }}
+          />
         </p>
 
         {preview && (

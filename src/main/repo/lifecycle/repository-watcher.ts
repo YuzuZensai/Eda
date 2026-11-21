@@ -1,10 +1,11 @@
+import { join, relative, isAbsolute, sep } from "node:path";
 import { t } from "@shared/i18n";
 import { watch, type FSWatcher } from "node:fs";
 
 const DEFAULT_DEBOUNCE_MS = 150;
 
 interface Entry {
-  watcher?: FSWatcher;
+  watchers?: FSWatcher[];
   timer?: NodeJS.Timeout;
   poll?: NodeJS.Timeout;
 }
@@ -17,33 +18,48 @@ export class RepositoryWatcher {
     private readonly debounceMs: number = DEFAULT_DEBOUNCE_MS,
   ) {}
 
-  watch(repositoryId: string, repositoryPath: string): void {
+  watch(
+    repositoryId: string,
+    repositoryPath: string,
+    metadata?: { gitDir: string; commonDir: string },
+  ): void {
     this.unwatch(repositoryId);
-
-    let watcher: FSWatcher;
-
-    try {
-      watcher = watch(repositoryPath, { recursive: true, persistent: false });
-    } catch {
-      this.poll(repositoryId);
-      return;
-    }
-
-    const entry: Entry = { watcher };
-
+    const watchers: FSWatcher[] = [];
+    const entry: Entry = { watchers };
     this.entries.set(repositoryId, entry);
 
-    watcher.on("error", () => {
-      if (this.entries.get(repositoryId) !== entry) return;
+    const subscribe = (path: string, recursive: boolean, prefix: string) => {
+      const watcher = watch(path, { recursive, persistent: false });
+      watchers.push(watcher);
+      watcher.on("error", () => {
+        if (this.entries.get(repositoryId) !== entry) return;
+        this.unwatch(repositoryId);
+        this.poll(repositoryId);
+      });
+      watcher.on("change", (_event, name) => {
+        if (this.entries.get(repositoryId) !== entry) return;
+        if (name != null && isIgnoredWatchPath(prefix + name.toString())) return;
+        this.schedule(repositoryId);
+      });
+    };
+
+    try {
+      subscribe(repositoryPath, true, "");
+      if (metadata) {
+        const outside = (path: string) => {
+          const local = relative(repositoryPath, path);
+          return isAbsolute(local) || local === ".." || local.startsWith(".." + sep);
+        };
+        for (const directory of new Set([metadata.commonDir, metadata.gitDir])) {
+          if (outside(directory)) subscribe(directory, false, ".git/");
+        }
+        if (outside(metadata.commonDir))
+          subscribe(join(metadata.commonDir, "refs"), true, ".git/refs/");
+      }
+    } catch {
       this.unwatch(repositoryId);
       this.poll(repositoryId);
-    });
-
-    watcher.on("change", (_event, name) => {
-      if (this.entries.get(repositoryId) !== entry) return;
-      if (name != null && isIgnoredWatchPath(name.toString())) return;
-      this.schedule(repositoryId);
-    });
+    }
   }
 
   unwatch(repositoryId: string): void {
@@ -51,7 +67,7 @@ export class RepositoryWatcher {
     if (!entry) return;
     if (entry.timer) clearTimeout(entry.timer);
     if (entry.poll) clearInterval(entry.poll);
-    entry.watcher?.close();
+    for (const watcher of entry.watchers ?? []) watcher.close();
     this.entries.delete(repositoryId);
   }
 

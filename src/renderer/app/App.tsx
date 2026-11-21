@@ -119,6 +119,7 @@ export function App() {
   }, [shellRequest, setView]);
 
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pendingCommand = useRef<(() => void) | null>(null);
   const [commandMode, setCommandMode] = useState<"palette" | "shortcuts" | null>(null);
   const [startupError, setStartupError] = useState<string | null>(null);
 
@@ -298,8 +299,13 @@ export function App() {
             platform={commands.platform}
             onClose={() => setCommandMode(null)}
             onRun={(id, expected) => {
+              pendingCommand.current = () => commands.execute(id, expected);
               setCommandMode(null);
-              requestAnimationFrame(() => commands.execute(id, expected));
+            }}
+            onAfterClose={() => {
+              const run = pendingCommand.current;
+              pendingCommand.current = null;
+              run?.();
             }}
           />
         )}

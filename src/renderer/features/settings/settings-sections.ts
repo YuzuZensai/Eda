@@ -129,7 +129,7 @@ export const SETTINGS_SECTIONS: {
     id: "integrations",
     keywords: t("settings.providerAccountGitHubGitLabBitbucketAzureTokenProfileOffline"),
     title: t("settings.integrations"),
-    description: t("settings.connectTheServicesWhereYourTeamWorks"),
+    description: t("settings.gitHostConnections"),
     icon: Plug,
     group: "profile",
   },

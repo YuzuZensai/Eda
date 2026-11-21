@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { watch, type FSWatcher } from "node:fs";
 import type * as FileSystem from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RepositoryWatcher } from "@main/repo/lifecycle/repository-watcher";
@@ -121,6 +121,31 @@ it("delivers real filesystem changes to the owning repository", async () => {
     expect(change.mock.calls.every(([id, warning]) => id === "repo" && warning === undefined)).toBe(
       true,
     );
+  } finally {
+    subscription.closeAll();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("refreshes a linked worktree after external changes to its index and shared refs", async () => {
+  vi.useRealTimers();
+  vi.mocked(watch).mockImplementation(nativeWatch);
+  const root = await mkdtemp(join(tmpdir(), "eda-linked-watch-"));
+  const work = join(root, "work");
+  const gitDir = join(root, "common", "worktrees", "work");
+  const commonDir = join(root, "common");
+  const change = vi.fn();
+  const subscription = create(change);
+  try {
+    await mkdir(work);
+    await mkdir(gitDir, { recursive: true });
+    await mkdir(join(commonDir, "refs", "heads"), { recursive: true });
+    subscription.watch("linked", work, { gitDir, commonDir });
+    await writeFile(join(gitDir, "index"), "index");
+    await vi.waitFor(() => expect(change).toHaveBeenCalledWith("linked"));
+    change.mockClear();
+    await writeFile(join(commonDir, "refs", "heads", "topic"), "tip");
+    await vi.waitFor(() => expect(change).toHaveBeenCalledWith("linked"));
   } finally {
     subscription.closeAll();
     await rm(root, { recursive: true, force: true });

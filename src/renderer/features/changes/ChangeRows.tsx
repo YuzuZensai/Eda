@@ -147,14 +147,18 @@ export function ChangeRow({
         className="flex h-full min-w-0 flex-1 items-center gap-2 text-left"
         onClick={onSelect}
         title={`${change.path}${change.originalPath ? t("changes.changeRows.from", { originalPath: change.originalPath }) : ""}${change.submodule !== "N..." ? t("changes.changeRows.submodule", { submodule: change.submodule }) : ""}`}
-        aria-label={t("changes.changeRows.status", {
-          value1: t(CHANGE_AREA_LABELS[area]),
-          path: change.path,
-          value3: area === "staged" ? change.index : change.worktree,
-          value4: change.originalPath
-            ? t("changes.changeRows.renamedFrom", { originalPath: change.originalPath })
-            : "",
-        })}
+        aria-label={
+          area === "conflicted"
+            ? t("changes.changeRows.resolveConflict", { path: change.path })
+            : t("changes.changeRows.status", {
+                value1: t(CHANGE_AREA_LABELS[area]),
+                path: change.path,
+                value3: area === "staged" ? change.index : change.worktree,
+                value4: change.originalPath
+                  ? t("changes.changeRows.renamedFrom", { originalPath: change.originalPath })
+                  : "",
+              })
+        }
       >
         <span
           aria-hidden="true"

@@ -26,14 +26,19 @@ interface AppState {
   refreshIdentities: () => Promise<void>;
   refreshRepositories: () => Promise<void>;
   setActiveIdentity: (id: string) => Promise<void>;
-  selectRepository: (id: string | null) => void;
+  selectRepository: (id: string | null, background?: boolean) => void;
   closeTab: (id: string) => void;
   moveTab: (id: string, index: number) => void;
   reopenTab: () => void;
-  createIdentity: (...args: Parameters<typeof window.eda.identity.create>) => Promise<boolean>;
+  createIdentity: (
+    draft: Parameters<typeof window.eda.identity.create>[0],
+    options?: Parameters<typeof window.eda.identity.create>[1],
+    onError?: (error: GitErrorData) => void,
+  ) => Promise<boolean>;
   updateIdentity: (
     id: string,
     draft: Parameters<typeof window.eda.identity.update>[1],
+    onError?: (error: GitErrorData) => void,
   ) => Promise<boolean>;
   deleteIdentity: (id: string, token: string) => Promise<boolean>;
   addRepository: () => Promise<void>;
@@ -44,6 +49,7 @@ let initialization: Promise<void> | null = null;
 let subscriptionsInstalled = false;
 let identityRefreshGeneration = 0;
 let repositoryRefreshGeneration = 0;
+let latestRepositoryRefresh: Promise<void>;
 
 export const useAppStore = create<AppState>((set, get) => ({
   identities: [],
@@ -157,55 +163,58 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  async refreshRepositories() {
+  refreshRepositories() {
     const generation = ++repositoryRefreshGeneration;
     const expectedIdentity = get().activeIdentity?.id;
-    const result = await window.eda.repository.list();
+    latestRepositoryRefresh = window.eda.repository.list().then((result): void | Promise<void> => {
+      if (get().activeIdentity?.id !== expectedIdentity) return;
+      if (generation !== repositoryRefreshGeneration) return latestRepositoryRefresh;
 
-    if (generation !== repositoryRefreshGeneration || get().activeIdentity?.id !== expectedIdentity)
-      return;
+      if (!result.ok) {
+        set({ error: result.error });
+        return;
+      }
 
-    if (!result.ok) {
-      set({ error: result.error });
-      return;
-    }
+      const saved = useSessionStore.getState().snapshot;
+      const ownedSession = saved?.context.profileId === expectedIdentity ? saved : null;
+      const savedSelection = ownedSession
+        ? ownedSession.session.selectedRepositoryId
+        : get().selectedRepositoryId;
+      const stillPresent = result.value.some((r) => r.id === savedSelection);
+      const selectedRepositoryId = stillPresent
+        ? savedSelection
+        : ownedSession
+          ? null
+          : (result.value[0]?.id ?? null);
 
-    const saved = useSessionStore.getState().snapshot;
-    const ownedSession = saved?.context.profileId === expectedIdentity ? saved : null;
-    const savedSelection = ownedSession
-      ? ownedSession.session.selectedRepositoryId
-      : get().selectedRepositoryId;
-    const stillPresent = result.value.some((r) => r.id === savedSelection);
-    const selectedRepositoryId = stillPresent
-      ? savedSelection
-      : ownedSession
-        ? null
-        : (result.value[0]?.id ?? null);
+      const identityId = get().activeIdentity?.id;
+      let openTabsByIdentity = get().openTabsByIdentity;
 
-    const identityId = get().activeIdentity?.id;
-    let openTabsByIdentity = get().openTabsByIdentity;
+      if (identityId !== undefined) {
+        const live = new Set(result.value.map((r) => r.id));
+        const kept = (
+          ownedSession ? ownedSession.session.tabs : (openTabsByIdentity[identityId] ?? [])
+        ).filter((id) => live.has(id));
+        const withSelection =
+          selectedRepositoryId && !kept.includes(selectedRepositoryId)
+            ? [...kept, selectedRepositoryId]
+            : kept;
 
-    if (identityId !== undefined) {
-      const live = new Set(result.value.map((r) => r.id));
-      const kept = (
-        ownedSession ? ownedSession.session.tabs : (openTabsByIdentity[identityId] ?? [])
-      ).filter((id) => live.has(id));
-      const withSelection =
-        selectedRepositoryId && !kept.includes(selectedRepositoryId)
-          ? [...kept, selectedRepositoryId]
-          : kept;
+        openTabsByIdentity = { ...openTabsByIdentity, [identityId]: withSelection };
+      }
 
-      openTabsByIdentity = { ...openTabsByIdentity, [identityId]: withSelection };
-    }
-
-    set({ repositories: result.value, selectedRepositoryId, openTabsByIdentity });
-    restoreLayout(selectedRepositoryId);
+      set({ repositories: result.value, selectedRepositoryId, openTabsByIdentity });
+      restoreLayout(selectedRepositoryId);
+    });
+    return latestRepositoryRefresh;
   },
 
-  selectRepository(id) {
+  selectRepository(id, background = false) {
     if (get().switchingIdentityId !== null) return;
     if (id !== null && !get().repositories.some((repository) => repository.id === id)) return;
-    if (id !== get().selectedRepositoryId) useRepositoryStore.getState().clear();
+    if (background && (id === null || !get().repositories.some((r) => r.id === id && r.available)))
+      return;
+    if (!background && id !== get().selectedRepositoryId) useRepositoryStore.getState().clear();
 
     const identityId = get().activeIdentity?.id;
 
@@ -219,13 +228,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const open = get().openTabsByIdentity[identityId] ?? [];
 
     set({
-      selectedRepositoryId: id,
+      ...(!background && { selectedRepositoryId: id }),
       ...(open.includes(id)
         ? {}
         : { openTabsByIdentity: { ...get().openTabsByIdentity, [identityId]: [...open, id] } }),
     });
     saveTabs(get());
-    restoreLayout(id);
+    if (!background) restoreLayout(id);
   },
 
   closeTab(id) {
@@ -335,11 +344,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  async createIdentity(draft, options) {
+  async createIdentity(draft, options, onError) {
     const result = await window.eda.identity.create(draft, options);
 
     if (!result.ok) {
-      set({ error: result.error });
+      if (onError) onError(result.error);
+      else set({ error: result.error });
       return false;
     }
 
@@ -349,13 +359,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     return get().activeIdentity?.id === result.value.id;
   },
 
-  async updateIdentity(id, draft) {
+  async updateIdentity(id, draft, onError) {
     if (!(await useSessionStore.getState().flush())) return false;
 
     const result = await window.eda.identity.update(id, draft);
 
     if (!result.ok) {
-      set({ error: result.error });
+      if (onError) onError(result.error);
+      else set({ error: result.error });
       return false;
     }
 

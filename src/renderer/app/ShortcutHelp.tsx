@@ -1,8 +1,14 @@
 import { t } from "@shared/i18n";
 import { createTextSearch } from "../utils/search";
 import { useState } from "react";
-import { SHELL_COMMANDS, shortcutLabel, type DesktopPlatform } from "../commands/shell-commands";
-import { Dialog, SearchField } from "../components/ui/index";
+import {
+  configuredCommands,
+  shortcutLabel,
+  type DesktopPlatform,
+} from "../commands/shell-commands";
+import { usePreferencesStore } from "../stores/preferences-store";
+import { useAppStore } from "../stores/app-store";
+import { Dialog, SearchField, Select, TextButton } from "../components/ui/index";
 
 const LOCAL_SHORTCUTS = [
   {
@@ -65,13 +71,41 @@ export function ShortcutHelp({
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
+  const overrides = usePreferencesStore((state) => state.values.shortcutOverrides.value);
+  const owner = useAppStore((state) => state.activeIdentity?.id);
+  const saving = usePreferencesStore((state) => state.saving);
+  const [commandId, setCommandId] = useState("commands.open");
+  const [error, setError] = useState("");
+  const commands = configuredCommands(overrides);
+  const save = async (chord: string | null) => {
+    if (!owner || saving) return;
+    const next = { ...overrides };
+    if (chord === null) delete next[commandId];
+    else {
+      const used = commands.find(
+        (item) =>
+          item.id !== commandId &&
+          item.shortcut &&
+          (item.shortcut.shift ? "shift+" : "") + item.shortcut.key === chord,
+      );
+      if (used) {
+        setError(t("shortcutHelp.conflict", { command: used.title }));
+        return;
+      }
+      next[commandId] = chord;
+    }
+    setError("");
+    await usePreferencesStore
+      .getState()
+      .set("shortcutOverrides", { kind: "profile", profileId: owner }, next);
+  };
   const rows = [
     {
       title: t("shortcutHelp.submitCommit"),
       keys: shortcutLabel({ key: "Enter" }, platform),
       group: t("shortcutHelp.commitMessageRequiresAValidMessageAndStagedChanges"),
     },
-    ...SHELL_COMMANDS.flatMap((command) =>
+    ...commands.flatMap((command) =>
       command.shortcut
         ? [
             {
@@ -94,7 +128,57 @@ export function ShortcutHelp({
       description={t("shortcutHelp.shortcutsFollowTheCurrentProfileAndRepositoryText")}
       onClose={onClose}
     >
+      {owner && (
+        <details className="mb-3">
+          <summary>{t("shortcutHelp.customize")}</summary>
+          <div className="my-2 flex flex-wrap items-center gap-2">
+            <Select
+              aria-label={t("shortcutHelp.command")}
+              value={commandId}
+              onValueChange={(value) => {
+                setCommandId(value);
+                setError("");
+              }}
+            >
+              {commands.map((command) => (
+                <option key={command.id} value={command.id}>
+                  {command.title}
+                </option>
+              ))}
+            </Select>
+            <TextButton
+              disabled={saving}
+              onKeyDown={(event) => {
+                if (event.key === "Tab" || event.key === "Escape") return;
+                if (
+                  (platform === "mac"
+                    ? event.metaKey && !event.ctrlKey
+                    : event.ctrlKey && !event.metaKey) &&
+                  !event.altKey &&
+                  /^[a-z0-9,/]$/i.test(event.key)
+                ) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void save((event.shiftKey ? "shift+" : "") + event.key.toLowerCase());
+                }
+              }}
+            >
+              {t("shortcutHelp.record", {
+                modifier: platform === "mac" ? t("shellCommands.cmd") : t("shellCommands.ctrl"),
+              })}
+            </TextButton>
+            <TextButton disabled={saving} onClick={() => void save("")}>
+              {t("shortcutHelp.unbind")}
+            </TextButton>
+            <TextButton disabled={saving} onClick={() => void save(null)}>
+              {t("shortcutHelp.restore")}
+            </TextButton>
+          </div>
+          {error && <p role="alert">{error}</p>}
+        </details>
+      )}
       <SearchField
+        autoFocus
         size="md"
         aria-label={t("shortcutHelp.searchShortcuts")}
         placeholder={t("shortcutHelp.searchActionsOrKeys")}

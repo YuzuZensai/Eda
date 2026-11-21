@@ -1,3 +1,13 @@
+import { isTerminalOptions } from "@shared/repository/terminal";
+import { randomUUID } from "node:crypto";
+import {
+  collectionManifest,
+  importCollection,
+  isCollection,
+  isCollectionList,
+  portableRemote,
+} from "@shared/repository/collections";
+import { showOpenDialog, showSaveDialog } from "../dialogs";
 import { errorText } from "@shared/error-codes";
 import { ok } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -8,14 +18,16 @@ import {
   type SettingScope,
   type SettingsContext,
 } from "@shared/preferences/settings";
-import { isMergeTool } from "@shared/integrations/merge-tool";
+import { isMergeTool, isDiffTool } from "@shared/integrations/merge-tool";
 import { BrowserWindow, app, dialog } from "electron";
+import { saveFile } from "../../filesystem/save-file";
+import { readRegularFile } from "../../filesystem/read-regular-file";
 import { readBackgroundImage } from "../../application/background-image";
 import { applyWindowZoom } from "../../application/window-zoom";
 import type { Services } from "../../services";
 import { broadcast, handle } from "../transport";
 
-import { invalidRequest } from "../request-errors";
+import { invalidRequest } from "../../request-errors";
 import { requireId, requireRecord } from "../validate";
 
 export function registerSettingsHandlers(services: Services): void {
@@ -142,6 +154,112 @@ export function registerSettingsHandlers(services: Services): void {
     broadcast(IPC_EVENTS.settingChanged, { key, scope: target });
   };
 
+  handle(IPC_CHANNELS.settingsSaveCollections, async (_e, rawId, previous, next) => {
+    const profileId = requireId(rawId);
+    context({ profileId });
+    if (!isCollectionList(previous) || !isCollectionList(next))
+      throw invalidRequest(errorText("collections.invalid"));
+    const current = services.preferences.resolve("localCollections", { profileId }).value;
+    if (JSON.stringify(previous) !== JSON.stringify(current))
+      throw invalidRequest(errorText("collections.conflict"));
+    services.preferences.set("localCollections", { kind: "profile", profileId }, next);
+    return ok(undefined);
+  });
+  handle(IPC_CHANNELS.settingsCollectionManifest, async (event, rawId, collection, paths) => {
+    const profileId = requireId(rawId);
+    context({ profileId });
+    if (collection === undefined) {
+      const chosen = await showOpenDialog(event, {
+        title: t("collections.import"),
+        properties: ["openFile"],
+        filters: [{ name: t("collections.title"), extensions: ["json"] }],
+      });
+      if (chosen.canceled || !chosen.filePaths[0]) return ok(null);
+      const { bytes } = await readRegularFile(chosen.filePaths[0], 1024 * 1024, () =>
+        invalidRequest(errorText("collections.invalid")),
+      );
+      let value: unknown;
+      try {
+        value = JSON.parse(bytes.toString("utf8"));
+      } catch {
+        throw invalidRequest(errorText("collections.invalid"));
+      }
+      const imported = importCollection(value, randomUUID());
+      context({ profileId });
+      if (!imported) throw invalidRequest(errorText("collections.invalid"));
+      return ok(imported);
+    }
+    if (!isCollection(collection) || typeof paths !== "boolean")
+      throw invalidRequest(errorText("collections.invalid"));
+    const members = [];
+    for (const member of collection.members) {
+      if (!member.repositoryId) {
+        members.push(member);
+        continue;
+      }
+      const repo = services.repositories.resolveActiveRepository(member.repositoryId);
+      const remote = await services.remotes.primaryFetchUrl(repo.id, { refresh: true });
+      members.push({
+        name: member.name,
+        ...(portableRemote(remote) && { remote }),
+        pathHint: repo.path,
+      });
+    }
+    const options = {
+      title: t("collections.export"),
+      defaultPath: "collection.json",
+      filters: [{ name: t("collections.title"), extensions: ["json"] }],
+    };
+    const chosen = await showSaveDialog(event, options);
+    context({ profileId });
+    if (!chosen.canceled && chosen.filePath)
+      await saveFile(
+        chosen.filePath,
+        Buffer.from(
+          JSON.stringify(collectionManifest({ ...collection, members }, paths), null, 2) + "\n",
+        ),
+      );
+    return ok(null);
+  });
+  handle(IPC_CHANNELS.settingsTransferPreferences, async (event, rawScope, action) => {
+    const target = scope(rawScope);
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    const filters = [{ name: t("settings.portable.title"), extensions: ["json"] }];
+    if (!parent)
+      throw invalidRequest(errorText("main.settingsHandlers.theSettingsWindowIsUnavailable"));
+    if (action === "export") {
+      const result = await dialog.showSaveDialog(parent, {
+        title: t("settings.portable.export"),
+        defaultPath: `eda-${target.kind}-preferences.json`,
+        filters,
+      });
+      if (result.canceled || !result.filePath) return ok(false);
+      const data = services.preferences.exportPortable(scope(rawScope));
+      const bytes = Buffer.from(JSON.stringify(data, null, 2) + "\n");
+      if (bytes.length > 256 * 1024) throw invalidRequest(errorText("settings.portable.tooLarge"));
+      await saveFile(result.filePath, bytes);
+    } else if (action === "import") {
+      const result = await dialog.showOpenDialog(parent, {
+        title: t("settings.portable.import"),
+        properties: ["openFile"],
+        filters,
+      });
+      if (result.canceled || !result.filePaths[0]) return ok(false);
+      const { bytes } = await readRegularFile(result.filePaths[0], 256 * 1024, () =>
+        invalidRequest(errorText("settings.portable.invalid")),
+      );
+      let file: unknown;
+      try {
+        file = JSON.parse(bytes.toString("utf8"));
+      } catch {
+        throw invalidRequest(errorText("settings.portable.invalid"));
+      }
+      for (const key of services.preferences.importPortable(scope(rawScope), file))
+        changed(key, target);
+    } else throw invalidRequest(errorText("settings.portable.invalid"));
+    return ok(true);
+  });
+
   handle(IPC_CHANNELS.settingsResolve, async (_e, rawKey, rawContext) =>
     ok(services.preferences.resolve(requireSettingKey(rawKey), context(rawContext))),
   );
@@ -149,9 +267,29 @@ export function registerSettingsHandlers(services: Services): void {
   handle(IPC_CHANNELS.settingsSet, async (_e, rawKey, rawScope, value) => {
     const key = requireSettingKey(rawKey);
     const target = scope(rawScope);
-    if (key === "editorExecutable" || key === "browserExecutable" || key === "mergeTool") {
+    if (
+      key === "gitExecutable" ||
+      key === "sshExecutable" ||
+      key === "gpgExecutable" ||
+      key === "diffTool" ||
+      key === "diffExecutable" ||
+      key === "terminalExecutable" ||
+      (key === "terminalOptions" &&
+        isTerminalOptions(value) &&
+        target.kind === "profile" &&
+        value.shell !==
+          services.preferences.resolve(key, { profileId: target.profileId }).value.shell) ||
+      key === "editorExecutable" ||
+      key === "browserExecutable" ||
+      key === "mergeTool"
+    ) {
       validateSetting(key, target, value);
-      const command = isMergeTool(value) ? [value.executable, ...value.args] : [value];
+      const command =
+        isMergeTool(value) || isDiffTool(value)
+          ? [value.executable, ...value.args]
+          : isTerminalOptions(value)
+            ? [value.shell]
+            : [value];
       if (command[0]) {
         const parent = BrowserWindow.fromWebContents(_e.sender);
         if (
@@ -171,7 +309,7 @@ export function registerSettingsHandlers(services: Services): void {
           throw invalidRequest(errorText("main.settingsHandlers.programDeclined"));
       }
     }
-    services.preferences.set(key, target, value);
+    services.preferences.set(key, scope(rawScope), value);
     changed(key, target);
     return ok(undefined);
   });

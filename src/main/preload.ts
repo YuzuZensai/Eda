@@ -49,6 +49,8 @@ const api: EdaApi = {
       ipcRenderer.invoke(IPC_CHANNELS.gitlabOpenAuthorization, profileId, id, copyUrl),
     openProfile: (profileId, copyUrl) =>
       ipcRenderer.invoke(IPC_CHANNELS.gitlabOpenProfile, profileId, copyUrl),
+    selectAccount: (profileId, accountId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.gitlabSelectAccount, profileId, accountId),
     disconnect: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.gitlabDisconnect, profileId),
   },
   github: {
@@ -64,7 +66,28 @@ const api: EdaApi = {
     cancel: (profileId, id) => ipcRenderer.invoke(IPC_CHANNELS.githubCancel, profileId, id),
     openVerification: (profileId, id, copyUrl) =>
       ipcRenderer.invoke(IPC_CHANNELS.githubOpenVerification, profileId, id, copyUrl),
+    selectAccount: (profileId, accountId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.githubSelectAccount, profileId, accountId),
     disconnect: (profileId) => ipcRenderer.invoke(IPC_CHANNELS.githubDisconnect, profileId),
+  },
+  gitHosts: {
+    accounts: (id) => ipcRenderer.invoke(IPC_CHANNELS.hostsAccounts, id),
+    connect: (id, host, token) => ipcRenderer.invoke(IPC_CHANNELS.hostsConnect, id, host, token),
+    disconnect: (id, base) => ipcRenderer.invoke(IPC_CHANNELS.hostsDisconnect, id, base),
+    repositories: (id, base, page) =>
+      ipcRenderer.invoke(IPC_CHANNELS.hostsRepositories, id, base, page),
+  },
+  terminal: {
+    list: (id) => ipcRenderer.invoke(IPC_CHANNELS.terminalList, id),
+    start: (id) => ipcRenderer.invoke(IPC_CHANNELS.terminalStart, id),
+    frame: (id, tab, offset, query, revision) =>
+      ipcRenderer.invoke(IPC_CHANNELS.terminalFrame, id, tab, offset, query, revision),
+    input: (id, tab, text, paste) =>
+      ipcRenderer.invoke(IPC_CHANNELS.terminalInput, id, tab, text, paste),
+    resize: (id, tab, cols, rows) =>
+      ipcRenderer.invoke(IPC_CHANNELS.terminalResize, id, tab, cols, rows),
+    move: (id, tab, step) => ipcRenderer.invoke(IPC_CHANNELS.terminalMove, id, tab, step),
+    close: (id, tab) => ipcRenderer.invoke(IPC_CHANNELS.terminalClose, id, tab),
   },
   avatars: {
     get: (email) => ipcRenderer.invoke(IPC_CHANNELS.avatarGet, email),
@@ -139,6 +162,7 @@ const api: EdaApi = {
     rename: (id, token, name) => ipcRenderer.invoke(IPC_CHANNELS.stashesRename, id, token, name),
   },
   workflows: {
+    predictUpstream: (id) => ipcRenderer.invoke(IPC_CHANNELS.workflowPredictUpstream, id),
     finishStash: (id, token) => ipcRenderer.invoke(IPC_CHANNELS.workflowFinishStash, id, token),
     prepareStart: (id, source, mode) =>
       ipcRenderer.invoke(IPC_CHANNELS.workflowPrepareStart, id, source, mode),
@@ -180,11 +204,12 @@ const api: EdaApi = {
     chooseMergeTool: () => ipcRenderer.invoke(IPC_CHANNELS.appChooseMergeTool),
     graphicsStatus: () => ipcRenderer.invoke(IPC_CHANNELS.appGraphicsStatus),
     detectEditors: () => ipcRenderer.invoke(IPC_CHANNELS.appDetectEditors),
-    chooseEditor: () => ipcRenderer.invoke(IPC_CHANNELS.appChooseEditor),
+    chooseEditor: (kind) => ipcRenderer.invoke(IPC_CHANNELS.appChooseEditor, kind),
     chooseBrowser: () => ipcRenderer.invoke(IPC_CHANNELS.appChooseBrowser),
     takeNavigation: () => ipcRenderer.invoke(IPC_CHANNELS.appTakeNavigation),
     platform:
       process.platform === "darwin" ? "mac" : process.platform === "win32" ? "windows" : "linux",
+    gitDiagnostics: () => ipcRenderer.invoke(IPC_CHANNELS.appGitDiagnostics),
     getGitEngine: () => ipcRenderer.invoke(IPC_CHANNELS.appGetGitEngine),
     windowControl: (action) => ipcRenderer.invoke(IPC_CHANNELS.appWindowControl, action),
     getGlobalGitUser: () => ipcRenderer.invoke(IPC_CHANNELS.appGetGlobalGitUser),
@@ -214,6 +239,8 @@ const api: EdaApi = {
     pendingTrust: () => ipcRenderer.invoke(IPC_CHANNELS.repositoryPendingTrust),
     respondTrust: (id, trust) => ipcRenderer.invoke(IPC_CHANNELS.repositoryRespondTrust, id, trust),
     ignoredFiles: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositoryIgnoredFiles, id),
+    openWorktreeTool: (id, path, tool) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryOpenWorktreeTool, id, path, tool),
     openEditor: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositoryOpenEditor, id),
     openDropped: (file) =>
       ipcRenderer.invoke(IPC_CHANNELS.repositoryOpen, webUtils.getPathForFile(file)),
@@ -265,6 +292,33 @@ const api: EdaApi = {
       ipcRenderer.invoke(IPC_CHANNELS.repositoryCommitSignature, id, oid),
     workingDiff: (request) => ipcRenderer.invoke(IPC_CHANNELS.repositoryWorkingDiff, request),
     commitDiff: (request) => ipcRenderer.invoke(IPC_CHANNELS.repositoryCommitDiff, request),
+    compareRevisions: (request) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryCompareRevisions, request),
+    blame: (request) => ipcRenderer.invoke(IPC_CHANNELS.repositoryBlame, request),
+    resumeMailbox: (id, action, token) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryResumeMailbox, id, action, token),
+    applyPatch: (id, mailbox) => ipcRenderer.invoke(IPC_CHANNELS.repositoryApplyPatch, id, mailbox),
+    exportPatch: (request, mailbox) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryExportPatch, request, mailbox),
+    submodules: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositorySubmodules, id),
+    sparseCheckout: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositorySparseCheckout, id),
+    changeSparseCheckout: (id, action, paths) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryChangeSparseCheckout, id, action, paths),
+    changeWorktree: (id, action) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryChangeWorktree, id, action),
+    workingFile: (id, path, action) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryWorkingFile, id, path, action),
+    lfs: (id, action) => ipcRenderer.invoke(IPC_CHANNELS.repositoryLfs, id, action),
+    changeSubmodule: (id, action) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryChangeSubmodule, id, action),
+    flowState: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositoryFlowState, id),
+    gitflow: (id, action) => ipcRenderer.invoke(IPC_CHANNELS.repositoryGitflow, id, action),
+    worktrees: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositoryWorktrees, id),
+    restoreRevision: (id, oid, paths, destination) =>
+      ipcRenderer.invoke(IPC_CHANNELS.repositoryRestoreRevision, id, oid, paths, destination),
+    revisionPath: (request) => ipcRenderer.invoke(IPC_CHANNELS.repositoryRevisionPath, request),
+    comparisonDiff: (request) => ipcRenderer.invoke(IPC_CHANNELS.repositoryComparisonDiff, request),
+    externalDiff: (request) => ipcRenderer.invoke(IPC_CHANNELS.repositoryExternalDiff, request),
     imagePreview: (request) => ipcRenderer.invoke(IPC_CHANNELS.repositoryImagePreview, request),
     chooseFolder: () => ipcRenderer.invoke(IPC_CHANNELS.repositoryChooseFolder),
     watch: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositoryWatch, id),
@@ -319,6 +373,12 @@ const api: EdaApi = {
   },
 
   settings: {
+    saveCollections: (id, previous, next) =>
+      ipcRenderer.invoke(IPC_CHANNELS.settingsSaveCollections, id, previous, next),
+    collectionManifest: (id, collection, paths) =>
+      ipcRenderer.invoke(IPC_CHANNELS.settingsCollectionManifest, id, collection, paths),
+    transferPreferences: (scope, action) =>
+      ipcRenderer.invoke(IPC_CHANNELS.settingsTransferPreferences, scope, action),
     resolve: (key, context) => ipcRenderer.invoke(IPC_CHANNELS.settingsResolve, key, context),
     set: (key, scope, value) => ipcRenderer.invoke(IPC_CHANNELS.settingsSet, key, scope, value),
     reset: (key, scope) => ipcRenderer.invoke(IPC_CHANNELS.settingsReset, key, scope),

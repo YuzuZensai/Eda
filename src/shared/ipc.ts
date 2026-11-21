@@ -1,3 +1,9 @@
+import type { GitHost, GitHostPage } from "./integrations/git-host";
+import type { FlowAction, FlowState, FlowPlan } from "./workflows/gitflow";
+import type { TerminalTab, TerminalFrame } from "./repository/terminal";
+import type { LfsAction } from "./integrations/remotes";
+import type { LocalCollection } from "./repository/collections";
+import type { WorktreeAction, SubmoduleAction } from "./repository/repository-write";
 import type { PublicKeyRequest, SignerDecision } from "./repository/repository-read";
 import type { ProviderRepositoryPage } from "./integrations/provider-repositories";
 import type {
@@ -12,7 +18,7 @@ import type {
   GitLabAccountProfile,
 } from "./integrations/gitlab";
 import type { DesktopPlatform, GraphicsStatus, InstallationInfo } from "./application";
-import type { GitEngineInfo } from "./integrations/git-engine";
+import type { GitEngineInfo, GitDiagnostics } from "./integrations/git-engine";
 import type { AvatarImage } from "./identity/avatar";
 import type { BuildInfo } from "./version";
 import type { UpdateState } from "./updates";
@@ -98,11 +104,21 @@ import type {
   CommitDiffRequest,
   CommitInspection,
   CommitSignatureVerification,
+  ComparisonDiffRequest,
+  BlameRequest,
+  BlameLine,
+  RevisionPath,
+  RevisionPathRequest,
   HistoryPage,
   HistoryPageRequest,
   RepositoryStatus,
+  RevisionComparison,
+  RevisionComparisonRequest,
   UnifiedDiff,
   WorkingDiffRequest,
+  SubmoduleListing,
+  WorktreeSummary,
+  PatchExportRequest,
 } from "./repository/repository-read";
 import type {
   BranchRequest,
@@ -143,6 +159,27 @@ import type {
 } from "./workflows/workflow";
 
 export interface EdaApi {
+  gitHosts: {
+    accounts(id: string): Promise<Result<GitHost[]>>;
+    connect(id: string, host: GitHost, token: string): Promise<Result<void>>;
+    disconnect(id: string, base: string): Promise<Result<void>>;
+    repositories(id: string, base: string, page: number | string): Promise<Result<GitHostPage>>;
+  };
+  terminal: {
+    list(id: string): Promise<Result<TerminalTab[]>>;
+    start(id: string): Promise<Result<string>>;
+    frame(
+      id: string,
+      tab: string,
+      offset: number | null,
+      query: string,
+      revision: number,
+    ): Promise<Result<TerminalFrame | null>>;
+    input(id: string, tab: string, text: string, paste: boolean): Promise<Result<void>>;
+    resize(id: string, tab: string, cols: number, rows: number): Promise<Result<void>>;
+    move(id: string, tab: string, step: number): Promise<Result<void>>;
+    close(id: string, tab: string): Promise<Result<void>>;
+  };
   avatars: {
     get(email: string): Promise<Result<AvatarImage>>;
     getCommit(repositoryId: string, email: string): Promise<Result<AvatarImage>>;
@@ -264,6 +301,7 @@ export interface EdaApi {
   };
 
   workflows: {
+    predictUpstream(repositoryId: string): Promise<Result<MergeStartPreview["prediction"]>>;
     finishStash(repositoryId: string, token: string): Promise<Result<void>>;
     prepareStart(
       repositoryId: string,
@@ -306,6 +344,7 @@ export interface EdaApi {
   github: {
     repositories(profileId: string, page?: number): Promise<Result<ProviderRepositoryPage>>;
     maintainerProfile(): Promise<Result<GitHubAccountProfile | null>>;
+    selectAccount(profileId: string, accountId: string): Promise<Result<GitHubStatus>>;
     status(profileId: string): Promise<Result<GitHubStatus>>;
     profile(profileId: string): Promise<Result<GitHubAccountProfile | null>>;
     openProfile(profileId: string, copyUrl?: boolean): Promise<Result<void>>;
@@ -347,6 +386,7 @@ export interface EdaApi {
   gitlab: {
     repositories(profileId: string, page?: number): Promise<Result<ProviderRepositoryPage>>;
     profile(profileId: string): Promise<Result<GitLabAccountProfile | null>>;
+    selectAccount(profileId: string, accountId: string): Promise<Result<GitLabStatus>>;
     status(profileId: string): Promise<Result<GitLabStatus>>;
     begin(profileId: string): Promise<Result<GitLabSignIn>>;
     poll(profileId: string, id: string): Promise<Result<GitLabSignInResult>>;
@@ -368,13 +408,16 @@ export interface EdaApi {
     chooseMergeTool(): Promise<Result<string | null>>;
     graphicsStatus(): Promise<Result<GraphicsStatus>>;
     detectEditors(): Promise<Result<DetectedEditor[]>>;
-    chooseEditor(): Promise<Result<string | null>>;
+    chooseEditor(
+      kind?: "editor" | "terminal" | "diff" | "git" | "ssh" | "gpg",
+    ): Promise<Result<string | null>>;
     chooseBrowser(): Promise<Result<string | null>>;
     takeNavigation(): Promise<Result<RepositoryNavigation[]>>;
     readonly platform: DesktopPlatform;
     windowControl(
       action: "state" | "minimize" | "toggle-maximize" | "close",
     ): Promise<Result<{ maximized: boolean }>>;
+    gitDiagnostics(): Promise<Result<GitDiagnostics>>;
     getGitEngine(): Promise<Result<GitEngineInfo>>;
     getGlobalGitUser(): Promise<Result<{ name?: string; email?: string }>>;
   };
@@ -425,6 +468,11 @@ export interface EdaApi {
     decideSigner(id: string, decision: SignerDecision, remove: boolean): Promise<Result<void>>;
     commitSignature(id: string, oid: string): Promise<Result<CommitSignatureVerification>>;
     ignoredFiles(id: string): Promise<Result<{ paths: string[]; truncated: boolean }>>;
+    openWorktreeTool(
+      id: string,
+      path: string,
+      tool: "folder" | "editor" | "terminal",
+    ): Promise<Result<void>>;
     openEditor(id: string): Promise<Result<void>>;
     openDropped(file: File): Promise<Result<RepositorySummary>>;
     commitTemplate(id: string): Promise<Result<string | null>>;
@@ -457,6 +505,43 @@ export interface EdaApi {
     history(request: HistoryPageRequest): Promise<Result<HistoryPage>>;
     workingDiff(request: WorkingDiffRequest): Promise<Result<UnifiedDiff>>;
     commitDiff(request: CommitDiffRequest): Promise<Result<UnifiedDiff>>;
+    compareRevisions(request: RevisionComparisonRequest): Promise<Result<RevisionComparison>>;
+    blame(request: BlameRequest): Promise<Result<BlameLine[]>>;
+    resumeMailbox(id: string, action: "continue" | "abort", token: string): Promise<Result<void>>;
+    applyPatch(repositoryId: string, mailbox?: boolean): Promise<Result<boolean>>;
+    exportPatch(
+      request: PatchExportRequest,
+      mailbox?: { after?: string },
+    ): Promise<Result<boolean>>;
+    submodules(id: string): Promise<Result<SubmoduleListing>>;
+    sparseCheckout(
+      id: string,
+    ): Promise<Result<{ enabled: boolean; cone: boolean; directories: string[] }>>;
+    changeSparseCheckout(
+      id: string,
+      action: "set" | "disable" | "reapply",
+      paths: string[],
+    ): Promise<Result<void>>;
+    changeWorktree(id: string, action: WorktreeAction): Promise<Result<string | null>>;
+    workingFile(
+      id: string,
+      path: string,
+      action: "create" | "delete" | "editor" | "reveal",
+    ): Promise<Result<void>>;
+    lfs(id: string, action: LfsAction): Promise<Result<string>>;
+    changeSubmodule(id: string, action: SubmoduleAction): Promise<Result<void>>;
+    flowState(id: string): Promise<Result<FlowState>>;
+    gitflow(id: string, action: FlowAction): Promise<Result<FlowPlan | null>>;
+    worktrees(id: string): Promise<Result<WorktreeSummary[]>>;
+    restoreRevision(
+      id: string,
+      oid: string,
+      paths: string[],
+      destination: "index" | "worktree" | "both",
+    ): Promise<Result<void>>;
+    revisionPath(request: RevisionPathRequest): Promise<Result<RevisionPath>>;
+    comparisonDiff(request: ComparisonDiffRequest): Promise<Result<UnifiedDiff>>;
+    externalDiff(request: ImagePreviewRequest): Promise<Result<void>>;
     imagePreview(request: ImagePreviewRequest): Promise<Result<ImagePreview>>;
     chooseFolder(): Promise<Result<string | null>>;
     watch(id: string | null): Promise<Result<void>>;
@@ -513,6 +598,17 @@ export interface EdaApi {
   };
 
   settings: {
+    saveCollections(
+      profileId: string,
+      previous: LocalCollection[],
+      next: LocalCollection[],
+    ): Promise<Result<void>>;
+    collectionManifest(
+      profileId: string,
+      collection?: LocalCollection,
+      paths?: boolean,
+    ): Promise<Result<LocalCollection | null>>;
+    transferPreferences(scope: SettingScope, action: "import" | "export"): Promise<Result<boolean>>;
     resolve<K extends SettingKey>(
       key: K,
       context: SettingsContext,
@@ -569,6 +665,7 @@ export const IPC_CHANNELS = {
   gitlabCancel: "gitlab:cancel",
   gitlabOpenAuthorization: "gitlab:open-authorization",
   gitlabOpenProfile: "gitlab:open-profile",
+  gitlabSelectAccount: "gitlab:select-account",
   gitlabDisconnect: "gitlab:disconnect",
   githubRepositories: "github:repositories",
   githubStatus: "github:status",
@@ -579,6 +676,7 @@ export const IPC_CHANNELS = {
   githubPoll: "github:poll",
   githubCancel: "github:cancel",
   githubOpenVerification: "github:open-verification",
+  githubSelectAccount: "github:select-account",
   githubDisconnect: "github:disconnect",
   avatarGet: "avatar:get",
   avatarCommitGet: "avatar:commit-get",
@@ -618,6 +716,7 @@ export const IPC_CHANNELS = {
   stashesRestoreFile: "stashes:restore-file",
   stashesPrepareBranch: "stashes:prepare-branch",
   stashesCreateBranch: "stashes:create-branch",
+  workflowPredictUpstream: "workflow:predict-upstream",
   workflowPrepareStart: "workflow:prepare-start",
   workflowStartMerge: "workflow:start-merge",
   workflowPrepareAbort: "workflow:prepare-abort",
@@ -643,6 +742,7 @@ export const IPC_CHANNELS = {
   appDetectEditors: "app:detect-editors",
   appChooseEditor: "app:choose-editor",
   appChooseBrowser: "app:choose-browser",
+  repositoryOpenWorktreeTool: "repository:open-worktree-tool",
   repositoryOpenEditor: "repository:open-editor",
   appTakeNavigation: "app:take-navigation",
   repositoryCommitTemplate: "repository:commit-template",
@@ -662,6 +762,7 @@ export const IPC_CHANNELS = {
   operationsList: "operations:list",
   operationsCancel: "operations:cancel",
   operationsRetry: "operations:retry",
+  appGitDiagnostics: "app:gitDiagnostics",
   appGetGitEngine: "app:getGitEngine",
   appCopyText: "app:copy-text",
   appWindowControl: "app:windowControl",
@@ -707,6 +808,36 @@ export const IPC_CHANNELS = {
   repositoryCommitSignature: "repository:commitSignature",
   repositoryWorkingDiff: "repository:workingDiff",
   repositoryCommitDiff: "repository:commitDiff",
+  repositoryCompareRevisions: "repository:compareRevisions",
+  repositoryBlame: "repository:blame",
+  repositoryResumeMailbox: "repository:resume-mailbox",
+  repositoryApplyPatch: "repository:applyPatch",
+  repositoryExportPatch: "repository:exportPatch",
+  repositorySubmodules: "repository:submodules",
+  repositorySparseCheckout: "repository:sparse-checkout",
+  repositoryChangeSparseCheckout: "repository:change-sparse-checkout",
+  repositoryChangeWorktree: "repository:change-worktree",
+  repositoryWorkingFile: "repository:working-file",
+  repositoryLfs: "repository:lfs",
+  repositoryChangeSubmodule: "repository:change-submodule",
+  terminalList: "terminal:list",
+  terminalStart: "terminal:start",
+  terminalFrame: "terminal:frame",
+  terminalInput: "terminal:input",
+  terminalResize: "terminal:resize",
+  terminalMove: "terminal:move",
+  terminalClose: "terminal:close",
+  repositoryFlowState: "repository:flow-state",
+  repositoryGitflow: "repository:gitflow",
+  hostsAccounts: "hosts:accounts",
+  hostsConnect: "hosts:connect",
+  hostsDisconnect: "hosts:disconnect",
+  hostsRepositories: "hosts:repositories",
+  repositoryWorktrees: "repository:worktrees",
+  repositoryRestoreRevision: "repository:restore-revision",
+  repositoryRevisionPath: "repository:revisionPath",
+  repositoryComparisonDiff: "repository:comparisonDiff",
+  repositoryExternalDiff: "repository:external-diff",
   repositoryImagePreview: "repository:imagePreview",
   repositoryChooseFolder: "repository:chooseFolder",
   repositoryWatch: "repository:watch",
@@ -741,6 +872,9 @@ export const IPC_CHANNELS = {
   credentialsUnlockActiveKey: "credentials:unlockActiveKey",
   credentialsForgetActivePassphrase: "credentials:forgetActivePassphrase",
 
+  settingsSaveCollections: "settings:save-collections",
+  settingsCollectionManifest: "settings:collection-manifest",
+  settingsTransferPreferences: "settings:transfer-preferences",
   settingsResolve: "settings:resolve",
   settingsSet: "settings:set",
   settingsReset: "settings:reset",

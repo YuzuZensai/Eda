@@ -1,3 +1,4 @@
+import { invalidRequest } from "../../request-errors";
 import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -29,7 +30,15 @@ export class RepositoryManager {
     const rows = this.memberships.list(active.id);
 
     return Promise.all(
-      rows.map(async (row) => this.summary(row, await this.git.isRepository(row.path))),
+      rows.map(async (row) => {
+        try {
+          return await this.summary(row, await this.git.isRepository(row.path));
+        } catch (error) {
+          if (error instanceof GitError && error.text.key === "repositoryFormat.unsupported")
+            return { ...toSummary(row), available: false, unavailableReason: error.message };
+          throw error;
+        }
+      }),
     );
   }
 
@@ -58,6 +67,23 @@ export class RepositoryManager {
   }
 
   private async authorizeOpen(path: string): Promise<string> {
+    const looksBare =
+      (await lstat(join(path, "HEAD")).catch(() => null))?.isFile() &&
+      (await lstat(join(path, "objects")).catch(() => null))?.isDirectory();
+    if (looksBare) {
+      // Inspect the explicitly selected metadata without registering it as a working tree.
+      const bare = await this.git.exec(["--git-dir=" + path, "rev-parse", "--is-bare-repository"], {
+        operation: t("operations.openRepository"),
+        env: { configScope: "none" },
+        maxStdoutBytes: 128,
+      });
+      if (bare.stdout.trim() === "true")
+        throw new GitError({
+          kind: "invalid-input",
+          operation: t("operations.openRepository"),
+          message: errorText("repositoryFormat.bare"),
+        });
+    }
     if (!this.git.trust) return path;
     const root = await this.git.trust.findRoot(path);
     if (!root) return path;
@@ -207,6 +233,14 @@ export class RepositoryManager {
     const repository = this.resolveActiveRepository(id);
 
     this.memberships.remove(repository.id, repository.identityId);
+  }
+
+  assertCurrentRepository(expected: Pick<RepositorySummary, "id" | "path" | "identityId">) {
+    const current = this.resolveActiveRepository(expected.id);
+    if (current.identityId !== expected.identityId || current.path !== expected.path)
+      throw invalidRequest(
+        errorText("main.repositoryManager.theRepositoryChangedRefreshAndTryAgain"),
+      );
   }
 
   resolveActiveRepository(id: string): { id: string; identityId: string; path: string } {

@@ -2,26 +2,26 @@ import { t } from "@shared/i18n";
 import { useState } from "react";
 import { Disclosure, SearchField, StateMessage } from "../../components/ui/index";
 import { createTextSearch } from "../../utils/search";
-import { COMPONENT_EXPORTS, FEATURE_COMPONENTS, UI_COMPONENTS } from "./componentInventory";
+import { COMPONENT_GROUPS } from "./componentInventory";
 import { PREVIEW_ANCHORS } from "./galleryCoverage";
 
 export function GalleryInventory() {
   const [query, setQuery] = useState("");
   const matchesQuery = createTextSearch(query);
 
-  const groups = [
-    { group: t("settings.componentGallery.sharedUi"), files: UI_COMPONENTS },
-    ...FEATURE_COMPONENTS,
-  ];
-
-  const allFiles = groups.flatMap((group) => [...group.files]);
-
+  const groups = COMPONENT_GROUPS.map(({ group, directory, files }) => ({
+    group: group ?? t("settings.componentGallery.sharedUi"),
+    files: files.map((entry) => {
+      const [name, names] =
+        typeof entry === "string" ? [entry, [entry.slice(entry.lastIndexOf("/") + 1)]] : entry;
+      return { file: directory + name + ".tsx", names };
+    }),
+  }));
+  const allFiles = groups.flatMap(({ files }) => files);
   const matches = groups
-    .map((group) => ({
-      ...group,
-      files: group.files.filter((file) =>
-        matchesQuery(`${file} ${COMPONENT_EXPORTS[file]?.join(" ")}`),
-      ),
+    .map(({ group, files }) => ({
+      group,
+      files: files.filter(({ file, names }) => matchesQuery([file, ...names].join(" "))),
     }))
     .filter((group) => group.files.length);
 
@@ -30,8 +30,8 @@ export function GalleryInventory() {
       <p className="text-sm leading-relaxed text-text-secondary">
         {t("settings.componentGallery.sourceFilesExportedComponentsFilesHaveLiveExamples", {
           length: allFiles.length,
-          lengthValue: Object.values(COMPONENT_EXPORTS).flat().length,
-          lengthValueValue: allFiles.filter((file) => PREVIEW_ANCHORS[file]).length,
+          lengthValue: allFiles.reduce((count, { names }) => count + names.length, 0),
+          lengthValueValue: allFiles.filter(({ file }) => PREVIEW_ANCHORS[file]).length,
         })}
       </p>
 
@@ -63,7 +63,7 @@ export function GalleryInventory() {
           summaryClassName="text-sm font-medium"
         >
           <ul className="mt-3 divide-y divide-border-subtle">
-            {group.files.map((file) => (
+            {group.files.map(({ file, names }) => (
               <li
                 key={file}
                 className="flex min-w-0 flex-wrap items-start justify-between gap-2 py-3"
@@ -72,8 +72,7 @@ export function GalleryInventory() {
                   <code className="break-all text-xs text-text-primary">{file}</code>
 
                   <p className="mt-1 break-words text-xs text-text-tertiary">
-                    {COMPONENT_EXPORTS[file]?.join(", ") ||
-                      t("settings.componentGallery.sharedExports")}
+                    {names.join(", ") || t("settings.componentGallery.sharedExports")}
                   </p>
                 </div>
 

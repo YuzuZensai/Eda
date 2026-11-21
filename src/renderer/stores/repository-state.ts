@@ -14,6 +14,7 @@ export interface RepositoryReadState extends HistoryWindow {
   commandDialog: {
     kind:
       | "repository.references"
+      | "repository.worktrees"
       | "repository.graph"
       | "repository.recovery"
       | "repository.historyRecovery"
@@ -30,13 +31,18 @@ export interface RepositoryReadState extends HistoryWindow {
   hoveredRefOid: string | null;
   watchWarning: string | null;
   selection: RepositorySelection;
-  contentView: "history" | "diff";
+  contentView:
+    | "history"
+    | "diff"
+    | { kind: "tree"; oid: string; path?: string }
+    | { kind: "comparison"; left: string; right: string };
   commitFilePath: string | null;
   commitFileDiff: UnifiedDiff | null;
   commitFileLoading: boolean;
   commitFileError: GitErrorData | null;
   selectCommitFile: (path: string) => Promise<void>;
   showHistory: () => void;
+  compareRevisions: (left?: string, right?: string) => void;
   showWorkingTree: () => void;
   navigation: Exclude<RepositorySelection, null>[];
   navigationIndex: number;
@@ -52,7 +58,12 @@ export interface RepositoryReadState extends HistoryWindow {
   syncFromDisk: () => Promise<void>;
   loadMore: () => Promise<void>;
   loadPrevious: () => Promise<void>;
-  selectChange: (change: RepositoryChange, area: ChangeArea) => Promise<void>;
+  selectChange: (
+    change: RepositoryChange,
+    area: ChangeArea,
+    openConflict?: boolean,
+  ) => Promise<void>;
+  retryDiff: () => Promise<void>;
   selectCommit: (oid: string) => Promise<void>;
   jumpToCommit: (oid: string) => Promise<void>;
   clear: () => void;
@@ -66,7 +77,12 @@ export interface RepositoryReadState extends HistoryWindow {
 
   commit: (
     message: string,
-    options?: { amend?: boolean; signOff?: boolean; stagePaths?: string[] },
+    options?: {
+      amend?: boolean;
+      skipCommitHooks?: boolean;
+      signOff?: boolean;
+      stagePaths?: string[];
+    },
   ) => Promise<boolean>;
 
   writing: boolean;

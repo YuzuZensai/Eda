@@ -1,6 +1,6 @@
 import type { TransportCredentials } from "@shared/integrations/remotes";
 import { t } from "@shared/i18n";
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Button, Dialog, NoticeBanner } from "../../components/ui/index";
 import { CredentialFields } from "./TransportFields";
 
@@ -12,7 +12,11 @@ export function HttpsAuthenticationDialog({
   busy,
   onClose,
   onSubmit,
+  children,
+  shortLabels = false,
 }: {
+  children?: ReactNode;
+  shortLabels?: boolean;
   title: string;
   description: string;
   submitLabel: string;
@@ -54,8 +58,14 @@ export function HttpsAuthenticationDialog({
         }}
       >
         {error && <NoticeBanner tone="error">{error}</NoticeBanner>}
-        <CredentialFields value={credentials} onChange={setCredentials} disabled={busy} />
+        <CredentialFields
+          shortLabels={shortLabels}
+          value={credentials}
+          onChange={setCredentials}
+          disabled={busy}
+        />
       </form>
+      {children}
     </Dialog>
   );
 }

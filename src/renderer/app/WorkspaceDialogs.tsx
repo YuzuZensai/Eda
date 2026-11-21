@@ -1,3 +1,5 @@
+import { WorktreesDialog } from "../features/repositories/WorktreesDialog";
+import { useAppStore } from "../stores/app-store";
 import type { ComponentType } from "react";
 import { DiscardDialog } from "../features/changes/DiscardDialog";
 import {
@@ -24,8 +26,14 @@ const DIALOGS: Partial<Record<CommandDialog["kind"], ComponentType<DialogProps>>
 };
 
 export function WorkspaceDialogs({ command, ...props }: DialogProps & { command: CommandDialog }) {
+  const repository = useAppStore((s) =>
+    command.kind === "repository.worktrees"
+      ? s.repositories.find((r) => r.id === props.repositoryId)
+      : undefined,
+  );
+  if (repository) return <WorktreesDialog repository={repository} onClose={props.onClose} />;
   const Content = DIALOGS[command.kind];
-  if (Content) return <Content {...props} />;
+  if (Content) return <Content key={props.repositoryId} {...props} />;
 
   if (command.kind === "repository.recovery") return <DiscardDialog {...props} paths={null} />;
 

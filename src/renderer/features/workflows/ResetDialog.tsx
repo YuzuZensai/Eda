@@ -1,8 +1,7 @@
 import { Localized } from "@renderer/i18n/Localized";
-import { errorMessage } from "@shared/errors";
 import { getLocale, t } from "@shared/i18n";
-import type { ResetMode, ResetResult, ResetReview } from "@shared/workflows/reset";
-import { useEffect, useState } from "react";
+import type { ResetMode, ResetResult } from "@shared/workflows/reset";
+import { useCallback, useEffect, useState } from "react";
 import {
   Button,
   Checkbox,
@@ -13,7 +12,7 @@ import {
   ReviewActions,
   Select,
 } from "../../components/ui/index";
-import { useRepositoryStore } from "../../stores/repository-store";
+import { useReviewedOperation } from "../../repository/hooks/useReviewedOperation";
 
 export function ResetDialog({
   repositoryId,
@@ -25,51 +24,23 @@ export function ResetDialog({
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<ResetMode>("soft");
-  const [review, setReview] = useState<ResetReview | null>(null);
   const [result, setResult] = useState<ResetResult | null>(null);
-  const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const inspect = useCallback(
+    () => window.eda.reset.prepare(repositoryId, target, mode),
+    [repositoryId, target, mode],
+  );
+  const {
+    preview: review,
+    busy,
+    preparing,
+    error,
+    setError,
+    review: prepare,
+    execute,
+  } = useReviewedOperation(repositoryId, inspect);
 
-  const prepare = async () => {
-    setBusy(true);
-    setReview(null);
-    setConfirmed(false);
-    setError(null);
-
-    try {
-      const response = await window.eda.reset.prepare(repositoryId, target, mode);
-      if (response.ok) setReview(response.value);
-      else setError(errorMessage(response.error));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    void prepare();
-  }, [repositoryId, target, mode]);
-
-  const execute = async () => {
-    if (!review) return;
-
-    setBusy(true);
-    setError(null);
-
-    try {
-      const response = await window.eda.reset.execute(repositoryId, review.token);
-
-      await useRepositoryStore.getState().syncFromDisk();
-
-      if (response.ok) setResult(response.value);
-      else {
-        setError(errorMessage(response.error));
-        setConfirmed(false);
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
+  useEffect(() => setConfirmed(false), [review]);
 
   return (
     <Dialog
@@ -83,10 +54,16 @@ export function ResetDialog({
           <Button onClick={onClose}>{t("common.close")}</Button>
         ) : (
           <ReviewActions
+            preparing={preparing}
             busy={busy}
             onClose={onClose}
             onReview={() => void prepare()}
-            onConfirm={() => void execute()}
+            onConfirm={() =>
+              void execute(
+                (preview) => window.eda.reset.execute(repositoryId, preview.token),
+                setResult,
+              )
+            }
             confirmLabel={t("resetDialog.reset", { mode: mode })}
             confirmDisabled={!review || !confirmed}
             confirmVariant={mode === "hard" ? "danger" : "primary"}

@@ -46,6 +46,10 @@ export function registerGitLabHandlers(services: Services): void {
     return ok(undefined);
   });
 
+  handle(IPC_CHANNELS.gitlabSelectAccount, async (_event, profile, account) =>
+    work(profile, (id) => gitlab.selectAccount(id, requireId(account))),
+  );
+
   handle(IPC_CHANNELS.gitlabDisconnect, async (_event, profile) =>
     work(profile, (id) => gitlab.disconnect(id)),
   );

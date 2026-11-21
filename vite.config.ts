@@ -9,7 +9,12 @@ import { DEVELOPMENT_RESTART } from "./src/shared/application.ts";
 import type { ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { prepareGit } from "./scripts/prepare-git.ts";
-import { electronStderr, readBuildInfo, prepareComponentInventory } from "./scripts/build.ts";
+import {
+  compactMessageCatalogs,
+  electronStderr,
+  readBuildInfo,
+  prepareComponentInventory,
+} from "./scripts/build.ts";
 
 const resolve = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -33,10 +38,13 @@ export default defineConfig(async ({ command }) => {
       alias: {
         "@shared": resolve("./src/shared"),
         "@renderer": resolve("./src/renderer"),
+        "@eda/react/jsx-runtime": resolve("./scripts/react-jsx-runtime.ts"),
+        "@eda/react": "react",
       },
     },
     plugins: [
-      react(),
+      compactMessageCatalogs(),
+      react({ jsxImportSource: command === "build" ? "@eda/react" : "react" }),
       tailwindcss(),
       electron({
         main: {
@@ -77,7 +85,7 @@ export default defineConfig(async ({ command }) => {
               minify: command === "build",
               outDir: resolve("./dist/main"),
               rolldownOptions: {
-                external: ["electron", "velopack", "node:sqlite"],
+                external: ["electron", "velopack", "node-pty", "@xterm/headless", "node:sqlite"],
                 output: { minify: command === "build" },
               },
             },

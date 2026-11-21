@@ -1,10 +1,14 @@
 import { errorMessage } from "@shared/errors";
 import { getLocale, t } from "@shared/i18n";
-import type { ImagePreview, ImagePreviewVersion } from "@shared/repository/image-preview";
+import {
+  isImagePath,
+  type ImagePreview,
+  type ImagePreviewVersion,
+} from "@shared/repository/image-preview";
 import type { FileDiff, UnifiedDiff } from "@shared/repository/repository-read";
 import { useEffect, useState } from "react";
 import { LoadingContent } from "../../components/ui/feedback/Skeleton";
-import { ErrorDialog, SegmentedControl, StateMessage, TextButton } from "../../components/ui/index";
+import { SegmentedControl, StateMessage, TextButton } from "../../components/ui/index";
 import { useRepositoryStore } from "../../stores/repository-store";
 
 export function ImageDiff({ file, revision }: { file: FileDiff; revision: UnifiedDiff }) {
@@ -16,6 +20,7 @@ export function ImageDiff({ file, revision }: { file: FileDiff; revision: Unifie
     selection?.kind === "commit" ? "commit" : selection?.area === "staged" ? "staged" : "working";
   const oid = selection?.kind === "commit" ? selection.oid : null;
   const path = file.newPath ?? file.oldPath!;
+  const imagePath = isImagePath(path);
   const oldPath = file.oldPath;
   const owner = JSON.stringify([identityId, generation, repositoryId, kind, oid, oldPath, path]);
   const [result, setResult] = useState<{
@@ -47,6 +52,9 @@ export function ImageDiff({ file, revision }: { file: FileDiff; revision: Unifie
         setResult(
           result.ok ? { owner, value: result.value } : { owner, error: errorMessage(result.error) },
         );
+      })
+      .catch((error) => {
+        if (alive) setResult({ owner, error: errorMessage(error) });
       });
 
     return () => {
@@ -69,20 +77,26 @@ export function ImageDiff({ file, revision }: { file: FileDiff; revision: Unifie
         ? t("diff.imageDiff.index")
         : t("diff.imageDiff.commit");
 
-  if (!current) return <LoadingContent label={t("diff.imageDiff.loadingImagePreview")} />;
+  if (!current)
+    return (
+      <LoadingContent
+        label={t(imagePath ? "diff.imageDiff.loadingImagePreview" : "diff.binary.loading")}
+      />
+    );
 
   if (!preview)
     return (
-      <ErrorDialog
-        title={t("diff.imageDiff.couldNotLoadImage")}
-        actions={
+      <StateMessage
+        className="min-h-0 flex-1"
+        tone="error"
+        description={current.error}
+        title={t(imagePath ? "diff.imageDiff.couldNotLoadImage" : "diff.binary.failed")}
+        action={
           <TextButton onClick={() => setRetry((value) => value + 1)}>
-            {t("diff.imageDiff.retryImagePreview")}
+            {t(imagePath ? "diff.imageDiff.retryImagePreview" : "common.retry")}
           </TextButton>
         }
-      >
-        {current.error}
-      </ErrorDialog>
+      />
     );
 
   const before =
@@ -92,12 +106,12 @@ export function ImageDiff({ file, revision }: { file: FileDiff; revision: Unifie
 
   return (
     <section
-      aria-label={t("diff.imageDiff.imagePreview")}
+      aria-label={t(imagePath ? "diff.imageDiff.imagePreview" : "diff.binary.details")}
       className="@container flex min-h-0 flex-1 flex-col"
     >
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border-subtle px-3 py-2">
         <SegmentedControl
-          label={t("diff.imageDiff.imageVersions")}
+          label={t(imagePath ? "diff.imageDiff.imageVersions" : "diff.binary.versions")}
           value={view}
           options={[
             { value: "compare", label: t("diff.imageDiff.compare") },
@@ -106,13 +120,15 @@ export function ImageDiff({ file, revision }: { file: FileDiff; revision: Unifie
           ]}
           onChange={setView}
         />
-        <TextButton
-          className="ml-auto"
-          onClick={() => setActualSize((value) => !value)}
-          aria-pressed={actualSize}
-        >
-          {actualSize ? t("diff.imageDiff.fitImage") : t("diff.imageDiff.actualSize")}
-        </TextButton>
+        {(preview.before.kind === "image" || preview.after.kind === "image") && (
+          <TextButton
+            className="ml-auto"
+            onClick={() => setActualSize((value) => !value)}
+            aria-pressed={actualSize}
+          >
+            {actualSize ? t("diff.imageDiff.fitImage") : t("diff.imageDiff.actualSize")}
+          </TextButton>
+        )}
       </div>
       <div
         className={`grid min-h-0 flex-1 overflow-auto ${before && after ? "grid-cols-1 @2xl:grid-cols-2" : "grid-cols-1"}`}
@@ -159,6 +175,12 @@ function ImageVersion({
         <span className="min-w-0 flex-1 truncate" title={version.path}>
           {version.path}
         </span>
+        {(version.kind === "binary" || version.kind === "unavailable") &&
+          version.bytes !== undefined && (
+            <span>
+              {t("diff.binary.bytes", { bytes: version.bytes.toLocaleString(getLocale()) })}
+            </span>
+          )}
         {version.kind === "image" && (
           <span>
             {t("diff.imageDiff.kB", {
@@ -206,9 +228,11 @@ function ImageVersion({
           title={
             version.kind === "missing"
               ? t("diff.imageDiff.fileNotPresent")
-              : version.kind === "unavailable"
-                ? version.reason
-                : t("diff.imageDiff.imageCouldNotBeDecoded")
+              : version.kind === "binary"
+                ? t("diffModel.binaryFileChangedNoTextPreview")
+                : version.kind === "unavailable"
+                  ? version.reason
+                  : t("diff.imageDiff.imageCouldNotBeDecoded")
           }
         />
       )}

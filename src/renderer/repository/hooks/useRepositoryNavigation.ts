@@ -9,12 +9,20 @@ import { useRepositoryStore } from "../../stores/repository-store";
 export async function showOpenedRepository(
   repository: RepositorySummary,
   owner: string,
+  fromRepositoryId?: string,
 ): Promise<boolean> {
-  if (useAppStore.getState().activeIdentity?.id !== owner) return false;
+  const ownsNavigation = () => {
+    const app = useAppStore.getState();
+    return (
+      app.activeIdentity?.id === owner &&
+      (!fromRepositoryId || app.selectedRepositoryId === fromRepositoryId)
+    );
+  };
+  if (!ownsNavigation()) return false;
 
   await useAppStore.getState().refreshRepositories();
 
-  if (useAppStore.getState().activeIdentity?.id !== owner) return false;
+  if (!ownsNavigation()) return false;
 
   useAppStore.getState().selectRepository(repository.id);
   await useRepositoryStore.getState().open(repository.id, owner, true);

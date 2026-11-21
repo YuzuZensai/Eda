@@ -3,7 +3,7 @@ import { ok } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { IPC_CHANNELS } from "@shared/ipc";
 import type { Services } from "../../services";
-import { invalidRequest } from "../request-errors";
+import { invalidRequest } from "../../request-errors";
 import { handle, withRepositoryChange } from "../transport";
 import { requireId, requireRecord, requireString } from "../validate";
 

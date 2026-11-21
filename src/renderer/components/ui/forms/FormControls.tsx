@@ -4,7 +4,7 @@ import {
   Fragment,
   isValidElement,
   type ReactNode,
-  type TextareaHTMLAttributes,
+  type ComponentPropsWithRef,
 } from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { CheckIcon as Check, ChevronDownIcon as ChevronDown } from "../icons";
@@ -149,7 +149,7 @@ export function Select({
   );
 }
 
-export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+export interface TextareaProps extends ComponentPropsWithRef<"textarea"> {
   surface?: ControlSurface;
   invalid?: boolean;
 }

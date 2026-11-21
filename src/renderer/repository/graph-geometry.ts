@@ -24,7 +24,8 @@ export function edgePath(segment: DagSegment, commitLane: number, center: number
 
   if (segment.incoming) return `M ${to} 0 L ${to} ${center}`;
 
+  const height = center * 2;
   const startY = segment.fromLane === commitLane ? center : 0;
 
-  return `M ${from} ${startY} C ${from} ${(startY + ROW_HEIGHT) / 2}, ${to} ${(startY + ROW_HEIGHT) / 2}, ${to} ${ROW_HEIGHT}`;
+  return `M ${from} ${startY} C ${from} ${(startY + height) / 2}, ${to} ${(startY + height) / 2}, ${to} ${height}`;
 }

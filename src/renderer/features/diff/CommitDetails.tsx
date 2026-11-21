@@ -9,6 +9,7 @@ import {
 } from "@shared/repository/repository-read";
 import {
   ChevronRightIcon as ChevronRight,
+  DiffIcon,
   RefreshIcon as RefreshCw,
 } from "../../components/ui/icons";
 import { useId, useState, type ReactNode } from "react";
@@ -38,6 +39,7 @@ export function CommitDetails({
   commit,
   inspection,
   onSelectParent,
+  onCompareParent,
   onVerify,
   verifying = false,
   repositoryId,
@@ -45,6 +47,7 @@ export function CommitDetails({
   commit: HistoryCommit;
   inspection: CommitInspection | null;
   onSelectParent: (oid: string) => void;
+  onCompareParent?: (oid: string) => void;
   onVerify?: () => void;
   verifying?: boolean;
   repositoryId?: string;
@@ -258,21 +261,37 @@ export function CommitDetails({
             label={t("diff.commitDetails.parents")}
             className="flex min-w-0 flex-wrap gap-1.5"
           >
-            {commit.parents.map((oid, index) => (
-              <TextButton
-                key={oid}
-                className="mono border border-border-default bg-bg-raised px-1.5"
-                tone="accent"
-                title={oid}
-                aria-label={t("diff.commitDetails.parent", {
-                  value1: index + 1,
-                  oid: oid.slice(0, 8),
-                })}
-                onClick={() => onSelectParent(oid)}
-              >
-                {oid.slice(0, 8)}
-              </TextButton>
-            ))}
+            {commit.parents.map((oid, index) => {
+              const compareLabel = t("comparison.withParent", {
+                number: index + 1,
+                oid: oid.slice(0, 8),
+              });
+              return (
+                <span key={oid} className="inline-flex items-center gap-0.5">
+                  <TextButton
+                    className="mono border border-border-default bg-bg-raised px-1.5"
+                    tone="accent"
+                    title={oid}
+                    aria-label={t("diff.commitDetails.parent", {
+                      value1: index + 1,
+                      oid: oid.slice(0, 8),
+                    })}
+                    onClick={() => onSelectParent(oid)}
+                  >
+                    {oid.slice(0, 8)}
+                  </TextButton>
+                  {commit.parents.length > 1 && onCompareParent && (
+                    <IconButton
+                      size="xs"
+                      icon={<DiffIcon />}
+                      title={compareLabel}
+                      aria-label={compareLabel}
+                      onClick={() => onCompareParent(oid)}
+                    />
+                  )}
+                </span>
+              );
+            })}
 
             {!commit.parents.length && (
               <span>

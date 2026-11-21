@@ -1,6 +1,11 @@
-import { mkdir, rename, symlink, unlink, writeFile } from "node:fs/promises";
+import { access, readFile, mkdir, rename, symlink, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { readImagePreview, MAX_IMAGE_BYTES } from "@main/repo/working-tree/image-preview";
+import {
+  readDiffToolFiles,
+  readImagePreview,
+  MAX_IMAGE_BYTES,
+} from "@main/repo/working-tree/image-preview";
+import { runExternalDiff } from "@main/git/operations/external-diff";
 import { createTempRepo } from "../../../helpers/temp-repo";
 import { tinyPng, pngVersion } from "../../../fixtures/images";
 
@@ -59,6 +64,43 @@ it("reads independent working, index and immutable commit images through additio
     expect(
       await readImagePreview(repo.git, repo.path, { ...request, kind: "commit", oid: original }),
     ).toMatchObject({ before: { kind: "missing" }, after: { dataUrl: data(tinyPng) } });
+    for (const [kind, expected] of [
+      ["working", [pngVersion("index"), pngVersion("working")]],
+      ["staged", [tinyPng, pngVersion("index")]],
+      ["commit", [Buffer.alloc(0), tinyPng]],
+    ] as const) {
+      const files = await readDiffToolFiles(repo.git, repo.path, {
+        ...request,
+        kind,
+        oid: original,
+      });
+      let temp = "";
+      await runExternalDiff(
+        {
+          run: async ({ args, cwd }) => {
+            temp = cwd!;
+            expect(temp).not.toBe(repo.path);
+            expect(args.slice(0, 2)).toEqual(["--compare", "literal argument"]);
+            expect(await Promise.all(args.slice(2).map((file) => readFile(file)))).toEqual([
+              expected[1],
+              expected[0],
+            ]);
+            return {
+              exitCode: 1,
+              stdout: Buffer.alloc(0),
+              stderr: Buffer.alloc(0),
+              cancelled: false,
+            };
+          },
+        },
+        "fixture-viewer",
+        files,
+        () => {},
+        undefined,
+        ["--compare", "literal argument", "{after}", "{before}"],
+      );
+      await expect(access(temp)).rejects.toMatchObject({ code: "ENOENT" });
+    }
     expect(await snapshot()).toEqual(before);
 
     await repo.run(["commit", "-m", "Staged image"]);
@@ -110,17 +152,29 @@ it("bounds binary reads, identifies LFS pointers and refuses metadata, traversal
   try {
     await writeFile(
       join(repo.path, "pointer.png"),
-      "version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 100\n",
+      "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a".repeat(64) + "\nsize 100\n",
     );
     await writeFile(join(repo.path, "large.png"), Buffer.alloc(MAX_IMAGE_BYTES + 1));
     await writeFile(join(repo.path, "unsupported.png"), "not an image");
+    await writeFile(join(repo.path, "payload.bin"), Buffer.from([0, 7]));
     await repo.commit("Binary boundaries");
+    await writeFile(join(repo.path, "payload.bin"), Buffer.alloc(MAX_IMAGE_BYTES + 2));
+    expect(
+      await readImagePreview(repo.git, repo.path, { ...request, path: "payload.bin" }),
+    ).toEqual({
+      before: { kind: "binary", path: "payload.bin", bytes: 2 },
+      after: { kind: "binary", path: "payload.bin", bytes: MAX_IMAGE_BYTES + 2 },
+    });
 
     const oid = (await repo.run(["rev-parse", "HEAD"])).trim();
 
     expect(
       (await readImagePreview(repo.git, repo.path, { ...request, path: "pointer.png" })).after,
-    ).toMatchObject({ kind: "unavailable", reason: expect.stringContaining("LFS pointer") });
+    ).toMatchObject({
+      kind: "unavailable",
+      bytes: 100,
+      reason: expect.stringContaining("sha256:" + "a".repeat(64)),
+    });
     expect(
       (await readImagePreview(repo.git, repo.path, { ...request, path: "large.png" })).after,
     ).toMatchObject({ kind: "unavailable", bytes: MAX_IMAGE_BYTES + 1 });

@@ -3,7 +3,7 @@ import type { Services } from "../services";
 import { errorText } from "@shared/error-codes";
 import { t, type MessageKey } from "@shared/i18n";
 import type { IdentityManager } from "../identity/identity-manager";
-import { invalidRequest, missingIdentity } from "./request-errors";
+import { invalidRequest, missingIdentity } from "../request-errors";
 import { requireId } from "./validate";
 
 export function captureProfile(identity: IdentityManager, rawId?: unknown) {

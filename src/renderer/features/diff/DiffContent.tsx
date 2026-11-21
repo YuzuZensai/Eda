@@ -3,7 +3,12 @@ import { t, getLocale } from "@shared/i18n";
 import { useMemo, useState } from "react";
 import { ArrowDownIcon as ArrowDown, ArrowUpIcon as ArrowUp } from "../../components/ui/icons";
 
-import { type UnifiedRow, toSideBySideRows, toUnifiedRows } from "../../repository/diff-model";
+import {
+  type UnifiedRow,
+  groupUnchangedRows,
+  toSideBySideRows,
+  toUnifiedRows,
+} from "../../repository/diff-model";
 import { diffSearchMatches } from "../../repository/diff-search";
 
 import { useRepositoryStore } from "../../stores/repository-store";
@@ -16,10 +21,14 @@ export function DiffContent({
   diff,
   mode,
   readOnly = false,
+  wrap = false,
+  groupContext = false,
 }: {
   diff: UnifiedDiff;
   mode: DiffMode;
   readOnly?: boolean;
+  wrap?: boolean;
+  groupContext?: boolean;
 }) {
   const selectionKey = useRepositoryStore(
     (state) =>
@@ -28,9 +37,19 @@ export function DiffContent({
   const [query, setQuery] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ReadonlyMap<number, boolean>>(() => new Map());
-  const unified = useMemo(() => toUnifiedRows(diff, expanded), [diff, expanded]);
-  const split = useMemo(() => (mode === "split" ? toSideBySideRows(unified) : []), [mode, unified]);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleRegion = (key: string) =>
+    setCollapsed((previous) => {
+      const next = new Set(previous);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
   const searching = query.length > 0;
+  const unified = useMemo(() => {
+    const rows = toUnifiedRows(diff, expanded);
+    return groupContext && !searching ? groupUnchangedRows(rows, collapsed) : rows;
+  }, [diff, expanded, groupContext, searching, collapsed]);
+  const split = useMemo(() => (mode === "split" ? toSideBySideRows(unified) : []), [mode, unified]);
   const searchEntries = useMemo(() => {
     if (!searching) return [];
 
@@ -173,6 +192,8 @@ export function DiffContent({
           items={unified}
           revealIndex={position >= 0 ? position : undefined}
           rowHeight={DIFF_ROW_HEIGHT}
+          measureRows={wrap}
+          horizontalScroll={!wrap}
           className="min-h-0 flex-1 selectable mono text-xs"
           renderRow={(row, index) =>
             row.kind === "file" || row.kind === "notice" ? (
@@ -180,11 +201,18 @@ export function DiffContent({
                 key={row.key}
                 row={row}
                 onToggle={toggle}
+                onToggleRegion={toggleRegion}
                 query={query}
                 active={index === position}
               />
             ) : (
-              <UnifiedDiffRow key={row.key} row={row} query={query} active={index === position} />
+              <UnifiedDiffRow
+                wrap={wrap}
+                key={row.key}
+                row={row}
+                query={query}
+                active={index === position}
+              />
             )
           }
         />
@@ -195,6 +223,8 @@ export function DiffContent({
           items={split}
           revealIndex={position >= 0 ? position : undefined}
           rowHeight={DIFF_ROW_HEIGHT}
+          measureRows={wrap}
+          horizontalScroll={!wrap}
           className="min-h-0 flex-1 selectable mono text-xs"
           renderRow={(row, index) =>
             row.left?.kind === "file" || row.left?.kind === "notice" ? (
@@ -202,11 +232,13 @@ export function DiffContent({
                 key={row.key}
                 row={row.left}
                 onToggle={toggle}
+                onToggleRegion={toggleRegion}
                 query={query}
                 active={index === position}
               />
             ) : row.left?.kind === "hunk" ? (
               <UnifiedDiffRow
+                wrap={wrap}
                 key={row.key}
                 row={row.left}
                 query={query}
@@ -216,10 +248,22 @@ export function DiffContent({
               <div
                 key={row.key}
                 className="grid w-full grid-cols-2"
-                style={{ height: DIFF_ROW_HEIGHT }}
+                style={wrap ? { minHeight: DIFF_ROW_HEIGHT } : { height: DIFF_ROW_HEIGHT }}
               >
-                <DiffCell row={row.left} side="old" query={query} active={index === position} />
-                <DiffCell row={row.right} side="new" query={query} active={index === position} />
+                <DiffCell
+                  wrap={wrap}
+                  row={row.left}
+                  side="old"
+                  query={query}
+                  active={index === position}
+                />
+                <DiffCell
+                  wrap={wrap}
+                  row={row.right}
+                  side="new"
+                  query={query}
+                  active={index === position}
+                />
               </div>
             )
           }

@@ -2,6 +2,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { emptySession, emptyView } from "@shared/identity/profile-session";
 import { defaultGraphFilter, isGraphFilter } from "@shared/preferences/graph-view";
+import { GraphFilterDialog } from "@renderer/features/history/GraphFilterDialog";
+import { deferred } from "../../../helpers/deferred";
+import { ok } from "@shared/errors";
 import { GraphVisibilityMenu } from "@renderer/features/history/GraphVisibilityMenu";
 import { useSessionStore } from "@renderer/stores/session-store";
 import { usePreferencesStore } from "@renderer/stores/preferences-store";
@@ -128,4 +131,52 @@ it("keeps detailed filters and global settings reachable from the same menu", as
   await click("All branches...");
   await click("Global history settings...");
   expect(useShellStore.getState().request).toEqual({ kind: "settings", section: "global-git" });
+});
+
+it("keeps a saved pin while references load or fail and applies its refreshed commit after retry", async () => {
+  const { snapshot } = useSessionStore.getState();
+  const pinnedRef = "refs/heads/main";
+  const pinnedOid = "1".repeat(40);
+  const nextOid = "2".repeat(40);
+  useSessionStore.setState({
+    snapshot: {
+      ...snapshot!,
+      session: {
+        ...snapshot!.session,
+        views: {
+          repo: {
+            ...emptyView(),
+            graphFilter: { ...defaultGraphFilter(), pinnedRef, pinnedOid },
+          },
+        },
+      },
+    },
+  });
+  const pending = deferred<void>();
+  vi.stubGlobal("eda", {
+    repository: {
+      listBranches: vi
+        .fn()
+        .mockReturnValueOnce(
+          pending.promise.then(() => {
+            throw new Error("Read failed");
+          }),
+        )
+        .mockResolvedValueOnce(ok([{ name: "main", oid: nextOid, remote: false, isHead: true }])),
+      listTags: vi.fn().mockResolvedValue(ok([])),
+    },
+  });
+  await act(async () => root.render(<GraphFilterDialog repositoryId="repo" onClose={() => {}} />));
+  const apply = [...document.querySelectorAll("button")].find(
+    (button) => button.textContent === "Apply graph view",
+  )!;
+  expect(apply.disabled).toBe(true);
+  await act(async () => pending.resolve());
+  expect(apply.disabled).toBe(true);
+  expect(setView).not.toHaveBeenCalled();
+  await click("Retry");
+  await act(async () => apply.click());
+  expect(setView).toHaveBeenCalledWith("repo", {
+    graphFilter: expect.objectContaining({ pinnedRef, pinnedOid: nextOid }),
+  });
 });

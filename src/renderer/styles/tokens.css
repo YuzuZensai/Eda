@@ -199,3 +199,12 @@
   --text-tertiary: #bdccdf;
   --text-inverse: #2e3440;
 }
+
+@media (prefers-contrast: more) {
+  :root[data-theme] {
+    --text-secondary: var(--text-primary);
+    --text-tertiary: var(--text-primary);
+    --border-default: var(--text-primary);
+    --border-subtle: var(--text-primary);
+  }
+}

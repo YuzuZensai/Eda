@@ -11,6 +11,7 @@ import { useTransportOperation } from "./useTransportOperation";
 
 export interface FetchOptions {
   allTags?: boolean;
+  deepen?: number | "all";
   tag?: string;
 }
 
@@ -77,6 +78,7 @@ export function useDirectFetch(repositoryId: string) {
         const result = await window.eda.remotes.fetch({
           repositoryId,
           remote: destination.name,
+          ...(options.deepen !== undefined && { deepen: options.deepen }),
           prune: !options.tag && prune.value.value,
           tags: !options.tag && (options.allTags ?? tags.value.value),
           ...(options.tag !== undefined ? { tag: options.tag } : {}),

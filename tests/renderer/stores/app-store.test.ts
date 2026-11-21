@@ -96,6 +96,27 @@ describe("repository tabs", () => {
     expect(useAppStore.getState().openTabsByIdentity["work"]).toEqual(["b"]);
   });
 
+  it("waits for a newer membership refresh before opening a just-cloned repository", async () => {
+    const owner = identity("work");
+    useAppStore.setState({ activeIdentity: owner });
+    install(owner, []);
+    const first = deferred<Result<RepositorySummary[]>>(),
+      latest = deferred<Result<RepositorySummary[]>>();
+    vi.spyOn(window.eda.repository, "list")
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(latest.promise);
+    const cloneNavigation = useAppStore
+      .getState()
+      .refreshRepositories()
+      .then(() => useAppStore.getState().selectRepository("cloned"));
+    const notification = useAppStore.getState().refreshRepositories();
+    first.resolve(ok([]));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    latest.resolve(ok([repo("existing"), repo("cloned")]));
+    await Promise.all([cloneNavigation, notification]);
+    expect(useAppStore.getState().selectedRepositoryId).toBe("cloned");
+  });
+
   it("opens a tab when a repository is selected and does not duplicate it", () => {
     useAppStore.setState({
       activeIdentity: identity("work"),
@@ -107,6 +128,17 @@ describe("repository tabs", () => {
 
     expect(useAppStore.getState().openTabsByIdentity["work"]).toEqual(["a", "b"]);
     expect(useAppStore.getState().selectedRepositoryId).toBe("a");
+  });
+
+  it("opens available collection members in background tabs and keeps Home selected", () => {
+    useAppStore.setState({
+      activeIdentity: identity("work"),
+      repositories: [repo("a"), repo("b"), { ...repo("c"), available: false }],
+    });
+    for (const id of ["a", "c", "b", "foreign", "a"])
+      useAppStore.getState().selectRepository(id, true);
+    expect(useAppStore.getState().openTabsByIdentity["work"]).toEqual(["a", "b"]);
+    expect(useAppStore.getState().selectedRepositoryId).toBeNull();
   });
 
   it("keeps each identity tab set separate", () => {

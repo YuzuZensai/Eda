@@ -10,6 +10,7 @@ import {
   TagIcon as Tag,
 } from "../../components/ui/icons";
 import { useRef, useState } from "react";
+import { useRepositoryStore } from "../../stores/repository-store";
 import { openSettings } from "../../stores/shell-store";
 import { Button, ErrorDialog, MenuItem, AnchoredPopover } from "../../components/ui/index";
 import { GitHubSignInDialog } from "../connections/GitHubSignInDialog";
@@ -24,6 +25,9 @@ export function DirectFetchActions({
   disabled: boolean;
   onBusyChange: (busy: boolean) => void;
 }) {
+  const shallow = useRepositoryStore(
+    (state) => state.repositoryId === repositoryId && state.status?.capabilities?.shallow,
+  );
   const action = useDirectFetch(repositoryId);
   const [menu, setMenu] = useState(false);
   const [showError, setShowError] = useState(false);
@@ -97,6 +101,18 @@ export function DirectFetchActions({
             onClose={() => setMenu(false)}
             className="w-56 p-1"
           >
+            {shallow &&
+              ([100, "all"] as const).map((deepen) => (
+                <MenuItem
+                  key={deepen}
+                  onClick={() => {
+                    setMenu(false);
+                    void fetch(undefined, undefined, { deepen });
+                  }}
+                >
+                  {t(deepen === "all" ? "shallow.unshallow" : "shallow.deepen")}
+                </MenuItem>
+              ))}
             {action.remotes.map((remote) => (
               <MenuItem
                 key={remote.name}

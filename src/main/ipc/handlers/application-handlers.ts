@@ -1,18 +1,18 @@
+import { workingFilePath } from "../../filesystem/working-file-path";
+import { lstat } from "node:fs/promises";
 import { ERROR_CODE, errorText } from "@shared/error-codes";
 import { AppError, ok } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { IPC_CHANNELS, IPC_EVENTS } from "@shared/ipc";
-import { app, BrowserWindow, clipboard, dialog } from "electron";
+import { app, BrowserWindow, clipboard, dialog, shell } from "electron";
 import { detectEditors } from "../../application/detect-editors";
 import { detectMergeTools } from "../../application/detect-merge-tools";
 import { graphicsStatus } from "../../application/graphics";
 import { applyWindowZoom } from "../../application/window-zoom";
-import { buildGitEnvironment } from "../../git/execution/environment";
-import { NodeProcessRunner } from "../../git/execution/node-process-runner";
 import type { Services } from "../../services";
 import { showOpenDialog } from "../dialogs";
-import { invalidRequest } from "../request-errors";
-import { broadcast, exclusivelyReset, handle } from "../transport";
+import { invalidRequest } from "../../request-errors";
+import { broadcast, exclusivelyReset, handle, withRepositoryChange } from "../transport";
 import { requireId, requireString } from "../validate";
 
 export function registerApplicationHandlers(services: Services): void {
@@ -99,6 +99,7 @@ export function registerApplicationHandlers(services: Services): void {
       if (response === 1 && !window.isDestroyed() && !event.sender.isDestroyed()) {
         await exclusivelyReset(async () => {
           await services.resetData();
+          services.terminals.dispose();
           await event.sender.session.clearStorageData();
           await event.sender.session.clearCache();
           services.navigation.take();
@@ -161,9 +162,17 @@ export function registerApplicationHandlers(services: Services): void {
     return ok(result.canceled ? null : (result.filePaths[0] ?? null));
   });
 
-  handle(IPC_CHANNELS.appChooseEditor, async (event) => {
+  handle(IPC_CHANNELS.appChooseEditor, async (event, kind) => {
     const result = await showOpenDialog(event, {
-      title: t("main.applicationHandlers.chooseEditorExecutable"),
+      title: t(
+        kind === "git" || kind === "ssh" || kind === "gpg"
+          ? "settings.tools.select"
+          : kind === "diff"
+            ? "externalDiff.choose"
+            : kind === "terminal"
+              ? "worktrees.chooseTerminal"
+              : "main.applicationHandlers.chooseEditorExecutable",
+      ),
       properties: ["openFile"],
       ...(process.platform === "win32"
         ? { filters: [{ name: t("main.fileFilters.application"), extensions: ["exe"] }] }
@@ -173,30 +182,51 @@ export function registerApplicationHandlers(services: Services): void {
     return ok(result.canceled ? null : (result.filePaths[0] ?? null));
   });
 
+  handle(IPC_CHANNELS.repositoryWorkingFile, async (_e, rawId, rawPath, action) => {
+    const id = requireId(rawId);
+    const path = requireString(rawPath, t("workingFile.path"));
+    if (action === "create" || action === "delete") {
+      await withRepositoryChange(id, () =>
+        services.writer.changeWorkingFile(
+          id,
+          path,
+          action === "delete" ? (target) => shell.trashItem(target) : undefined,
+        ),
+      );
+    } else {
+      const repository = services.repositories.resolveActiveRepository(id);
+      const target = await workingFilePath(repository.path, path, t("workingFile.title"));
+      if (!(await lstat(target)).isFile()) throw invalidRequest(errorText("workingFile.invalid"));
+      services.repositories.assertCurrentRepository(repository);
+      if (action === "editor")
+        await services.externalTools.openEditor(repository.path, repository.identityId, target);
+      else if (action === "reveal") shell.showItemInFolder(target);
+      else throw invalidRequest(errorText("workingFile.invalid"));
+    }
+    return ok(undefined);
+  });
   handle(IPC_CHANNELS.repositoryOpenEditor, async (_event, rawId) => {
     const repository = services.repositories.resolveActiveRepository(requireId(rawId));
-    const editor = services.preferences.resolve("editorExecutable", {
-      profileId: repository.identityId,
-    }).value;
+    await services.externalTools.openEditor(repository.path, repository.identityId);
+    return ok(undefined);
+  });
 
-    if (!editor)
-      throw invalidRequest(
-        errorText("main.applicationHandlers.chooseAnEditorExecutableInApplicationSettingsFirst"),
-      );
-
-    try {
-      await new NodeProcessRunner().launch(
-        editor,
-        [repository.path],
-        repository.path,
-        buildGitEnvironment(),
-      );
-    } catch {
-      throw invalidRequest(
-        errorText("main.applicationHandlers.theConfiguredEditorCouldNotStartChooseIts"),
-      );
-    }
-
+  handle(IPC_CHANNELS.repositoryOpenWorktreeTool, async (_event, rawId, path, tool) => {
+    const id = requireId(rawId);
+    const entries = await services.repositoryReader.worktrees(id, false);
+    const entry = entries.find(
+      (candidate) => candidate.path === path && candidate.available && !candidate.bare,
+    );
+    if (!entry) throw invalidRequest(errorText("worktrees.unavailable"));
+    const repository = services.repositories.resolveActiveRepository(id);
+    if (tool === "folder") {
+      if (await shell.openPath(entry.path))
+        throw invalidRequest(errorText("worktrees.unavailable"));
+    } else if (tool === "editor") {
+      await services.externalTools.openEditor(entry.path, repository.identityId);
+    } else if (tool === "terminal") {
+      await services.externalTools.openTerminal(entry.path, repository.identityId);
+    } else throw invalidRequest(errorText("main.applicationHandlers.unknownDebugAction"));
     return ok(undefined);
   });
 
@@ -230,6 +260,8 @@ export function registerApplicationHandlers(services: Services): void {
   });
 
   const { git, engine } = services;
+
+  handle(IPC_CHANNELS.appGitDiagnostics, async () => ok(await git.diagnostics()));
 
   handle(IPC_CHANNELS.appGetGitEngine, async () =>
     ok({ source: engine.source, path: engine.path, version: engine.version }),

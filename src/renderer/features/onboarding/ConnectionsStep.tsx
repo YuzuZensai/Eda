@@ -1,10 +1,6 @@
-import { GitLabConnection } from "../connections/GitLabConnection";
-import { GitLabSelfHostedConnection } from "../connections/GitLabSelfHostedConnection";
+import { ProviderConnections } from "../connections/ProviderConnections";
 import { t } from "@shared/i18n";
 import { useAppStore } from "../../stores/app-store";
-import { ConnectionCard } from "../connections/ConnectionCard";
-import { GitHubConnection } from "../connections/GitHubConnection";
-import { ProviderIcon } from "../connections/ProviderIcon";
 import { SshSetupCard } from "./SshSetupCard";
 
 export function ConnectionsStep({ profileId }: { profileId: string }) {
@@ -12,17 +8,7 @@ export function ConnectionsStep({ profileId }: { profileId: string }) {
 
   return (
     <div className="space-y-3">
-      <GitHubConnection key={profileId} profileId={profileId} />
-      <GitLabConnection key={`gitlab:${profileId}`} profileId={profileId} />
-      <GitLabSelfHostedConnection key={`gitlab-self-hosted:${profileId}`} profileId={profileId} />
-
-      {(["Bitbucket", "Azure DevOps"] as const).map((provider) => (
-        <ConnectionCard
-          key={provider}
-          title={provider}
-          icon={<ProviderIcon provider={provider} />}
-        />
-      ))}
+      <ProviderConnections profileId={profileId} />
 
       {identity?.id === profileId && <SshSetupCard key={profileId} identity={identity} />}
       <p className="text-xs leading-relaxed text-text-tertiary">

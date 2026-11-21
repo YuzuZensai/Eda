@@ -11,10 +11,38 @@ import {
   type SettingsContext,
   type SettingScope,
 } from "@shared/preferences/settings";
+import { isRecord } from "@shared/validation";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { identities, repositories, settingOverrides, settings } from "./schema";
 import type { Database } from "./types";
+
+const portableSettings: readonly SettingKey[] = [
+  "shortcutOverrides",
+  "toolbarLabels",
+  "updateNotices",
+  "compactHistory",
+  "historyAvatars",
+  "historyDateStyle",
+  "historyVisibleColumns",
+  "mailboxPreview",
+  "showInternalRefs",
+  "language",
+  "commitSummaryLimit",
+  "conventionalCommitsEnabled",
+  "vigilantMode",
+  "commitPrefixes",
+  "accentHue",
+  "theme",
+  "reducedMotion",
+  "uiZoom",
+  "diffMode",
+  "fetchPrune",
+  "fetchTags",
+  "backgroundFetchMinutes",
+  "pullStrategy",
+  "predictUpstreamConflicts",
+];
 
 export class SettingsRepository {
   constructor(private readonly db: Database) {}
@@ -87,6 +115,63 @@ export class SettingsRepository {
 
     if (scope.kind === "application") this.db.delete(settings).where(eq(settings.key, key)).run();
     else this.db.delete(settingOverrides).where(scopeFilter(key, scope)).run();
+  }
+
+  exportPortable(scope: SettingScope) {
+    this.requireOwner(scope);
+    const values: Record<string, unknown> = {};
+    const context = scope.kind === "application" ? {} : scope;
+    for (const key of portableSettings) {
+      const setting = this.resolve(key, context);
+      if (setting.source.kind === scope.kind) values[key] = setting.value;
+    }
+    if (scope.kind === "profile") {
+      const known = this.db
+        .select({ path: repositories.path })
+        .from(repositories)
+        .where(eq(repositories.identityId, scope.profileId))
+        .all();
+      const paths = [
+        ...new Set([
+          ...this.resolve("repositoryHints", context).value,
+          ...known.map((row) => row.path),
+        ]),
+      ];
+      validateSetting("repositoryHints", scope, paths);
+      values["repositoryHints"] = paths;
+    }
+    return { format: "eda-preferences", version: 1, scope: scope.kind, values };
+  }
+
+  importPortable(scope: SettingScope, file: unknown): SettingKey[] {
+    const invalid = () =>
+      new GitError({
+        kind: "invalid-input",
+        operation: t("settings.portable.import"),
+        message: errorText("settings.portable.invalid"),
+      });
+    if (
+      !isRecord(file) ||
+      file["format"] !== "eda-preferences" ||
+      file["version"] !== 1 ||
+      file["scope"] !== scope.kind ||
+      !isRecord(file["values"])
+    )
+      throw invalid();
+    const entries = Object.entries(file["values"]).map(([name, value]) => {
+      const key =
+        name === "repositoryHints" && scope.kind === "profile"
+          ? name
+          : portableSettings.find((item) => item === name);
+      if (!key) throw invalid();
+      validateSetting(key, scope, value);
+      return { key, value };
+    });
+    this.requireOwner(scope);
+    this.db.transaction(() => {
+      for (const { key, value } of entries) this.set(key, scope, value);
+    });
+    return entries.map((entry) => entry.key);
   }
 
   private requireOwner(scope: SettingScope): void {

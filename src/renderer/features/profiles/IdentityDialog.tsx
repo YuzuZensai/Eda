@@ -1,7 +1,10 @@
-import { errorText } from "@shared/error-codes";
-import { errorMessage, GitError } from "@shared/errors";
+import { errorAction, errorMessage, type GitErrorData } from "@shared/errors";
 import { t } from "@shared/i18n";
-import type { Identity } from "@shared/identity/identity";
+import {
+  PROFILE_NAME_LIMIT,
+  GIT_AUTHOR_NAME_LIMIT,
+  type Identity,
+} from "@shared/identity/identity";
 import { builtInSetting } from "@shared/preferences/settings";
 import { useState } from "react";
 import { ButtonBase } from "../../components/ui/actions/ButtonBase";
@@ -17,7 +20,9 @@ export function IdentityDialog({
 }) {
   const createIdentity = useAppStore((s) => s.createIdentity);
   const updateIdentity = useAppStore((s) => s.updateIdentity);
-  const error = useAppStore((s) => s.error);
+  const [error, setError] = useState<string | null>(null);
+  const showError = (failure: GitErrorData) =>
+    setError([errorMessage(failure), errorAction(failure)].filter(Boolean).join(" "));
   const [name, setName] = useState(identity?.name ?? "");
   const [gitName, setGitName] = useState(identity?.gitName ?? "");
   const [gitEmail, setGitEmail] = useState(identity?.gitEmail ?? "");
@@ -25,12 +30,16 @@ export function IdentityDialog({
   const [touchedEmail, setTouchedEmail] = useState(false);
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(gitEmail);
-  const canSave = name.trim() !== "" && gitName.trim() !== "" && emailValid;
+  const validName = name.trim().length <= PROFILE_NAME_LIMIT;
+  const validGitName = gitName.trim().length <= GIT_AUTHOR_NAME_LIMIT;
+  const canSave =
+    name.trim() !== "" && gitName.trim() !== "" && validName && validGitName && emailValid;
 
   const save = async () => {
     if (!canSave || saving) return;
 
     setSaving(true);
+    setError(null);
 
     const fields = {
       name: name.trim(),
@@ -40,22 +49,20 @@ export function IdentityDialog({
 
     try {
       const saved = identity
-        ? await updateIdentity(identity.id, fields)
-        : await createIdentity({
-            ...fields,
-            hue: builtInSetting("accentHue").value,
-            signing: { format: "none", signCommits: false },
-          });
+        ? await updateIdentity(identity.id, fields, showError)
+        : await createIdentity(
+            {
+              ...fields,
+              hue: builtInSetting("accentHue").value,
+              signing: { format: "none", signCommits: false },
+            },
+            undefined,
+            showError,
+          );
 
       if (saved) onClose();
     } catch {
-      useAppStore.setState({
-        error: new GitError({
-          kind: "unknown",
-          operation: t("operations.saveProfile"),
-          message: errorText("errors.unexpected"),
-        }).toData(),
-      });
+      setError(t("errors.unexpected"));
     } finally {
       setSaving(false);
     }
@@ -93,12 +100,18 @@ export function IdentityDialog({
       >
         <Field
           label={t("identityDialog.profileName")}
+          error={
+            !validName
+              ? t("identityDialog.characterLimit", { limit: PROFILE_NAME_LIMIT })
+              : undefined
+          }
           hint={t("identityDialog.whatYouCallThisContextLikeWorkOrOpenSource")}
         >
           {(props) => (
             <Input
               {...props}
               autoFocus
+              invalid={!validName}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t("identityDialog.work")}
@@ -108,11 +121,17 @@ export function IdentityDialog({
 
         <Field
           label={t("identityDialog.gitName")}
+          error={
+            !validGitName
+              ? t("identityDialog.characterLimit", { limit: GIT_AUTHOR_NAME_LIMIT })
+              : undefined
+          }
           hint={t("identityDialog.theAuthorNameOnYourCommits")}
         >
           {(props) => (
             <Input
               {...props}
+              invalid={!validGitName}
               value={gitName}
               onChange={(e) => setGitName(e.target.value)}
               placeholder={t("identityDialog.eda")}
@@ -143,7 +162,7 @@ export function IdentityDialog({
           )}
         </Field>
 
-        {error && <ErrorDialog>{errorMessage(error)}</ErrorDialog>}
+        {error && <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>}
 
         <ButtonBase type="submit" hidden aria-hidden="true" tabIndex={-1} />
       </form>

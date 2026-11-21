@@ -1,3 +1,5 @@
+import { workingFilePath } from "../../filesystem/working-file-path";
+import type { GitHosts } from "../../providers/git-hosts";
 import { isFullObjectId } from "@shared/repository/object-id";
 import { errorText } from "@shared/error-codes";
 import { errorMessage, GitError } from "@shared/errors";
@@ -5,6 +7,8 @@ import { t, type MessageKey } from "@shared/i18n";
 import type { Identity } from "@shared/identity/identity";
 import { isGitHubHttps } from "@shared/integrations/github";
 import type {
+  LfsAction,
+  HttpsHelper,
   CloneRequest,
   FetchRequest,
   PushPreview,
@@ -27,7 +31,12 @@ import {
   remoteUrl,
   transportOptions,
 } from "../../git/operations/remotes";
-import { assertValidRefName } from "../../git/validation";
+import {
+  readSparseCheckout,
+  setSparseCheckout,
+  validateSparseDirectories,
+} from "../../git/operations/sparse-checkout";
+import { assertRepositoryPath, assertValidRefName } from "../../git/validation";
 import type { IdentityManager } from "../../identity/identity-manager";
 import type { OperationManager } from "../../operations/operation-manager";
 import type { FetchHistoryRepository } from "../../persistence/fetch-history-repository";
@@ -65,6 +74,8 @@ export class RemoteService {
     private readonly github?: Pick<GitHubAuth, "forFetch">,
     private readonly gitlab?: Pick<GitLabAuth, "forFetch">,
     private readonly gitlabSelfHosted?: Pick<GitLabSelfHostedAuth, "forFetch" | "ignoresTlsErrors">,
+    private readonly httpsHelper?: (profileId: string) => HttpsHelper,
+    private readonly gitHosts?: Pick<GitHosts, "forFetch">,
   ) {
     this.remotes = new GitRemotes(git);
   }
@@ -103,7 +114,7 @@ export class RemoteService {
     if (supplied) return supplied;
     if (!url.startsWith("https://")) return undefined;
 
-    for (const provider of [this.github, this.gitlab, this.gitlabSelfHosted]) {
+    for (const provider of [this.github, this.gitlab, this.gitlabSelfHosted, this.gitHosts]) {
       const credentials = await provider?.forFetch(profileId, url);
       if (credentials) return credentials;
     }
@@ -117,6 +128,7 @@ export class RemoteService {
       identity,
       credentials,
       this.gitlabSelfHosted?.ignoresTlsErrors(identity.id, url) ?? false,
+      this.httpsHelper?.(identity.id),
     );
   }
 
@@ -138,11 +150,11 @@ export class RemoteService {
     };
   }
 
-  primaryFetchUrl(id: string): Promise<string | undefined> {
+  primaryFetchUrl(id: string, { refresh = false } = {}): Promise<string | undefined> {
     const repository = this.repositories.resolveActiveRepository(id);
     const key = `${repository.identityId}:${repository.id}:${repository.path}`;
     const cached = this.primaryFetchUrls.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    if (!refresh && cached && cached.expiresAt > Date.now()) return cached.value;
 
     const value = (async () => {
       const origin = await this.git.readConfig("remote.origin.url", { cwd: repository.path });
@@ -273,6 +285,16 @@ export class RemoteService {
         errorText("main.remoteService.fetchOneRemoteWhenSupplyingHttpsCredentials"),
       );
 
+    if (
+      request.deepen !== undefined &&
+      (request.remote === null ||
+        request.tag ||
+        (request.deepen !== "all" &&
+          (!Number.isSafeInteger(request.deepen) ||
+            request.deepen < 1 ||
+            request.deepen > 2147483647)))
+    )
+      throw remoteError(errorText("shallow.invalidFetch"));
     const tagOptions: string[] = [];
     if (request.tag) tagOptions.push("--no-tags");
     else if (request.tags) tagOptions.push("--tags");
@@ -296,6 +318,18 @@ export class RemoteService {
         }),
       );
 
+      let branchRefspec = "+refs/heads/*:refs/remotes/" + name + "/*";
+      if (request.deepen !== undefined) {
+        // Negotiate the selected tip explicitly. Fetching unrelated tips can leave its shallow boundary in place.
+        const { branch } = await this.git.status(path);
+        const remotePrefix = name + "/";
+        const source = branch.upstream?.startsWith(remotePrefix)
+          ? branch.upstream.slice(remotePrefix.length)
+          : branch.head;
+        if (!source || branch.detached) throw remoteError(errorText("shallow.selectBranch"));
+        assertValidRefName(source, t("operations.fetch", { name }));
+        branchRefspec = "+refs/heads/" + source + ":refs/remotes/" + name + "/" + source;
+      }
       try {
         const credentials = await this.resolveCredentials(identity.id, url, request.credentials);
 
@@ -308,11 +342,12 @@ export class RemoteService {
             request.prune && !request.tag ? "--prune" : "--no-prune",
             "--no-prune-tags",
             ...tagOptions,
+            ...(request.deepen === undefined
+              ? []
+              : [request.deepen === "all" ? "--unshallow" : "--deepen=" + request.deepen]),
             "--",
             url,
-            request.tag
-              ? `refs/tags/${request.tag}:refs/tags/${request.tag}`
-              : `+refs/heads/*:refs/remotes/${name}/*`,
+            request.tag ? `refs/tags/${request.tag}:refs/tags/${request.tag}` : branchRefspec,
             ...(refspec ? [refspec] : []),
           ],
           {
@@ -537,6 +572,165 @@ export class RemoteService {
     );
   }
 
+  lfs(id: string, action: LfsAction) {
+    const operation = t("lfs.title");
+    return this.writer.remoteOperation(
+      id,
+      operation,
+      async (cwd, identity) => {
+        if (this.git.trust && !(await this.git.trust.checked(cwd)).trusted)
+          throw remoteError(errorText("lfs.requiresTrust"));
+        const opts = { cwd, operation, maxStdoutBytes: 1024 * 1024, maxStderrBytes: 256 * 1024 };
+        const version = await this.git.exec(["lfs", "version"], opts);
+        if (!version.stdout.startsWith("git-lfs/"))
+          throw remoteError(errorText("gitDiagnostics.lfsMissing"));
+        if (action.kind === "install")
+          return (await this.git.exec(["lfs", "install", "--local"], opts)).stdout;
+        if ("pattern" in action) {
+          await workingFilePath(cwd, ".gitattributes", operation);
+          assertRepositoryPath(action.pattern, operation);
+          if (/^[!-]|[\r\n]/.test(action.pattern)) throw remoteError(errorText("lfs.invalid"));
+          const output = await this.git.exec(["lfs", action.kind, "--", action.pattern], opts);
+          await this.git.stage(cwd, [".gitattributes"]);
+          return output.stdout;
+        }
+        if (!("remote" in action))
+          return (
+            await this.git.exec(
+              [
+                "lfs",
+                "prune",
+                "--verbose",
+                ...(action.kind === "previewPrune" ? ["--dry-run"] : []),
+              ],
+              opts,
+            )
+          ).stdout;
+        remoteName(action.remote);
+        const url = await this.remotes.destination(cwd, action.remote, action.kind === "push");
+        const transport = this.transport(
+          url,
+          identity,
+          await this.resolveCredentials(identity.id, url),
+        );
+        const options = { ...opts, ...transport };
+        if ("path" in action) {
+          assertRepositoryPath(action.path, operation);
+          // The locking API is optional, even for servers that support object transfers.
+          await this.git.exec(["lfs", "locks", "--limit=1", "--remote=" + action.remote], options);
+          return (
+            await this.git.exec(
+              ["lfs", action.kind, "--remote=" + action.remote, "--", action.path],
+              options,
+            )
+          ).stdout;
+        }
+        if (action.kind === "locks")
+          return (
+            await this.git.exec(
+              ["lfs", "locks", "--limit=100", "--remote=" + action.remote],
+              options,
+            )
+          ).stdout;
+        return (
+          await this.git.exec(
+            ["lfs", action.kind, action.remote, ...(action.kind === "push" ? ["HEAD"] : [])],
+            {
+              ...options,
+              reportStdoutProgress: true,
+              env: {
+                ...transport.env,
+                overrides: { ...transport.env?.overrides, GIT_LFS_FORCE_PROGRESS: "1" },
+              },
+            },
+          )
+        ).stdout;
+      },
+      "lfs.title",
+    );
+  }
+
+  private async fetchCheckoutBlobs(
+    cwd: string,
+    directories: string[] | undefined,
+    url: string,
+    transport: ReturnType<RemoteService["transport"]>,
+  ) {
+    const options = { cwd, operation: t("sparse.title"), maxStdoutBytes: 32 * 1024 * 1024 };
+    // A cone also includes files directly inside every ancestor directory.
+    const listing = await this.git.exec(["ls-tree", "-r", "-z", "HEAD"], options);
+    const blobs = new Set<string>();
+    for (const entry of listing.stdout.split("\0")) {
+      const match = /^\d+ blob ([0-9a-f]+)\t([\s\S]+)$/.exec(entry);
+      if (!match) continue;
+      const path = match[2]!;
+      const parent = path.slice(0, path.lastIndexOf("/") + 1);
+      if (
+        !directories ||
+        !parent ||
+        directories.some((dir) => path.startsWith(dir + "/") || (dir + "/").startsWith(parent))
+      )
+        blobs.add(match[1]!);
+    }
+    if (!blobs.size) return;
+    const checked = await this.git.exec(["cat-file", "--batch-check=%(objectname) %(objecttype)"], {
+      ...options,
+      stdin: [...blobs].join("\n") + "\n",
+    });
+    const missing = checked.stdout.split("\n").flatMap((line) => {
+      const [oid, state] = line.split(" ");
+      return state === "missing" && oid && blobs.has(oid) ? [oid] : [];
+    });
+    if (missing.length)
+      await this.git.exec(
+        [
+          "fetch",
+          "--no-write-fetch-head",
+          "--no-recurse-submodules",
+          "--no-tags",
+          "--no-prune",
+          "--refmap=",
+          "--upload-pack=git-upload-pack",
+          "--stdin",
+          "--",
+          url,
+        ],
+        { ...options, ...transport, stdin: missing.join("\n") + "\n" },
+      );
+  }
+
+  changeSparseCheckout(id: string, action: "set" | "disable" | "reapply", paths: string[]) {
+    const operation = t("sparse.title");
+    validateSparseDirectories(paths);
+    return this.writer.remoteOperation(id, operation, async (cwd, identity) => {
+      const current = await readSparseCheckout(this.git, cwd);
+      if (action === "set" && !current.cone) throw remoteError(errorText("sparse.nonCone"));
+      const promisor = await this.git.exec(["config", "--get-regexp", "^remote\\..+\\.promisor$"], {
+        cwd,
+        operation,
+        allowedExitCodes: [0, 1],
+      });
+      const remote = promisor.stdout
+        .split("\n")
+        .map((line) => /^remote\.(.+)\.promisor (?:true|1|yes|on)$/i.exec(line)?.[1])
+        .find(Boolean);
+      if (remote) {
+        const url = await this.remotes.destination(cwd, remote, false);
+        const credentials = await this.resolveCredentials(identity.id, url);
+        let directories = action === "set" ? paths : undefined;
+        if (action === "reapply" && current.cone) directories = current.directories;
+        await this.fetchCheckoutBlobs(
+          cwd,
+          directories,
+          url,
+          this.transport(url, identity, credentials),
+        );
+      }
+      if (action === "set") await setSparseCheckout(this.git, cwd, paths);
+      else await this.git.exec(["sparse-checkout", action], { cwd, operation });
+    });
+  }
+
   clone(request: CloneRequest) {
     const captured = this.identity.getActive();
 
@@ -546,6 +740,24 @@ export class RemoteService {
     remoteUrl(request.url);
 
     transportOptions(request.url, captured, request.credentials);
+    if (request.sparseDirectories) validateSparseDirectories(request.sparseDirectories);
+    if (request.branch !== undefined)
+      assertValidRefName(request.branch, t("operations.cloneRepository"));
+    if (
+      request.depth !== undefined &&
+      (request.since !== undefined ||
+        !Number.isSafeInteger(request.depth) ||
+        request.depth < 1 ||
+        request.depth > 2147483647)
+    )
+      throw remoteError(errorText("shallow.invalidLimit"));
+    if (
+      request.since !== undefined &&
+      (!/^\d{4}-\d{2}-\d{2}$/.test(request.since) ||
+        !Number.isFinite(Date.parse(request.since)) ||
+        new Date(request.since).toISOString().slice(0, 10) !== request.since)
+    )
+      throw remoteError(errorText("historySearch.invalidDate"));
 
     if (
       !isAbsolute(request.parent) ||
@@ -599,7 +811,12 @@ export class RemoteService {
               [
                 "clone",
                 "--no-local",
-                ...(this.git.trust ? ["--no-checkout"] : []),
+                ...(request.sparseDirectories ? ["--sparse"] : []),
+                ...(request.blobless ? ["--filter=blob:none"] : []),
+                ...(request.branch ? ["--branch=" + request.branch] : []),
+                ...(request.depth ? ["--depth=" + request.depth] : []),
+                ...(request.since ? ["--shallow-since=" + request.since + "T00:00:00Z"] : []),
+                ...(this.git.trust || request.blobless ? ["--no-checkout"] : []),
                 "--upload-pack=git-upload-pack",
                 "--progress",
                 "--no-recurse-submodules",
@@ -615,18 +832,28 @@ export class RemoteService {
 
             await this.git.trust?.rememberCreated(destination);
             const repository = await this.repositories.open(destination, captured);
-            if (this.git.trust) {
-              const policy = await this.git.trust.checked(destination);
+            this.operations.attachRepository(repository.id);
+            if (this.git.trust || request.blobless) {
+              const policy = await this.git.trust?.checked(destination);
+              const options = { cwd: destination, operation: t("operations.cloneRepository") };
               const head = await this.git.exec(["rev-parse", "--verify", "HEAD"], {
-                cwd: destination,
-                operation: t("operations.cloneRepository"),
+                ...options,
                 allowedExitCodes: [0, 128],
               });
-              if (head.exitCode === 0 && !policy.execution?.blocksWrites)
-                await this.git.exec(["read-tree", "-m", "-u", "HEAD"], {
-                  cwd: destination,
-                  operation: t("operations.cloneRepository"),
-                });
+              if (head.exitCode === 0 && !policy?.execution?.blocksWrites) {
+                if (request.blobless)
+                  await this.fetchCheckoutBlobs(
+                    destination,
+                    request.sparseDirectories,
+                    request.url,
+                    authenticatedTransport,
+                  );
+                if (request.sparseDirectories)
+                  await setSparseCheckout(this.git, destination, request.sparseDirectories);
+                await this.git.exec(["read-tree", "-m", "-u", "HEAD"], options);
+              }
+            } else if (request.sparseDirectories?.length) {
+              await setSparseCheckout(this.git, destination, request.sparseDirectories);
             }
             return repository;
           } catch (error) {

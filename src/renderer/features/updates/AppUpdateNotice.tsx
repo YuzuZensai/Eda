@@ -1,9 +1,11 @@
+import { usePreferencesStore } from "../../stores/preferences-store";
 import { t } from "@shared/i18n";
 import { Button, StatusBanner, useNoticeDismissal } from "../../components/ui/index";
 import { useUpdates } from "./hooks/useUpdates";
 import { openSettings } from "../../stores/shell-store";
 
 export function AppUpdateNotice({ aboutOpen }: { aboutOpen: boolean }) {
+  const enabled = usePreferencesStore((state) => state.values.updateNotices.value);
   const { state, preview } = useUpdates();
 
   const noticeId =
@@ -19,7 +21,7 @@ export function AppUpdateNotice({ aboutOpen }: { aboutOpen: boolean }) {
 
   const { dismissed, dismiss } = useNoticeDismissal(noticeId);
 
-  if (aboutOpen || dismissed || !state || noticeId === null) return null;
+  if (!enabled || aboutOpen || dismissed || !state || noticeId === null) return null;
 
   const release = state.release;
 

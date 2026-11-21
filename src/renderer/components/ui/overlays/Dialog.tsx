@@ -9,6 +9,7 @@ export interface DialogProps {
   title: string;
   description?: string;
   onClose: () => void;
+  onAfterClose?: (() => void) | undefined;
   busy?: boolean;
   footer?: ReactNode;
   children: ReactNode;
@@ -21,6 +22,7 @@ export function Dialog({
   title,
   description,
   onClose,
+  onAfterClose,
   busy = false,
   footer,
   children,
@@ -44,12 +46,13 @@ export function Dialog({
   return (
     <ModalSurface
       onClose={onClose}
+      onAfterClose={onAfterClose}
       dismissible={!busy}
       placement={placement}
       descriptionId={description ? descriptionId : undefined}
-      className={`${placementWidth} ${maxWidth} overflow-y-auto border border-border-default p-6 ${height}`}
+      className={`${placementWidth} ${maxWidth} flex flex-col overflow-hidden border border-border-default ${height}`}
     >
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex shrink-0 items-start justify-between gap-4 px-5 pt-4">
         <ModalTitle className="min-w-0 text-xl font-semibold tracking-tight">{title}</ModalTitle>
 
         <IconButton
@@ -65,16 +68,18 @@ export function Dialog({
       {description && (
         <ModalDescription
           id={descriptionId}
-          className="mt-1 text-sm leading-normal text-text-secondary"
+          className="mt-1 shrink-0 px-5 text-sm leading-normal text-text-secondary"
         >
           {description}
         </ModalDescription>
       )}
 
-      <AnimatedSize className="mt-4">{children}</AnimatedSize>
+      <div className="min-h-0 overflow-y-auto overscroll-contain px-5 py-4">
+        <AnimatedSize>{children}</AnimatedSize>
+      </div>
 
       {footer && (
-        <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-border-subtle pt-4">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border-subtle px-5 py-3">
           {footer}
         </div>
       )}

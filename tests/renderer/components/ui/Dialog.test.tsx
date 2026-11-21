@@ -84,7 +84,7 @@ it("dismisses an operation error without closing its form and presents a subsequ
 
   for (let attempt = 0; attempt < 2; attempt++) {
     await act(async () => save.click());
-    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(2);
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     expect(document.querySelector('[role="alert"]')?.textContent).toBe("Could not save");
 
     const dismiss = Array.from(document.querySelectorAll("button")).find(

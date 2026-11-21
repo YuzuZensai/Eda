@@ -1,7 +1,9 @@
+import { readLfsPointer, LFS_VERSION } from "@shared/repository/lfs-pointer";
 import { isFullObjectId } from "@shared/repository/object-id";
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
+import { isImagePath } from "@shared/repository/image-preview";
 import type {
   ImagePreview,
   ImagePreviewRequest,
@@ -17,7 +19,11 @@ export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const operation = t("operations.previewRepositoryImage");
 const readEnv = { overrides: { GIT_NO_LAZY_FETCH: "1", GIT_OPTIONAL_LOCKS: "0" } };
 const invalid = (message: ErrorText) => new GitError({ kind: "invalid-input", operation, message });
-const unavailable = (path: string, reason: string, bytes?: number): ImagePreviewVersion => ({
+const unavailable = (
+  path: string,
+  reason: string,
+  bytes?: number,
+): Extract<ImagePreviewVersion, { kind: "unavailable" }> => ({
   kind: "unavailable",
   path,
   reason,
@@ -34,6 +40,12 @@ function validatePath(path: string): void {
 }
 
 function image(path: string, bytes: Buffer): ImagePreviewVersion {
+  if (!isImagePath(path)) {
+    const pointer = readLfsPointer(bytes.toString("utf8"));
+    return pointer
+      ? unavailable(path, t("revision.lfs", pointer), pointer.bytes)
+      : { kind: "binary", path, bytes: bytes.length };
+  }
   const head = bytes.subarray(0, 16);
   const mimeType = head.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
     ? "image/png"
@@ -52,17 +64,18 @@ function image(path: string, bytes: Buffer): ImagePreviewVersion {
                 ? "image/avif"
                 : null;
 
-  if (!mimeType)
+  if (!mimeType) {
+    const head = bytes.subarray(0, 1025).toString("utf8");
+    const pointer = readLfsPointer(head);
+    if (pointer) return unavailable(path, t("revision.lfs", pointer), pointer.bytes);
     return unavailable(
       path,
-      bytes
-        .subarray(0, 128)
-        .toString("utf8")
-        .startsWith("version https://git-lfs.github.com/spec/v1")
+      head.startsWith(LFS_VERSION)
         ? t("main.imagePreview.gitLfsPointerImageContentIsNotAvailableLocally")
         : t("main.imagePreview.thisFileIsNotASupportedRasterImage"),
       bytes.length,
     );
+  }
 
   return {
     kind: "image",
@@ -73,7 +86,10 @@ function image(path: string, bytes: Buffer): ImagePreviewVersion {
   };
 }
 
-async function workingImage(root: string, path: string): Promise<ImagePreviewVersion> {
+type FileVersion =
+  | Exclude<ImagePreviewVersion, { kind: "image" }>
+  | { kind: "contents"; path: string; data: Buffer };
+async function workingImage(root: string, path: string, preview: boolean): Promise<FileVersion> {
   const canonicalRoot = await realpath(root);
   const target = resolve(canonicalRoot, path);
   const local = relative(canonicalRoot, target);
@@ -121,6 +137,8 @@ async function workingImage(root: string, path: string): Promise<ImagePreviewVer
           errorText("main.imagePreview.theImagePathChangedWhileItWasBeingOpenedRefreshAndTryAgain"),
         );
 
+      if (preview && !isImagePath(path) && info.size > 1024)
+        return { kind: "binary", path, bytes: info.size };
       if (info.size > MAX_IMAGE_BYTES) return tooLarge(path, info.size);
 
       const bytes = Buffer.alloc(Math.min(info.size + 1, MAX_IMAGE_BYTES + 1));
@@ -138,7 +156,7 @@ async function workingImage(root: string, path: string): Promise<ImagePreviewVer
           t("main.imagePreview.theImageChangedWhileItWasBeingReadRefreshAndTryAgain"),
         );
 
-      return image(path, bytes.subarray(0, total));
+      return { kind: "contents", path, data: bytes.subarray(0, total) };
     } finally {
       await file.close();
     }
@@ -154,7 +172,8 @@ async function gitImage(
   root: string,
   tree: string | null,
   path: string,
-): Promise<ImagePreviewVersion> {
+  preview: boolean,
+): Promise<FileVersion> {
   if (tree === null) return { kind: "missing", path };
 
   const index = tree === "index";
@@ -193,6 +212,7 @@ async function gitImage(
 
   if (!Number.isSafeInteger(count) || count < 0)
     throw invalid(errorText("main.imagePreview.gitReturnedAnInvalidImageSize"));
+  if (preview && !isImagePath(path) && count > 1024) return { kind: "binary", path, bytes: count };
   if (count > MAX_IMAGE_BYTES) return tooLarge(path, count);
 
   try {
@@ -204,18 +224,19 @@ async function gitImage(
       maxStderrBytes: 64 * 1024,
     });
 
-    return image(path, blob.stdoutBytes);
+    return { kind: "contents", path, data: blob.stdoutBytes };
   } catch (error) {
     if (error instanceof GitError && error.kind === "output-too-large") return tooLarge(path);
     throw error;
   }
 }
 
-export async function readImagePreview(
+async function readVersions(
   git: GitService,
   root: string,
   request: ImagePreviewRequest,
-): Promise<ImagePreview> {
+  preview: boolean,
+) {
   validatePath(request.path);
   validatePath(request.oldPath ?? request.path);
 
@@ -249,11 +270,35 @@ export async function readImagePreview(
     before = head.exitCode === 0 ? head.stdout.trim() : null;
   }
 
-  const previous = await gitImage(git, root, before, request.oldPath ?? request.path);
+  const previous = await gitImage(git, root, before, request.oldPath ?? request.path, preview);
   const next =
     request.kind === "working"
-      ? await workingImage(root, request.path)
-      : await gitImage(git, root, after, request.path);
+      ? await workingImage(root, request.path, preview)
+      : await gitImage(git, root, after, request.path, preview);
 
   return { before: previous, after: next };
+}
+
+export async function readImagePreview(
+  git: GitService,
+  root: string,
+  request: ImagePreviewRequest,
+): Promise<ImagePreview> {
+  const { before, after } = await readVersions(git, root, request, true);
+  const display = (version: FileVersion) =>
+    version.kind === "contents" ? image(version.path, version.data) : version;
+  return { before: display(before), after: display(after) };
+}
+
+export async function readDiffToolFiles(
+  git: GitService,
+  root: string,
+  request: ImagePreviewRequest,
+) {
+  const { before, after } = await readVersions(git, root, request, false);
+  return [before, after].map((version) => {
+    if (version.kind === "missing") return { path: version.path, bytes: Buffer.alloc(0) };
+    if (version.kind === "contents") return { path: version.path, bytes: version.data };
+    throw invalid(errorText("externalDiff.regularFiles"));
+  });
 }

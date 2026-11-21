@@ -5,7 +5,14 @@ import { stateLabel } from "@shared/i18n/labels";
 import type { HistoryReversal } from "@shared/workflows/history-recovery";
 import { ArrowRightIcon as ArrowRight } from "../../components/ui/icons";
 import { useEffect, useState } from "react";
-import { AsyncButton, Button, Checkbox, Dialog, ErrorDialog } from "../../components/ui/index";
+import {
+  AsyncButton,
+  Button,
+  Checkbox,
+  Dialog,
+  Disclosure,
+  ErrorDialog,
+} from "../../components/ui/index";
 import { useRepositoryStore } from "../../stores/repository-store";
 
 export function UndoRedoDialog({
@@ -18,7 +25,7 @@ export function UndoRedoDialog({
   const [items, setItems] = useState<HistoryReversal[]>([]);
   const [selected, setSelected] = useState<HistoryReversal | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
 
@@ -274,182 +281,192 @@ export function UndoRedoDialog({
       }
     >
       <div className="space-y-3 text-xs">
-        <p>{t("undoRedoDialog.supportsCommitsAmendmentsReviewedResetsBranchCreateDelete")}</p>
-        <p>{t("undoRedoDialog.reversalDoesNotPushToRemotesOrReverse")}</p>
         {busy && <p role="status">{t("undoRedoDialog.checkingRepositoryState")}</p>}
-        {!busy && !items.length && <p>{t("undoRedoDialog.noRecordedLocalActions")}</p>}
+        {!busy && !error && !items.length && <p>{t("undoRedoDialog.noRecordedLocalActions")}</p>}
 
-        <ul className="max-h-60 space-y-2 overflow-auto">
-          {items.map((item) => (
-            <li key={item.id} className="border-b border-border-subtle pb-2">
-              <Button
-                disabled={busy || !item.available}
-                onClick={() => {
-                  setSelected(item);
-                  setConfirmed(false);
-                  setResult(null);
-                }}
-              >
-                {item.label}
-              </Button>
+        <div className="grid gap-4 md:grid-cols-2">
+          <ul className="max-h-[48vh] space-y-2 overflow-auto">
+            {items.map((item) => (
+              <li key={item.id} className="border-b border-border-subtle pb-2">
+                <Button
+                  aria-pressed={selected?.id === item.id}
+                  variant={selected?.id === item.id ? "primary" : "secondary"}
+                  disabled={busy || !item.available}
+                  onClick={() => {
+                    setSelected(item);
+                    setConfirmed(false);
+                    setResult(null);
+                  }}
+                >
+                  {item.label}
+                </Button>
 
-              {item.reason && <p className="mt-1 text-text-tertiary">{item.reason}</p>}
+                {item.reason && <p className="mt-1 text-text-tertiary">{item.reason}</p>}
 
-              {item.resumeConfiguration && (
-                <div className="mt-2 space-y-1">
-                  <p>{t("undoRedoDialog.theReferenceChangeFinishedRestoreItsSavedBranch")}</p>
-                  <Button disabled={busy} onClick={() => void resumeConfiguration(item)}>
-                    {t("undoRedoDialog.finishSettingsFor", { label: item.label })}
-                  </Button>
-                </div>
-              )}
+                {item.resumeConfiguration && (
+                  <div className="mt-2 space-y-1">
+                    <p>{t("undoRedoDialog.theReferenceChangeFinishedRestoreItsSavedBranch")}</p>
+                    <Button disabled={busy} onClick={() => void resumeConfiguration(item)}>
+                      {t("undoRedoDialog.finishSettingsFor", { label: item.label })}
+                    </Button>
+                  </div>
+                )}
 
-              {item.resumeReset && (
-                <div className="mt-2 space-y-1">
-                  <p>{item.reason}</p>
+                {item.resumeReset && (
+                  <div className="mt-2 space-y-1">
+                    <p>{item.reason}</p>
 
-                  {item.publishedCommits > 0 && (
-                    <p role="note">
-                      {t("undoRedoDialog.thisResetAffectsPublishedCommitsKnownFromLocal", {
-                        publishedCommits: item.publishedCommits,
+                    {item.publishedCommits > 0 && (
+                      <p role="note">
+                        {t("undoRedoDialog.thisResetAffectsPublishedCommitsKnownFromLocal", {
+                          publishedCommits: item.publishedCommits,
+                        })}
+                      </p>
+                    )}
+
+                    <Button disabled={busy} onClick={() => void resumeReset(item)}>
+                      {t("undoRedoDialog.resumeInterruptedReset", { mode: item.mode })}
+                    </Button>
+                  </div>
+                )}
+
+                {item.resumeIndex && (
+                  <div className="mt-2 space-y-1">
+                    <p>
+                      {t("undoRedoDialog.headAlreadyReachedThisReversalSTarget", {
+                        value1:
+                          item.mode === "hard"
+                            ? t("undoRedoDialog.affectedWorkingFilesAreRestoredFromSavedCopies")
+                            : t(
+                                "undoRedoDialog.workingFilesStayUnchangedNewerStagedChangesBlockRecovery",
+                              ),
                       })}
                     </p>
-                  )}
 
-                  <Button disabled={busy} onClick={() => void resumeReset(item)}>
-                    {t("undoRedoDialog.resumeInterruptedReset", { mode: item.mode })}
-                  </Button>
-                </div>
+                    <Button disabled={busy} onClick={() => void resumeIndex(item)}>
+                      {t("undoRedoDialog.resumeFor", {
+                        value1:
+                          item.mode === "hard"
+                            ? t("undoRedoDialog.filesAndIndex")
+                            : t("undoRedoDialog.index"),
+                        label: item.label,
+                      })}
+                    </Button>
+                  </div>
+                )}
+
+                {item.resumeBranchCheckout && (
+                  <div className="mt-2 space-y-1">
+                    <p>
+                      {item.resumeBranchCheckout === "undo"
+                        ? t("undoRedoDialog.checkoutAlreadyReturnedToTheOriginalBranchResume")
+                        : t("undoRedoDialog.theBranchWasCreatedButCheckoutIsUnfinished")}
+                    </p>
+
+                    <Button disabled={busy} onClick={() => void resumeBranchCheckout(item)}>
+                      {t("undoRedoDialog.resume", {
+                        value1:
+                          item.resumeBranchCheckout === "undo"
+                            ? t("undoRedoDialog.branchRemoval")
+                            : t("undoRedoDialog.checkout"),
+                        label: item.label,
+                      })}
+                    </Button>
+                  </div>
+                )}
+
+                {item.dismissUnstarted && (
+                  <div className="mt-2 space-y-1">
+                    <p>{t("undoRedoDialog.gitStillMatchesTheRecordedStartingStateDismiss")}</p>
+                    <Button disabled={busy} onClick={() => void dismissUnstarted(item)}>
+                      {t("undoRedoDialog.dismissUnstartedAction", { label: item.label })}
+                    </Button>
+                  </div>
+                )}
+
+                {item.reconciliation && (
+                  <div className="mt-2 space-y-1">
+                    <p>
+                      {t("undoRedoDialog.gitMatchesTheRecordedStateReconcileUpdatesEda", {
+                        value1: stateLabel(item.reconciliation),
+                      })}
+                    </p>
+
+                    <Button disabled={busy} onClick={() => void reconcile(item)}>
+                      {t("undoRedoDialog.reconcile", { label: item.label })}
+                    </Button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          {selected && (
+            <div className="min-w-0 space-y-3 rounded-md border border-border-subtle p-3">
+              <h3 className="font-semibold">{selected.label}</h3>
+
+              {selected.publishedCommits > 0 && (
+                <p role="note">
+                  {t("undoRedoDialog.thisReversalRemovesCommitsReachableFromLocallyKnown", {
+                    publishedCommits: selected.publishedCommits,
+                  })}
+                </p>
               )}
 
-              {item.resumeIndex && (
-                <div className="mt-2 space-y-1">
-                  <p>
-                    {t("undoRedoDialog.headAlreadyReachedThisReversalSTarget", {
-                      value1:
-                        item.mode === "hard"
-                          ? t("undoRedoDialog.affectedWorkingFilesAreRestoredFromSavedCopies")
-                          : t(
-                              "undoRedoDialog.workingFilesStayUnchangedNewerStagedChangesBlockRecovery",
-                            ),
-                    })}
-                  </p>
-
-                  <Button disabled={busy} onClick={() => void resumeIndex(item)}>
-                    {t("undoRedoDialog.resumeFor", {
-                      value1:
-                        item.mode === "hard"
-                          ? t("undoRedoDialog.filesAndIndex")
-                          : t("undoRedoDialog.index"),
-                      label: item.label,
-                    })}
-                  </Button>
-                </div>
-              )}
-
-              {item.resumeBranchCheckout && (
-                <div className="mt-2 space-y-1">
-                  <p>
-                    {item.resumeBranchCheckout === "undo"
-                      ? t("undoRedoDialog.checkoutAlreadyReturnedToTheOriginalBranchResume")
-                      : t("undoRedoDialog.theBranchWasCreatedButCheckoutIsUnfinished")}
-                  </p>
-
-                  <Button disabled={busy} onClick={() => void resumeBranchCheckout(item)}>
-                    {t("undoRedoDialog.resume", {
-                      value1:
-                        item.resumeBranchCheckout === "undo"
-                          ? t("undoRedoDialog.branchRemoval")
-                          : t("undoRedoDialog.checkout"),
-                      label: item.label,
-                    })}
-                  </Button>
-                </div>
-              )}
-
-              {item.dismissUnstarted && (
-                <div className="mt-2 space-y-1">
-                  <p>{t("undoRedoDialog.gitStillMatchesTheRecordedStartingStateDismiss")}</p>
-                  <Button disabled={busy} onClick={() => void dismissUnstarted(item)}>
-                    {t("undoRedoDialog.dismissUnstartedAction", { label: item.label })}
-                  </Button>
-                </div>
-              )}
-
-              {item.reconciliation && (
-                <div className="mt-2 space-y-1">
-                  <p>
-                    {t("undoRedoDialog.gitMatchesTheRecordedStateReconcileUpdatesEda", {
-                      value1: stateLabel(item.reconciliation),
-                    })}
-                  </p>
-
-                  <Button disabled={busy} onClick={() => void reconcile(item)}>
-                    {t("undoRedoDialog.reconcile", { label: item.label })}
-                  </Button>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-
-        {selected && (
-          <div className="space-y-2 border-t border-border-subtle pt-3">
-            <h3 className="font-semibold">{selected.label}</h3>
-
-            {selected.publishedCommits > 0 && (
-              <p role="note">
-                {t("undoRedoDialog.thisReversalRemovesCommitsReachableFromLocallyKnown", {
-                  publishedCommits: selected.publishedCommits,
-                })}
+              <p className="break-all">
+                <Localized
+                  id="undoRedoDialog.head"
+                  values={{ code: <code>{selected.fromHead || t("common.unbornBranch")}</code> }}
+                />
+                <ArrowRight size={14} className="inline align-[-2px]" aria-hidden="true" />{" "}
+                <code>{selected.toHead || t("common.unbornBranch")}</code>
               </p>
-            )}
 
-            <p className="break-all">
-              <Localized
-                id="undoRedoDialog.head"
-                values={{ code: <code>{selected.fromHead || t("common.unbornBranch")}</code> }}
-              />
-              <ArrowRight size={14} className="inline align-[-2px]" aria-hidden="true" />{" "}
-              <code>{selected.toHead || t("common.unbornBranch")}</code>
-            </p>
+              <p>
+                {selected.kind === "branch"
+                  ? t("undoRedoDialog.onlyTheLocalBranchReferenceChangesCommitsThe")
+                  : selected.kind === "checkout"
+                    ? t("undoRedoDialog.theRecordedBranchOrDetachedHeadIsChecked")
+                    : selected.kind === "rebase" ||
+                        selected.kind === "cherry-pick" ||
+                        selected.kind === "revert"
+                      ? t("undoRedoDialog.theOriginalBranchTipIndexAndAffectedWorking")
+                      : selected.mode === "soft"
+                        ? t("undoRedoDialog.indexAndWorkingFilesAreRetained")
+                        : selected.mode === "mixed"
+                          ? t("undoRedoDialog.theSavedIndexIsRestoredWorkingFilesAreRetained")
+                          : t("undoRedoDialog.theSavedIndexAndAffectedWorkingFilesAre")}
+              </p>
 
-            <p>
-              {selected.kind === "branch"
-                ? t("undoRedoDialog.onlyTheLocalBranchReferenceChangesCommitsThe")
-                : selected.kind === "checkout"
-                  ? t("undoRedoDialog.theRecordedBranchOrDetachedHeadIsChecked")
-                  : selected.kind === "rebase" ||
-                      selected.kind === "cherry-pick" ||
-                      selected.kind === "revert"
-                    ? t("undoRedoDialog.theOriginalBranchTipIndexAndAffectedWorking")
-                    : selected.mode === "soft"
-                      ? t("undoRedoDialog.indexAndWorkingFilesAreRetained")
-                      : selected.mode === "mixed"
-                        ? t("undoRedoDialog.theSavedIndexIsRestoredWorkingFilesAreRetained")
-                        : t("undoRedoDialog.theSavedIndexAndAffectedWorkingFilesAre")}
-            </p>
+              <Checkbox
+                className="flex gap-2"
+                checked={confirmed}
+                disabled={busy}
+                onChange={(event) => setConfirmed(event.target.checked)}
+              >
+                {t("undoRedoDialog.iReviewedThisReversal")}
+              </Checkbox>
 
-            <Checkbox
-              className="flex gap-2"
-              checked={confirmed}
-              disabled={busy}
-              onChange={(event) => setConfirmed(event.target.checked)}
-            >
-              {t("undoRedoDialog.iReviewedThisReversal")}
-            </Checkbox>
+              <Button disabled={busy || !confirmed} onClick={() => void execute()}>
+                {t("undoRedoDialog.apply", {
+                  value1:
+                    selected.direction === "undo"
+                      ? t("undoRedoDialog.undo")
+                      : t("undoRedoDialog.redo"),
+                })}
+              </Button>
+            </div>
+          )}
 
-            <Button disabled={busy || !confirmed} onClick={() => void execute()}>
-              {t("undoRedoDialog.apply", {
-                value1:
-                  selected.direction === "undo"
-                    ? t("undoRedoDialog.undo")
-                    : t("undoRedoDialog.redo"),
-              })}
-            </Button>
-          </div>
-        )}
-
+          {!selected && items.length > 0 && (
+            <p className="text-text-tertiary">{t("undoRedoDialog.selectAction")}</p>
+          )}
+        </div>
+        <Disclosure title={t("undoRedoDialog.supportedActions")}>
+          {" "}
+          <p>{t("undoRedoDialog.supportsCommitsAmendmentsReviewedResetsBranchCreateDelete")}</p>
+          <p>{t("undoRedoDialog.reversalDoesNotPushToRemotesOrReverse")}</p>
+        </Disclosure>
         {result && <p role="status">{result}</p>}
         <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>
       </div>

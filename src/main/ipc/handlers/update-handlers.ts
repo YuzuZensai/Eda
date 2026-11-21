@@ -3,7 +3,7 @@ import { ok } from "@shared/errors";
 import { IPC_CHANNELS, IPC_EVENTS } from "@shared/ipc";
 import { BrowserWindow } from "electron";
 import type { Services } from "../../services";
-import { invalidRequest } from "../request-errors";
+import { invalidRequest } from "../../request-errors";
 import { broadcast, handle } from "../transport";
 
 export function registerUpdateHandlers(services: Services): void {

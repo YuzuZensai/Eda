@@ -1,3 +1,4 @@
+import { lfsLockServer } from "../../../helpers/lfs-lock-server";
 import { RepositoryMemberships } from "@main/persistence/repository-memberships";
 import { errorFixture } from "../../../helpers/error";
 import { GitError } from "@shared/errors";
@@ -206,6 +207,133 @@ async function setup(
     db,
   };
 }
+
+it("lists server locks, locks and unlocks an owned file, and reports an unsupported lock API", async () => {
+  const { service, client, run } = await setup();
+  const locks = await lfsLockServer("file.txt");
+  try {
+    await run(["config", "lfs.url", locks.url]);
+    await service.lfs(client.id, { kind: "lock", remote: "origin", path: "file.txt" });
+    expect(await service.lfs(client.id, { kind: "locks", remote: "origin" })).toContain("file.txt");
+    await service.lfs(client.id, { kind: "unlock", remote: "origin", path: "file.txt" });
+    expect(locks.isLocked()).toBe(false);
+    locks.disable();
+    await expect(
+      service.lfs(client.id, { kind: "lock", remote: "origin", path: "file.txt" }),
+    ).rejects.toThrow();
+    expect(locks.isLocked()).toBe(false);
+  } finally {
+    await locks.close();
+  }
+});
+
+it("initializes LFS locally, stages and removes tracking patterns and transfers a real object to a file remote", async () => {
+  const { service, source, client, run, server } = await setup();
+  await service.lfs(client.id, { kind: "install" });
+  await service.lfs(client.id, { kind: "track", pattern: "*.bin" });
+  expect(await run(["show", ":.gitattributes"])).toContain("*.bin filter=lfs");
+  await writeFile(join(client.path, "asset.bin"), "asset");
+  await run(["add", "asset.bin"]);
+  await run(["commit", "-m", "LFS fixture"]);
+  const pointer = await run(["show", "HEAD:asset.bin"]);
+  expect(pointer).toContain("oid sha256:");
+  await service.lfs(client.id, { kind: "push", remote: "origin" });
+  const hash = pointer.match(/oid sha256:([a-f0-9]+)/)![1]!;
+  expect(
+    await readFile(
+      join(server.path, "lfs", "objects", hash.slice(0, 2), hash.slice(2, 4), hash),
+      "utf8",
+    ),
+  ).toBe("asset");
+  await service.lfs(client.id, { kind: "fetch", remote: "origin" });
+  await service.lfs(client.id, { kind: "pull", remote: "origin" });
+  await service.lfs(client.id, { kind: "previewPrune" });
+  await service.lfs(client.id, { kind: "prune" });
+  await service.lfs(client.id, { kind: "untrack", pattern: "*.bin" });
+  expect(await source.run(["show", ":.gitattributes"], client.path)).not.toContain("*.bin");
+});
+it("clones blobless with directory selection and edits, reapplies and disables sparse checkout", async () => {
+  const { service, source, server, profile } = await setup();
+  await source.writeFile("docs/readme", "docs");
+  await source.writeFile("code/main", "code");
+  await source.commit("folders");
+  await source.run(["push", "origin", "HEAD:main"]);
+  await server.run(["config", "uploadpack.allowFilter", "true"]);
+  const clone = await service.clone({
+    profileId: profile.id,
+    url: server.path,
+    parent: source.home,
+    name: "sparse",
+    sparseDirectories: ["docs"],
+    blobless: true,
+  });
+  const { access } = await import("node:fs/promises");
+  await access(join(clone.path, "docs/readme"));
+  await expect(access(join(clone.path, "code/main"))).rejects.toThrow();
+  expect(
+    (await source.run(["config", "remote.origin.partialclonefilter"], clone.path)).trim(),
+  ).toBe("blob:none");
+  await service.changeSparseCheckout(clone.id, "set", ["code"]);
+  await service.changeSparseCheckout(clone.id, "reapply", []);
+  await access(join(clone.path, "code/main"));
+  await expect(access(join(clone.path, "docs/readme"))).rejects.toThrow();
+  await service.changeSparseCheckout(clone.id, "disable", []);
+  await access(join(clone.path, "docs/readme"));
+});
+
+it("clones a selected branch at a shallow boundary and deepens it through the normal remote workflow", async () => {
+  const { service, source, server, profile } = await setup();
+  await source.run(["switch", "-c", "topic"]);
+  for (const message of ["second", "third"]) {
+    await source.writeFile("file.txt", message);
+    await source.commit(message);
+  }
+  await source.run(["push", "origin", "topic"]);
+  const request = {
+    profileId: profile.id,
+    url: server.path,
+    parent: source.home,
+    name: "shallow",
+    branch: "topic",
+  };
+  const clone = await service.clone({ ...request, depth: 1 });
+  const count = () => source.run(["rev-list", "--count", "HEAD"], clone.path);
+  const fetch = { repositoryId: clone.id, remote: "origin", tags: false, prune: false };
+  expect((await count()).trim()).toBe("1");
+  expect((await source.run(["branch", "--show-current"], clone.path)).trim()).toBe("topic");
+  await service.fetch({ ...fetch, deepen: 1 });
+  expect((await count()).trim()).toBe("2");
+  await service.fetch({ ...fetch, deepen: "all" });
+  expect((await count()).trim()).toBe("3");
+  expect((await source.run(["rev-parse", "--is-shallow-repository"], clone.path)).trim()).toBe(
+    "false",
+  );
+  const date = "2026-04-01T12:00:00Z";
+  await source.git.exec(["commit", "--allow-empty", "-m", "After date boundary"], {
+    cwd: source.path,
+    operation: "fixture",
+    env: { overrides: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } },
+  });
+  await source.run(["push", "origin", "topic"]);
+  const dated = await service.clone({ ...request, name: "shallow-by-date", since: "2026-03-01" });
+  expect((await source.run(["log", "--format=%s"], dated.path)).trim()).toBe("After date boundary");
+  expect((await source.run(["rev-parse", "--is-shallow-repository"], dated.path)).trim()).toBe(
+    "true",
+  );
+  expect(() => service.clone({ ...request, since: "2026-02-31" })).toThrow();
+  expect(() => service.clone({ ...request, since: "2025-01-01", depth: 2 })).toThrow();
+});
+
+it("links completed clone activity to the registered repository", async () => {
+  const { client, profile, operations } = await setup();
+  expect(operations.list(profile.id)).toContainEqual(
+    expect.objectContaining({
+      kindKey: "operationTitles.cloneRepository",
+      state: "succeeded",
+      repositoryId: client.id,
+    }),
+  );
+});
 
 it("uses origin for commit avatars and switches to another remote after origin is removed", async () => {
   const { service, client, server } = await setup();
@@ -717,6 +845,52 @@ it("clones, configures multiple remotes, fetches/prunes and changes tracking wit
   expect(await run(["rev-parse", "HEAD"])).toBe(head);
   expect(await run(["ls-files", "--stage", "-z"])).toBe(index);
   expect(await readFile(join(client.path, "file.txt"), "utf8")).toBe("unsaved working bytes\n");
+});
+
+it("publishes a Gitflow hotfix from production and finishes it into both configured branches", async () => {
+  const { service, writer, client, run, server } = await setup();
+  const id = client.id;
+  const config = {
+    production: "main",
+    development: "integration",
+    feature: "feat/",
+    release: "rel/",
+    hotfix: "fix/",
+  };
+  await writer.gitflow(id, { kind: "configure", config });
+  await run(["switch", "integration"]);
+  await writeFile(join(client.path, "development.txt"), "unreleased");
+  await run(["add", "development.txt"]);
+  await run(["commit", "-m", "unreleased work"]);
+  await writer.gitflow(id, { kind: "start", type: "hotfix", name: "v1.1", retain: false });
+  expect(await run(["rev-parse", "HEAD"])).toBe(await run(["rev-parse", "main"]));
+  await writeFile(join(client.path, "file.txt"), "fix");
+  await run(["add", "file.txt"]);
+  await run(["commit", "-m", "production fix"]);
+  const branch = "fix/v1.1";
+  const preview = await service.preparePush({
+    repositoryId: id,
+    remote: "origin",
+    branch,
+    destination: branch,
+    mode: "normal",
+    setUpstream: true,
+  });
+  await service.push(id, preview.token);
+  expect(await server.run(["rev-parse", branch])).toBe(
+    await run(["rev-parse", branch + "@{upstream}"]),
+  );
+  const plan = await writer.gitflow(id, {
+    kind: "preview",
+    type: "hotfix",
+    name: "v1.1",
+    retain: false,
+  });
+  expect(plan?.targets.map((target) => target.name)).toEqual(["main", "integration"]);
+  await writer.gitflow(id, { kind: "finish", plan: plan! });
+  expect(await run(["rev-parse", "v1.1"])).toBe(await run(["rev-parse", "main"]));
+  expect(await run(["show", "integration:file.txt"])).toBe("fix");
+  expect(await run(["branch", "--list", branch])).toBe("");
 });
 
 it("publishes selected branches, rejects stale leases even after fetch, and permits a newly reviewed rewrite", async () => {

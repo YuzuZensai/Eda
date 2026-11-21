@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { ProviderIcon, type HostingProvider } from "./ProviderIcon";
 import { cx } from "../../components/ui/cx";
 import { ConnectionCard } from "./ConnectionCard";
-import { ActionIndicator, AnimatedSize } from "../../components/ui/index";
+import { ActionIndicator, AnimatedSize, Button, Select } from "../../components/ui/index";
 
 export function ServiceAccountCard({
   provider,
@@ -95,5 +95,46 @@ export function ServiceAccountCard({
         )}
       </AnimatedSize>
     </section>
+  );
+}
+
+export function AccountActions({
+  canAdd,
+  secureStorage,
+  alternatives,
+  busy,
+  onAdd,
+  onSelect,
+}: {
+  canAdd: boolean;
+  secureStorage: boolean;
+  alternatives: readonly { id: string; login: string }[];
+  busy: boolean;
+  onAdd: () => void;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <>
+      {canAdd && (
+        <Button size="sm" variant="ghost" disabled={busy || !secureStorage} onClick={onAdd}>
+          {t("providerAccount.add")}
+        </Button>
+      )}
+      {alternatives.length > 0 && (
+        <Select
+          aria-label={t("providerAccount.switch")}
+          value=""
+          disabled={busy}
+          onValueChange={onSelect}
+        >
+          <option value="">{t("providerAccount.switch")}</option>
+          {alternatives.map(({ id, login }) => (
+            <option key={id} value={id}>
+              {login}
+            </option>
+          ))}
+        </Select>
+      )}
+    </>
   );
 }

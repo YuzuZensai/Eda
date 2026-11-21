@@ -1,6 +1,7 @@
 import { t } from "@shared/i18n";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { defaultGraphFilter, type GraphFilter } from "@shared/preferences/graph-view";
+import { useLocalReferences } from "../../repository/hooks/useLocalReferences";
 import { useSessionStore } from "../../stores/session-store";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { usePreferencesStore } from "../../stores/preferences-store";
@@ -11,6 +12,7 @@ import {
   Radio,
   Checkbox,
   ErrorDialog,
+  StateMessage,
   TextButton,
   Select,
 } from "../../components/ui/index";
@@ -27,44 +29,26 @@ export function GraphFilterDialog({
       useSessionStore.getState().snapshot?.session.views[repositoryId]?.graphFilter ??
       defaultGraphFilter(),
   );
-  const [refs, setRefs] = useState<
-    { name: string; oid: string; head?: boolean; upstream?: string }[]
-  >([]);
+  const { references, loadError, retry } = useLocalReferences(repositoryId);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const globalDefault = usePreferencesStore((state) => state.values.showInternalRefs.value);
 
-  useEffect(() => {
-    let alive = true;
-
-    void Promise.all([
-      window.eda.repository.listBranches(repositoryId),
-      window.eda.repository.listTags(repositoryId),
-    ]).then(([branches, tags]) => {
-      if (!alive) return;
-
-      if (!branches.ok || !tags.ok) {
-        setError(t("graphFilterDialog.referencesCouldNotBeLoadedCloseAndRetry"));
-        return;
-      }
-
-      setRefs([
-        ...branches.value.map((branch) => ({
+  const refs: { name: string; oid: string; head?: boolean; upstream?: string }[] = references
+    ? [
+        ...references.branches.map((branch) => ({
           name: `refs/${branch.remote ? "remotes" : "heads"}/${branch.name}`,
           oid: branch.oid,
           head: branch.isHead,
           upstream: branch.upstream,
         })),
-        ...tags.value.map((tag) => ({ name: `refs/tags/${tag.name}`, oid: tag.oid })),
-      ]);
-    });
-
-    return () => {
-      alive = false;
-    };
-  }, [repositoryId]);
+        ...references.tags.map((tag) => ({ name: `refs/tags/${tag.name}`, oid: tag.oid })),
+      ]
+    : [];
+  const matches = refs.filter((ref) => ref.name.toLowerCase().includes(query.toLowerCase()));
 
   const apply = () => {
+    if (!references) return;
     const pin = refs.find((ref) => ref.name === filter.pinnedRef);
     const next = {
       ...filter,
@@ -97,7 +81,9 @@ export function GraphFilterDialog({
           >
             {t("graphFilterDialog.showAll")}
           </Button>
-          <Button onClick={apply}>{t("graphFilterDialog.applyGraphView")}</Button>
+          <Button variant="primary" disabled={!references} onClick={apply}>
+            {t("graphFilterDialog.applyGraphView")}
+          </Button>
         </>
       }
     >
@@ -140,6 +126,7 @@ export function GraphFilterDialog({
         <div className="flex flex-wrap gap-2">
           <Button
             variant="quiet"
+            disabled={!references}
             onClick={() => {
               const head = refs.find((ref) => ref.head);
 
@@ -208,67 +195,75 @@ export function GraphFilterDialog({
         <p className="text-xs text-text-tertiary">
           {t("graphFilterDialog.soloReferencesIncludeTheirAncestorsSelectSeveralTo")}
         </p>
+        {!references && (
+          <StateMessage
+            tone={loadError ? "error" : "loading"}
+            title={
+              loadError
+                ? t("manageReferencesDialog.referencesCouldNotBeLoaded")
+                : t("references.loading")
+            }
+            description={loadError}
+            action={loadError && <Button onClick={retry}>{t("common.retry")}</Button>}
+          />
+        )}
+        {references && !matches.length && <p role="status">{t("references.noMatches")}</p>}
         <div className="max-h-72 overflow-auto">
-          {refs
-            .filter((ref) => ref.name.toLowerCase().includes(query.toLowerCase()))
-            .slice(0, 200)
-            .map((ref) => (
-              <div
-                key={ref.name}
-                className="flex items-center gap-2 border-b border-border-subtle py-2"
+          {matches.slice(0, 200).map((ref) => (
+            <div
+              key={ref.name}
+              className="flex items-center gap-2 border-b border-border-subtle py-2"
+            >
+              <span className="min-w-0 flex-1 truncate text-xs" title={ref.name}>
+                {ref.name.replace(/^refs\/(heads|remotes|tags)\//, "")}
+              </span>
+              <Checkbox
+                className="flex gap-1 text-xs"
+                aria-label={t("graphFilterDialog.hideReference", { name: ref.name })}
+                checked={filter.hiddenRefs.includes(ref.name)}
+                disabled={!filter.hiddenRefs.includes(ref.name) && filter.hiddenRefs.length >= 256}
+                onChange={(event) =>
+                  setFilter({
+                    ...filter,
+                    refs: [],
+                    hiddenRefs: event.target.checked
+                      ? [...filter.hiddenRefs, ref.name]
+                      : filter.hiddenRefs.filter((name) => name !== ref.name),
+                  })
+                }
               >
-                <span className="min-w-0 flex-1 truncate text-xs" title={ref.name}>
-                  {ref.name.replace(/^refs\/(heads|remotes|tags)\//, "")}
-                </span>
-                <Checkbox
-                  className="flex gap-1 text-xs"
-                  aria-label={t("graphFilterDialog.hideReference", { name: ref.name })}
-                  checked={filter.hiddenRefs.includes(ref.name)}
-                  disabled={
-                    !filter.hiddenRefs.includes(ref.name) && filter.hiddenRefs.length >= 256
-                  }
-                  onChange={(event) =>
-                    setFilter({
-                      ...filter,
-                      refs: [],
-                      hiddenRefs: event.target.checked
-                        ? [...filter.hiddenRefs, ref.name]
-                        : filter.hiddenRefs.filter((name) => name !== ref.name),
-                    })
-                  }
-                >
-                  {t("graphFilterDialog.hide")}
-                </Checkbox>
-                <Checkbox
-                  className="flex gap-1 text-xs"
-                  aria-label={t("graphFilterDialog.soloReference", { name: ref.name })}
-                  checked={filter.refs.includes(ref.name)}
-                  disabled={!filter.refs.includes(ref.name) && filter.refs.length >= 256}
-                  onChange={(event) =>
-                    setFilter({
-                      ...filter,
-                      hiddenRefs: [],
-                      refs: event.target.checked
-                        ? [...filter.refs, ref.name]
-                        : filter.refs.filter((name) => name !== ref.name),
-                    })
-                  }
-                >
-                  {t("graphFilterDialog.solo")}
-                </Checkbox>
-                <label className="flex min-h-6 items-center gap-1 text-xs">
-                  <Radio
-                    name="pinned-reference"
-                    aria-label={t("graphFilterDialog.pinReference", { name: ref.name })}
-                    checked={filter.pinnedRef === ref.name}
-                    onChange={() => setFilter({ ...filter, pinnedRef: ref.name })}
-                  />
-                  {t("graphFilterDialog.pin")}
-                </label>
-              </div>
-            ))}
+                {t("graphFilterDialog.hide")}
+              </Checkbox>
+              <Checkbox
+                className="flex gap-1 text-xs"
+                aria-label={t("graphFilterDialog.soloReference", { name: ref.name })}
+                checked={filter.refs.includes(ref.name)}
+                disabled={!filter.refs.includes(ref.name) && filter.refs.length >= 256}
+                onChange={(event) =>
+                  setFilter({
+                    ...filter,
+                    hiddenRefs: [],
+                    refs: event.target.checked
+                      ? [...filter.refs, ref.name]
+                      : filter.refs.filter((name) => name !== ref.name),
+                  })
+                }
+              >
+                {t("graphFilterDialog.solo")}
+              </Checkbox>
+              <label className="flex min-h-6 items-center gap-1 text-xs">
+                <Radio
+                  name="pinned-reference"
+                  aria-label={t("graphFilterDialog.pinReference", { name: ref.name })}
+                  checked={filter.pinnedRef === ref.name}
+                  onChange={() => setFilter({ ...filter, pinnedRef: ref.name })}
+                />
+                {t("graphFilterDialog.pin")}
+              </label>
+            </div>
+          ))}
         </div>
-        {refs.length > 200 && (
+        {matches.length > 200 && (
           <p className="text-xs">
             {t("graphFilterDialog.showingAtMost200MatchesSearchToFindMoreReferences")}
           </p>

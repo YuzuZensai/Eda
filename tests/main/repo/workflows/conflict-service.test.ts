@@ -163,7 +163,10 @@ it("reviews an external tool result without touching the index and rejects stale
 it("resolves text, rename and modify/delete conflicts without losing external edits or staging unrelated work", async () => {
   const { service, repository, writer, identities } = await setup();
 
-  await repo.writeFile(".gitattributes", "converted.txt text eol=crlf\n");
+  await repo.writeFile(
+    ".gitattributes",
+    "converted.txt text eol=crlf\ntext.txt conflict-marker-size=12\n",
+  );
   await repo.writeFile("converted.txt", "base\r\n");
   await repo.writeFile("text.txt", "base\r\n");
   await repo.writeFile("deleted.txt", "base");
@@ -229,6 +232,18 @@ it("resolves text, rename and modify/delete conflicts without losing external ed
 
   const first = await service.inspect(repository.id, "text.txt");
 
+  expect(first.markerSize).toBe(12);
+  expect(first.hasMarkers).toBe(true);
+  expect(first.output).toContain("<<<<<<<<<<<< HEAD");
+  await expect(
+    service.resolve({
+      repositoryId: repository.id,
+      token: first.token,
+      choice: "text",
+      text: first.output!,
+      stage: true,
+    }),
+  ).rejects.toThrow(/markers/);
   expect(first.base?.text).toBe("base\r\n");
   expect(first.current?.text).toBe("current\r\n");
   expect(first.incoming?.text).toBe("incoming\r\n");
@@ -373,10 +388,11 @@ it("resolves binary conflicts beyond preview limits without overwriting newer fi
 
   await writeFile(
     join(repo.path, "large.bin"),
-    `${"a".repeat(600 * 1024)}\n<<<<<<< current\nleft\n=======\nright\n>>>>>>> incoming\n`,
+    `${"a".repeat(3 * 256 * 1024 - 4)}\n<<<<<<< current\nleft\n`,
   );
 
   const freshLarge = await service.inspect(repository.id, "large.bin");
+  expect(freshLarge.hasMarkers).toBe(true);
 
   await expect(
     service.resolve({

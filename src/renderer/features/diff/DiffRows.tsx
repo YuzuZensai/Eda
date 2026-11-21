@@ -17,14 +17,29 @@ export const DIFF_ROW_HEIGHT = 24;
 export function DiffSummaryRow({
   row,
   onToggle,
+  onToggleRegion,
   query = "",
   active = false,
 }: {
   row: UnifiedRow;
   query?: string;
   active?: boolean;
+  onToggleRegion?: (key: string) => void;
   onToggle: (index: number, value: boolean) => void;
 }) {
+  if (row.contextRegion && onToggleRegion)
+    return (
+      <ButtonBase
+        className="block w-full bg-bg-surface px-3 text-left text-accent-text"
+        style={{ height: DIFF_ROW_HEIGHT }}
+        aria-expanded={!row.contextRegion.collapsed}
+        onClick={() => onToggleRegion(row.key)}
+      >
+        {t(row.contextRegion.collapsed ? "diff.options.showRegion" : "diff.options.hideRegion", {
+          count: row.contextRegion.count,
+        })}
+      </ButtonBase>
+    );
   if (!row.file)
     return (
       <div
@@ -91,17 +106,21 @@ export function UnifiedDiffRow({
   row,
   query = "",
   active = false,
+  wrap = false,
 }: {
   row: UnifiedRow;
   query?: string;
   active?: boolean;
+  wrap?: boolean;
 }) {
   const lineNumber = row.newLineNumber ?? row.oldLineNumber;
 
   return (
     <div
       className={`flex min-w-full items-center ${rowTone(row.kind)}`}
-      style={{ height: DIFF_ROW_HEIGHT, width: "max-content" }}
+      style={
+        wrap ? { minHeight: DIFF_ROW_HEIGHT } : { height: DIFF_ROW_HEIGHT, width: "max-content" }
+      }
     >
       <PartialLineControl row={row} />
       <span
@@ -121,7 +140,9 @@ export function UnifiedDiffRow({
       <ChangeMarker kind={row.kind} />
       <span
         data-diff-text
-        className="whitespace-pre px-2"
+        className={
+          wrap ? "min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] px-2" : "whitespace-pre px-2"
+        }
         aria-label={`${stateLabel(row.kind)}${lineNumber ? t("diff.diffRows.line", { lineNumber: lineNumber }) : ""}: ${row.text}`}
       >
         <Tokens tokens={row.tokens} query={query} active={active} />
@@ -135,11 +156,13 @@ export function DiffCell({
   side,
   query = "",
   active = false,
+  wrap = false,
 }: {
   row: UnifiedRow | undefined;
   side: "old" | "new";
   query?: string;
   active?: boolean;
+  wrap?: boolean;
 }) {
   const lineNumber = side === "old" ? row?.oldLineNumber : row?.newLineNumber;
 
@@ -156,7 +179,11 @@ export function DiffCell({
       <ChangeMarker kind={row.kind} />
       <span
         data-diff-text
-        className="truncate whitespace-pre px-2"
+        className={
+          wrap
+            ? "min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] px-2"
+            : "truncate whitespace-pre px-2"
+        }
         aria-label={`${stateLabel(row.kind)}${lineNumber ? t("diff.diffRows.line", { lineNumber: lineNumber }) : ""}: ${row.text}`}
       >
         <Tokens tokens={row.tokens} query={query} active={active} />

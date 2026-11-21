@@ -200,6 +200,8 @@ function setup() {
     git: { history: vi.fn(async () => ({ commits: [], nextOffset: null })) },
     repositoryReader: {
       referenceUrl: vi.fn(async () => null),
+      compareRevisions: vi.fn(),
+      comparisonDiff: vi.fn(),
       ignoredFiles: vi.fn(async () => ({ paths: [], truncated: false })),
       commitTemplate: vi.fn(async () => null),
     },
@@ -302,6 +304,7 @@ function setup() {
     identities: { findById: vi.fn(() => profile) },
     sessions: { change: vi.fn(), open: vi.fn(), hasBinding: vi.fn(() => true), close: vi.fn() },
     writer: { stage: vi.fn(), clearLocalCommitConfig: vi.fn() },
+    terminals: { dispose: vi.fn(), forget: vi.fn() },
     credentials: { unlockActiveKey: vi.fn() },
     repositoryTrust: { current: vi.fn(() => null), respond: vi.fn(() => true) },
     sshHostTrust: { current: vi.fn(() => null), respond: vi.fn(() => true) },
@@ -352,6 +355,35 @@ it("validates repository reads before forwarding them to the reader", async () =
     value: null,
   });
   expect(repositoryReader.commitTemplate).toHaveBeenCalledWith(repositoryId);
+});
+
+it("requires a comparison mode and a selected path for revision diff reads", async () => {
+  const { repositoryReader } = setup();
+  const revisions = { repositoryId, left: "main", right: "topic" };
+  expect(await invoke(IPC_CHANNELS.repositoryCompareRevisions, revisions)).toMatchObject({
+    ok: false,
+    error: { kind: "invalid-input" },
+  });
+  expect(repositoryReader.compareRevisions).not.toHaveBeenCalled();
+
+  const comparison = { ...revisions, mode: "merge-base" };
+  expect(await invoke(IPC_CHANNELS.repositoryCompareRevisions, comparison)).toMatchObject({
+    ok: true,
+  });
+  expect(repositoryReader.compareRevisions).toHaveBeenCalledWith(comparison);
+
+  const commits = { repositoryId, baseOid: "a".repeat(40), rightOid: "b".repeat(40) };
+  expect(await invoke(IPC_CHANNELS.repositoryComparisonDiff, commits)).toMatchObject({
+    ok: false,
+    error: { kind: "invalid-input" },
+  });
+  expect(repositoryReader.comparisonDiff).not.toHaveBeenCalled();
+
+  const renamedFile = { ...commits, oldPath: "old.txt", path: "new.txt" };
+  expect(await invoke(IPC_CHANNELS.repositoryComparisonDiff, renamedFile)).toMatchObject({
+    ok: true,
+  });
+  expect(repositoryReader.comparisonDiff).toHaveBeenCalledWith(renamedFile);
 });
 
 it("forwards a validated single-tag fetch through the repository change notification path", async () => {

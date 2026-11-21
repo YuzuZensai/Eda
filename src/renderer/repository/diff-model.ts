@@ -18,6 +18,7 @@ export interface TextToken {
 export interface UnifiedRow {
   key: string;
   kind: "file" | "notice" | "hunk" | DiffLine["type"];
+  contextRegion?: { count: number; collapsed: boolean };
   hunkIndex?: number;
   lineIndex?: number;
   file?: { index: number; expanded: boolean; expandable: boolean; summary: string };
@@ -211,6 +212,36 @@ export function toUnifiedRows(
   }
 
   return rows;
+}
+
+export function groupUnchangedRows(
+  rows: UnifiedRow[],
+  collapsed: ReadonlySet<string>,
+): UnifiedRow[] {
+  const result: UnifiedRow[] = [];
+  let index = 0;
+  while (index < rows.length) {
+    const start = index;
+    while (rows[index]?.kind === "context") index++;
+    if (start === index) {
+      result.push(rows[index++]!);
+      continue;
+    }
+    const count = index - start;
+    if (count > 6) {
+      const key = rows[start]!.key + "-region";
+      result.push({
+        key,
+        kind: "notice",
+        text: "",
+        tokens: [],
+        contextRegion: { count, collapsed: collapsed.has(key) },
+      });
+      if (collapsed.has(key)) continue;
+    }
+    result.push(...rows.slice(start, index));
+  }
+  return result;
 }
 
 export function toSideBySideRows(rows: readonly UnifiedRow[]): SideBySideRow[] {

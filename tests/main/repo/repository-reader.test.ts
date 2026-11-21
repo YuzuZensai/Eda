@@ -1,4 +1,15 @@
 import { RepositoryReader } from "@main/repo/repository-reader";
+import type { GitService } from "@main/git/git-service";
+
+import { sshReferenceRemote } from "@main/ssh/reference-host";
+
+it("resolves a literal SSH alias only for its matching host block", () => {
+  const remote = "git@work-fork:group/project.git";
+  const config = "Host personal\n HostName github.com\nHost work-fork\n HostName gitlab.com";
+  expect(sshReferenceRemote(remote, config)).toBe("https://gitlab.com/group/project.git");
+  expect(sshReferenceRemote(remote, "Include ~/.ssh/conf.d/*\n" + config)).toBeUndefined();
+  expect(sshReferenceRemote(remote, "Match exec something\n" + config)).toBeUndefined();
+});
 
 function setup() {
   const repository = { id: "repo", identityId: "profile", path: "/repo" };
@@ -9,6 +20,10 @@ function setup() {
     }),
   };
   const git = {
+    status: vi.fn<GitService["status"]>(),
+    exec: vi.fn<GitService["exec"]>(),
+    filePatch: vi.fn<GitService["filePatch"]>(),
+    compareDiff: vi.fn<GitService["compareDiff"]>(),
     remoteNames: vi.fn(async () => ["origin"]),
     readConfig: vi.fn(async (): Promise<string | undefined> => "https://github.com/owner/repo.git"),
     ignoredFiles: vi.fn(async (): Promise<string[]> => []),
@@ -16,7 +31,12 @@ function setup() {
   };
   const instances = vi.fn((_profileId: string): readonly string[] => []);
 
-  return { reader: new RepositoryReader(git, repositories, instances), git, instances };
+  return {
+    reader: new RepositoryReader(git, repositories, instances),
+    git,
+    instances,
+    repositories,
+  };
 }
 
 it("selects the longest remote prefix and removes only that prefix from a branch link", async () => {
@@ -27,6 +47,19 @@ it("selects the longest remote prefix and removes only that prefix from a branch
     "https://github.com/owner/repo/tree/feature%2Ftopic",
   );
   expect(git.readConfig).toHaveBeenCalledWith("remote.team/project.url", { cwd: "/repo" });
+});
+
+it("opens a local branch at its configured fork and upstream branch name", async () => {
+  const { reader, git } = setup();
+  git.remoteNames.mockResolvedValue(["origin", "fork"]);
+  git.readConfig
+    .mockResolvedValueOnce("fork")
+    .mockResolvedValueOnce("refs/heads/published/topic")
+    .mockResolvedValueOnce("git@github.com:fork/project.git");
+  expect(await reader.referenceUrl("repo", "branch", "local-topic")).toBe(
+    "https://github.com/fork/project/tree/published%2Ftopic",
+  );
+  expect(git.readConfig).toHaveBeenLastCalledWith("remote.fork.url", { cwd: "/repo" });
 });
 
 it.each([
@@ -97,6 +130,44 @@ it("rejects repositories outside the current profile before reading Git or provi
   );
   await expect(reader.ignoredFiles("other")).rejects.toThrow("not in this profile");
   await expect(reader.commitTemplate("other")).rejects.toThrow("not in this profile");
+  await expect(
+    reader.compareRevisions({
+      repositoryId: "other",
+      left: "main",
+      right: "topic",
+      mode: "direct",
+    }),
+  ).rejects.toThrow("not in this profile");
+  await expect(
+    reader.comparisonDiff({
+      repositoryId: "other",
+      baseOid: "a".repeat(40),
+      rightOid: "b".repeat(40),
+      path: "file.txt",
+    }),
+  ).rejects.toThrow("not in this profile");
   for (const method of Object.values(git)) expect(method).not.toHaveBeenCalled();
   expect(instances).not.toHaveBeenCalled();
+});
+
+it("drops a comparison file read if the repository was relocated before Git replied", async () => {
+  const { reader, git, repositories } = setup();
+  git.compareDiff.mockImplementation(async () => {
+    repositories.resolveActiveRepository.mockReturnValue({
+      id: "repo",
+      identityId: "profile",
+      path: "/moved",
+    });
+    return { files: [] };
+  });
+  await expect(
+    reader.comparisonDiff({
+      repositoryId: "repo",
+      baseOid: "a".repeat(40),
+      rightOid: "b".repeat(40),
+      path: "file.txt",
+    }),
+  ).rejects.toMatchObject({
+    code: "main.repositoryManager.theRepositoryChangedRefreshAndTryAgain",
+  });
 });

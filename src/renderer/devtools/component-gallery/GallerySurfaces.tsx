@@ -4,6 +4,7 @@ import {
   Button,
   Dialog,
   Disclosure,
+  NoticeBanner,
   FolderIcon,
   MenuItem,
   AnchoredPopover,
@@ -107,9 +108,14 @@ export function GallerySurfaces({ setFeedback }: { setFeedback: (message: string
           onClose={() => setModal(null)}
           footer={<Button onClick={() => setModal(null)}>{t("common.close")}</Button>}
         >
-          <p className="text-sm">
-            {t("settings.componentGallery.focusIsContainedHereUntilTheDialogCloses")}
-          </p>
+          <NoticeBanner tone="error">{t("settings.componentGallery.reviewFailure")}</NoticeBanner>
+          <ul className="mt-3 divide-y divide-border-subtle">
+            {Array.from({ length: 24 }, (_, index) => (
+              <li key={index} className="py-2 font-mono text-xs">
+                {t("settings.componentGallery.exampleFile", { number: index + 1 })}
+              </li>
+            ))}
+          </ul>
         </Dialog>
       )}
 

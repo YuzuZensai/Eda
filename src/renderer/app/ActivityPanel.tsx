@@ -185,7 +185,10 @@ export function ActivityPanel() {
                       }}
                     >
                       <RefreshCw size={12} />
-                      {t("activityPanel.inspectRepository")}
+                      {record.kindKey === "operationTitles.cloneRepository" &&
+                      record.state === "succeeded"
+                        ? t("activityPanel.openClone")
+                        : t("activityPanel.inspectRepository")}
                     </TextButton>
                   </div>
                 </div>

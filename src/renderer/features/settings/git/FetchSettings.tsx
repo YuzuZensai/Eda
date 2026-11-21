@@ -60,6 +60,12 @@ export function FetchSettings({ repositoryId }: { repositoryId?: string }) {
             label={t("settings.fetchSettings.pruneDeletedRemoteTrackingBranches")}
           />
           <FetchCheckbox
+            settingKey="predictUpstreamConflicts"
+            owner="repository"
+            repositoryId={repositoryId}
+            label={t("mergePrediction.preference")}
+          />
+          <FetchCheckbox
             settingKey="fetchTags"
             owner="repository"
             repositoryId={repositoryId}
@@ -85,7 +91,7 @@ function FetchCheckbox({
   repositoryId,
   label,
 }: {
-  settingKey: "fetchPrune" | "fetchTags";
+  settingKey: "fetchPrune" | "fetchTags" | "predictUpstreamConflicts";
   owner: "application" | "repository";
   repositoryId?: string;
   label: string;

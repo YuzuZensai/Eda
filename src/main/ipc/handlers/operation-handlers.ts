@@ -2,7 +2,7 @@ import { errorText } from "@shared/error-codes";
 import { ok } from "@shared/errors";
 import { IPC_CHANNELS, IPC_EVENTS } from "@shared/ipc";
 import type { Services } from "../../services";
-import { invalidRequest } from "../request-errors";
+import { invalidRequest } from "../../request-errors";
 import { broadcast, handle } from "../transport";
 import { requireId } from "../validate";
 

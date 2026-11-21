@@ -188,6 +188,12 @@ it("continues a reviewed merge after hook failure and database reopen while reje
   );
 
   const indexBefore = await readFile(join(repo.path, ".git", "index"));
+  await repo.run(["branch", "--set-upstream-to=incoming", "main"]);
+  expect(await context.workflow.predictUpstream(repository.id)).toEqual({
+    state: "conflicted",
+    paths: ["file.txt"],
+    totalPaths: 1,
+  });
   const start = await context.workflow.prepareStart(repository.id, incoming, "no-ff");
 
   expect(start.prediction).toEqual({ state: "conflicted", paths: ["file.txt"], totalPaths: 1 });

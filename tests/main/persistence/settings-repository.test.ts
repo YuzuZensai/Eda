@@ -49,6 +49,39 @@ function setup() {
 }
 
 describe("preference scopes", () => {
+  it("round-trips portable overrides between profiles and rejects nonportable or invalid settings atomically", () => {
+    const { store, work, home } = setup();
+    const source = { kind: "profile", profileId: work.id } as const;
+    const target = { kind: "profile", profileId: home.id } as const;
+    store.set("shortcutOverrides", source, { "commands.open": "shift+k" });
+    store.set("editorExecutable", source, "/private/editor");
+    const file = store.exportPortable(source);
+    expect(file.values).toEqual({
+      shortcutOverrides: { "commands.open": "shift+k" },
+      repositoryHints: ["/work/repo"],
+    });
+    expect(store.importPortable(target, file)).toEqual(["shortcutOverrides", "repositoryHints"]);
+    expect(store.resolve("repositoryHints", target).value).toEqual(["/work/repo"]);
+    expect(() =>
+      store.importPortable(target, {
+        ...file,
+        values: { repositoryHints: ["https://example.invalid/secret"] },
+      }),
+    ).toThrow();
+    expect(store.resolve("shortcutOverrides", target).value).toEqual(
+      file.values["shortcutOverrides"],
+    );
+    expect(() =>
+      store.importPortable(target, {
+        ...file,
+        values: { shortcutOverrides: {}, editorExecutable: "/other" },
+      }),
+    ).toThrow();
+    expect(store.resolve("shortcutOverrides", target).value).toEqual(
+      file.values["shortcutOverrides"],
+    );
+    expect(() => store.importPortable({ kind: "application" }, file)).toThrow();
+  });
   it("persists independent repository roots per profile without global or repository overrides", () => {
     const { db, store, work, home } = setup();
     db.insert(settings).values({ key: "repositoryRoot", value: '"/old-global-root"' }).run();

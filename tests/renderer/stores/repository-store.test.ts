@@ -94,6 +94,32 @@ describe("repository read store", () => {
     });
   });
 
+  it("retries a rejected commit-file read on the same selected commit and path", async () => {
+    const bridge = api(async () => ok({ commits: [makeCommit(0)], nextOffset: null }));
+    const file = { newPath: "file.txt", status: "added" as const, binary: false, hunks: [] };
+    const read = vi
+      .fn()
+      .mockResolvedValueOnce(ok({ files: [file] }))
+      .mockRejectedValueOnce(new Error("Disconnected"))
+      .mockResolvedValueOnce(ok({ files: [file] }));
+    bridge.repository.commitDiff = read;
+    vi.stubGlobal("eda", bridge);
+    const store = useRepositoryStore.getState();
+    await store.open("repo", "identity", true);
+    await store.selectCommit("oid-0");
+    await store.selectCommitFile("file.txt");
+    expect(useRepositoryStore.getState().commitFileLoading).toBe(false);
+    expect(useRepositoryStore.getState().commitFileError).toBeTruthy();
+    await store.retryDiff();
+    expect(read).toHaveBeenLastCalledWith({
+      repositoryId: "repo",
+      oid: "oid-0",
+      paths: ["file.txt"],
+    });
+    expect(useRepositoryStore.getState().commitFileError).toBeNull();
+    expect(useRepositoryStore.getState().commitFileDiff?.files[0]?.newPath).toBe("file.txt");
+  });
+
   it("keeps an inspected commit file selected when refreshing", async () => {
     const bridge = api(async () => ok({ commits: [makeCommit(0)], nextOffset: null }));
     bridge.repository.commitDiff = async () =>

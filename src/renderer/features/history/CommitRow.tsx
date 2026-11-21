@@ -19,6 +19,11 @@ import { CommitTitleInput } from "../../components/ui/forms/CommitTitleInput";
 
 export function CommitRow({
   row,
+  loadedChildren,
+  linkedWorktrees = [],
+  rowHeight = ROW_HEIGHT,
+  avatars = true,
+  dateStyle = "short",
   columns,
   gutter,
   selected,
@@ -31,6 +36,11 @@ export function CommitRow({
   onContextMenu,
 }: {
   row: DagRow;
+  rowHeight?: number;
+  avatars?: boolean;
+  dateStyle?: "short" | "local" | "iso";
+  linkedWorktrees?: readonly string[];
+  loadedChildren?: readonly string[];
   columns: GraphColumn[];
   gutter: number;
   selected: boolean;
@@ -42,12 +52,23 @@ export function CommitRow({
   onSelect: () => void;
   onContextMenu: (event: ReactMouseEvent) => void;
 }) {
-  const center = ROW_HEIGHT / 2;
+  const center = rowHeight / 2;
   const isMerge = row.commit.parents.length > 1;
 
   return (
     <ButtonBase
       data-tour="history-commit"
+      aria-description={
+        [
+          loadedChildren &&
+            t("commitGraph.loadedChildren", {
+              children: loadedChildren.join(", ") || t("common.none"),
+            }),
+          ...linkedWorktrees,
+        ]
+          .filter(Boolean)
+          .join(". ") || undefined
+      }
       aria-pressed={selected}
       title={t("history.commitRow.parents", {
         subject: row.commit.subject,
@@ -64,13 +85,13 @@ export function CommitRow({
           t("history.commitRow.rootOrShallowBoundary"),
       })}
       className={`flex w-full min-w-0 items-center border-b border-border-subtle text-left hover:bg-bg-raised ${selected || related ? "bg-accent-muted" : ""}`}
-      style={{ height: ROW_HEIGHT }}
+      style={{ height: rowHeight }}
       onClick={onSelect}
       onContextMenu={onContextMenu}
     >
       <svg
         width={gutter}
-        height={ROW_HEIGHT}
+        height={rowHeight}
         className="shrink-0 overflow-visible"
         aria-hidden="true"
       >
@@ -79,7 +100,7 @@ export function CommitRow({
             d={
               workingTreeConnection.head
                 ? `M ${laneX(workingTreeConnection.lane)} 0 C ${laneX(workingTreeConnection.lane)} ${center}, ${laneX(row.lane)} 0, ${laneX(row.lane)} ${center}`
-                : `M ${laneX(workingTreeConnection.lane)} 0 V ${ROW_HEIGHT}`
+                : `M ${laneX(workingTreeConnection.lane)} 0 V ${rowHeight}`
             }
             fill="none"
             stroke={laneColor(workingTreeConnection.lane)}
@@ -121,6 +142,14 @@ export function CommitRow({
             row.commit.subject
           )}
         </span>
+        {linkedWorktrees.length > 0 && (
+          <span
+            title={linkedWorktrees.join("\n")}
+            className="max-w-48 truncate text-xs text-text-secondary"
+          >
+            {linkedWorktrees.join(", ")}
+          </span>
+        )}
         <Decorations decorations={row.commit.decorations} />
         {columns
           .filter((column) => column.visible)
@@ -139,17 +168,19 @@ export function CommitRow({
             >
               {column.id === "author" ? (
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <ProfileAvatar
-                    name={row.commit.author.name}
-                    email={row.commit.author.email}
-                    {...(repositoryId && { repositoryId })}
-                    hue={210}
-                    compact
-                  />
+                  {avatars && (
+                    <ProfileAvatar
+                      name={row.commit.author.name}
+                      email={row.commit.author.email}
+                      {...(repositoryId && { repositoryId })}
+                      hue={210}
+                      compact
+                    />
+                  )}
                   <span className="truncate">{row.commit.author.name}</span>
                 </span>
               ) : column.id === "date" ? (
-                formatDate(row.commit.committerTimestamp)
+                formatDate(row.commit.committerTimestamp, dateStyle)
               ) : (
                 <span className="flex min-w-0 items-center gap-1">
                   {vigilantMode &&
@@ -170,6 +201,7 @@ export function CommitRow({
 
 export function WorkingTreeRow({
   changes,
+  rowHeight = ROW_HEIGHT,
   truncated,
   gutter,
   lane,
@@ -179,6 +211,7 @@ export function WorkingTreeRow({
   onTitleChange,
   onSelect,
 }: {
+  rowHeight?: number;
   changes: readonly RepositoryChange[];
   truncated: boolean;
   gutter: number;
@@ -194,24 +227,28 @@ export function WorkingTreeRow({
     : "commitChangesPanel.workingTreeChanges";
   const description = t(descriptionKey, { count: changes.length });
   const nodeLane = lane ?? 0;
+  let conflicts = 0;
   let addedCount = 0;
   let deletedCount = 0;
 
   for (const change of changes) {
-    if (change.kind === "unmerged" || change.index === "U" || change.worktree === "U") continue;
+    if (change.kind === "unmerged" || change.index === "U" || change.worktree === "U") {
+      conflicts++;
+      continue;
+    }
 
     if (change.index === "D" || change.worktree === "D") deletedCount += 1;
     else if (change.kind === "untracked" || change.index === "A" || change.worktree === "?")
       addedCount += 1;
   }
 
-  const otherCount = changes.length - addedCount - deletedCount;
+  const otherCount = changes.length - addedCount - deletedCount - conflicts;
 
   return (
     <div
       data-tour="history-working-tree"
       className={`flex w-full min-w-0 items-center border-b border-border-subtle text-left hover:bg-bg-raised ${selected ? "bg-accent-muted" : ""}`}
-      style={{ height: ROW_HEIGHT }}
+      style={{ height: rowHeight }}
     >
       <ButtonBase
         aria-label={t("commitGraph.viewWorkingChanges", { description })}
@@ -220,17 +257,17 @@ export function WorkingTreeRow({
         className="flex h-full shrink-0 items-center"
         onClick={onSelect}
       >
-        <svg width={gutter} height={ROW_HEIGHT} className="shrink-0" aria-hidden="true">
+        <svg width={gutter} height={rowHeight} className="shrink-0" aria-hidden="true">
           {lane !== undefined && (
             <path
-              d={`M ${laneX(lane)} ${ROW_HEIGHT / 2} V ${ROW_HEIGHT}`}
+              d={`M ${laneX(lane)} ${rowHeight / 2} V ${rowHeight}`}
               stroke={laneColor(lane)}
               strokeWidth="1.75"
             />
           )}
           <circle
             cx={laneX(nodeLane)}
-            cy={ROW_HEIGHT / 2}
+            cy={rowHeight / 2}
             r="5"
             fill="var(--bg-base)"
             stroke={laneColor(nodeLane)}
@@ -241,15 +278,24 @@ export function WorkingTreeRow({
       </ButtonBase>
 
       <div className="w-80 min-w-0 shrink pr-3">
-        <CommitTitleInput
-          aria-label={t("commitGraph.workingTreeCommitTitle")}
-          placeholder={t("changesPanel.workingTree")}
-          style={{ height: ROW_HEIGHT - 6 }}
-          value={title}
-          disabled={titleDisabled}
-          onChange={onTitleChange}
-          onFocus={onSelect}
-        />
+        {conflicts > 0 ? (
+          <ButtonBase
+            onClick={onSelect}
+            className="w-full truncate text-left text-xs font-medium text-git-conflict"
+          >
+            {t("commitGraph.conflictedFiles", { count: conflicts })}
+          </ButtonBase>
+        ) : (
+          <CommitTitleInput
+            aria-label={t("commitGraph.workingTreeCommitTitle")}
+            placeholder={t("changesPanel.workingTree")}
+            style={{ height: rowHeight - 6 }}
+            value={title}
+            disabled={titleDisabled}
+            onChange={onTitleChange}
+            onFocus={onSelect}
+          />
+        )}
       </div>
 
       {(
@@ -345,10 +391,13 @@ function Decorations({ decorations }: { decorations: CommitDecoration[] }) {
   );
 }
 
-function formatDate(value: string): string {
+function formatDate(value: string, style: "short" | "local" | "iso"): string {
   const date = new Date(value);
 
   if (Number.isNaN(date.valueOf())) return value;
+
+  if (style === "iso") return date.toISOString();
+  if (style === "local") return date.toLocaleString(getLocale());
 
   const sameYear = date.getFullYear() === new Date().getFullYear();
 

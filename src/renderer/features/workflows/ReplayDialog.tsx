@@ -20,14 +20,14 @@ interface ReplayDialogProps {
   repositoryId: string;
   kind: ReplayKind;
   action: ReplayAction;
-  initialCommit?: string;
+  initialCommits?: string[];
   onClose: () => void;
 }
 
 export function ReplayDialog(props: ReplayDialogProps) {
   return (
     <ReplayDialogContent
-      key={JSON.stringify([props.repositoryId, props.kind, props.action, props.initialCommit])}
+      key={JSON.stringify([props.repositoryId, props.kind, props.action, props.initialCommits])}
       {...props}
     />
   );
@@ -37,16 +37,17 @@ function ReplayDialogContent({
   repositoryId,
   kind,
   action,
-  initialCommit,
+  initialCommits,
   onClose,
 }: ReplayDialogProps) {
-  const [oids, setOids] = useState<string[]>(initialCommit ? [initialCommit] : []);
+  const [oids, setOids] = useState<string[]>(initialCommits ?? []);
   const [input, setInput] = useState("");
   const [mainline, setMainline] = useState<number | undefined>();
   const [review, setReview] = useState<ReplayReview | null>(null);
   const [dirty, setDirty] = useState(true);
   const request = useRef(0);
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"prepare" | "execute" | null>(null);
+  const busy = phase !== null;
   const [confirmed, setConfirmed] = useState(false);
   const [recoveryWarning, setRecoveryWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +74,7 @@ function ReplayDialogContent({
 
   const prepare = async () => {
     const generation = ++request.current;
-    setBusy(true);
+    setPhase("prepare");
     setError(null);
     setReview(null);
     setDirty(true);
@@ -100,7 +101,7 @@ function ReplayDialogContent({
     } catch (error) {
       if (generation === request.current) setError(errorMessage(error));
     } finally {
-      if (generation === request.current) setBusy(false);
+      if (generation === request.current) setPhase(null);
     }
   };
 
@@ -117,7 +118,7 @@ function ReplayDialogContent({
 
     const generation = request.current;
 
-    setBusy(true);
+    setPhase("execute");
     setError(null);
 
     try {
@@ -139,7 +140,7 @@ function ReplayDialogContent({
     } catch (error) {
       if (generation === request.current) setError(errorMessage(error));
     } finally {
-      if (generation === request.current) setBusy(false);
+      if (generation === request.current) setPhase(null);
     }
   };
 
@@ -165,6 +166,7 @@ function ReplayDialogContent({
       }
       footer={
         <ReviewActions
+          preparing={phase === "prepare"}
           busy={busy}
           onClose={onClose}
           onReview={() => void prepare()}

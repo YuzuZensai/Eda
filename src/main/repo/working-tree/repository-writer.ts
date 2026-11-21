@@ -11,8 +11,18 @@ import type {
   CommitResult,
   TagSummary,
 } from "@shared/repository/repository-write";
+import { lstat, writeFile } from "node:fs/promises";
+import { workingFilePath } from "../../filesystem/working-file-path";
 import { basename } from "node:path";
 import { withLocalConfiguration } from "../../git/configuration/local-configuration";
+import { commitGitConfig } from "@shared/identity/identity";
+import { readWorkflowState } from "../../git/operations/workflow-state";
+import { changeWorktree } from "../../git/operations/worktrees";
+import { readFlow, runFlow } from "../../git/operations/gitflow";
+import type { FlowAction } from "@shared/workflows/gitflow";
+import { changeSubmodule } from "../../git/operations/submodules";
+import type { WorktreeAction, SubmoduleAction } from "@shared/repository/repository-write";
+import { assertFullObjectId, assertRepositoryPath } from "../../git/validation";
 import type { GitService } from "../../git/git-service";
 import type { IdentityManager } from "../../identity/identity-manager";
 import type { OperationManager } from "../../operations/operation-manager";
@@ -28,6 +38,8 @@ import { DiscardService } from "./discard-service";
 import { IgnoreService } from "./ignore-service";
 import { PartialStageService } from "./partial-stage-service";
 import { WriteQueue } from "./write-queue";
+
+import type { SignerService } from "../history/signer-service";
 
 export class RepositoryWriter {
   remoteOperation<T>(
@@ -55,6 +67,7 @@ export class RepositoryWriter {
     private readonly operations?: OperationManager,
     recovery?: ContentRecoveryRepository,
     journal?: WorkflowJournal,
+    private readonly signers?: Pick<SignerService, "decorate">,
   ) {
     this.partial = new PartialStageService(git);
     this.ignore = new IgnoreService(git);
@@ -76,6 +89,172 @@ export class RepositoryWriter {
       });
 
     return this.discard;
+  }
+
+  changeWorkingFile(id: string, path: string, trash?: (path: string) => Promise<void>) {
+    const operation = t("workingFile.title");
+    return this.write(
+      id,
+      async (root) => {
+        const target = await workingFilePath(root, path, operation);
+        if (trash) {
+          if (!(await lstat(target)).isFile())
+            throw new GitError({
+              kind: "invalid-input",
+              operation,
+              message: errorText("workingFile.invalid"),
+            });
+          await trash(target);
+        } else await writeFile(target, "", { flag: "wx" });
+      },
+      operation,
+    );
+  }
+
+  changeSubmodule(id: string, action: SubmoduleAction) {
+    return this.remoteOperation(id, t("submodules.manage"), (cwd, identity) =>
+      changeSubmodule(this.git, cwd, identity, action),
+    );
+  }
+
+  flowState(id: string) {
+    const repo = this.repositories.resolveActiveRepository(id);
+    return readFlow(this.git, repo.path, repo.identityId);
+  }
+  gitflow(id: string, action: FlowAction) {
+    return this.remoteOperation(id, t("flow.title"), (cwd, identity) =>
+      runFlow(this.git, cwd, identity, action),
+    );
+  }
+  changeWorktree(id: string, action: WorktreeAction) {
+    return this.write(id, (cwd) => changeWorktree(this.git, cwd, action), t("worktrees.title"));
+  }
+
+  restoreRevision(
+    repositoryId: string,
+    oid: string,
+    paths: string[],
+    destination: "index" | "worktree" | "both",
+  ) {
+    const operation = t("revision.restore");
+    assertFullObjectId(oid, operation);
+    const invalid = () =>
+      new GitError({ kind: "invalid-input", operation, message: errorText("revision.selectFile") });
+    if (!paths.length || paths.length > 100) throw invalid();
+    for (const path of paths) assertRepositoryPath(path, operation);
+    return this.write(
+      repositoryId,
+      async (cwd) => {
+        const options = { cwd, operation };
+        const policy = await this.git.trust?.checked(cwd, undefined, oid);
+        if (policy?.execution?.blocksWrites && !policy.trusted)
+          throw new GitError({
+            kind: "invalid-input",
+            operation,
+            message: errorText("main.repositoryTrust.writesBlocked"),
+          });
+        const entries = await this.git.exec(
+          [
+            "--literal-pathspecs",
+            "ls-tree",
+            "-z",
+            "--full-tree",
+            oid + "^{commit}",
+            "--",
+            ...paths,
+          ],
+          options,
+        );
+        const files = new Set(
+          entries.stdout.split("\0").flatMap((entry) => {
+            const match = /^\d+ blob [0-9a-f]+\t([\s\S]+)$/.exec(entry);
+            return match ? [match[1]] : [];
+          }),
+        );
+        if (paths.some((path) => !files.has(path))) throw invalid();
+        await this.git.exec(
+          [
+            "--literal-pathspecs",
+            "restore",
+            "--source=" + oid,
+            ...(destination !== "worktree" ? ["--staged"] : []),
+            ...(destination !== "index" ? ["--worktree"] : []),
+            "--",
+            ...paths,
+          ],
+          options,
+        );
+      },
+      operation,
+    );
+  }
+
+  mailbox(
+    id: string,
+    request: { bytes: Uint8Array } | { action: "continue" | "abort"; token: string },
+  ) {
+    const operation = t("mailbox.apply");
+    return this.remoteOperation(id, operation, async (cwd, identity) => {
+      const status = await this.git.status(cwd);
+      const state = await readWorkflowState(this.git, cwd, status);
+      const start = "bytes" in request;
+      if (
+        start
+          ? state || status.changes.length
+          : state?.kind !== "am" || state.token !== request.token
+      )
+        throw new GitError({
+          kind: "invalid-input",
+          operation,
+          message: errorText("mailbox.invalid"),
+        });
+      const config = Object.entries(commitGitConfig(identity)).flatMap(([key, value]) => [
+        "-c",
+        key + "=" + value,
+      ]);
+      await this.git.exec(
+        [
+          ...config,
+          "am",
+          ...(start ? ["--3way", "--patch-format=mbox", "-"] : ["--" + request.action]),
+        ],
+        {
+          cwd,
+          operation,
+          ...(start && { stdin: request.bytes }),
+          env: {
+            ...(identity.sshKeyPath && { sshKeyPath: identity.sshKeyPath }),
+            overrides: {
+              GIT_EDITOR: "true",
+              GIT_COMMITTER_NAME: identity.gitName,
+              GIT_COMMITTER_EMAIL: identity.gitEmail,
+            },
+          },
+        },
+      );
+    });
+  }
+
+  applyPatch(repositoryId: string, patch: Uint8Array) {
+    const operation = t("patch.apply");
+    return this.write(
+      repositoryId,
+      async (cwd) => {
+        const options = { cwd, operation, stdin: patch, maxStderrBytes: 64 * 1024 };
+        const check = await this.git.exec(["apply", "--check", "--whitespace=nowarn", "-"], {
+          ...options,
+          allowedExitCodes: [0, 1, 128],
+        });
+        if (check.exitCode !== 0)
+          throw new GitError({
+            kind: "invalid-input",
+            operation,
+            message: errorText("patch.rejected", { reason: check.stderr.trim().slice(0, 2048) }),
+          });
+        await this.git.exec(["apply", "--whitespace=nowarn", "-"], options);
+      },
+      operation,
+    );
   }
 
   previewDiscard(repositoryId: string, paths: string[]) {
@@ -258,7 +437,7 @@ export class RepositoryWriter {
   commit(
     repositoryId: string,
     message: string,
-    options: { amend?: boolean; signOff?: boolean } = {},
+    options: { amend?: boolean; skipCommitHooks?: boolean; signOff?: boolean } = {},
   ): Promise<CommitResult> {
     const expected = this.requireActiveIdentity(repositoryId);
     return this.write(
@@ -272,7 +451,7 @@ export class RepositoryWriter {
     path: string,
     repositoryId: string,
     message: string,
-    options: { amend?: boolean; signOff?: boolean },
+    options: { amend?: boolean; skipCommitHooks?: boolean; signOff?: boolean },
     expected: Identity,
   ): Promise<CommitResult> {
     this.identity.assertOperationIdentity(expected);
@@ -288,7 +467,7 @@ export class RepositoryWriter {
     repositoryId: string,
     paths: readonly string[] | undefined,
     message: string,
-    options: { amend?: boolean; signOff?: boolean } = {},
+    options: { amend?: boolean; skipCommitHooks?: boolean; signOff?: boolean } = {},
   ): Promise<CommitResult> {
     const expected = this.requireActiveIdentity(repositoryId);
     return this.write(repositoryId, async (path) => {
@@ -471,9 +650,17 @@ export class RepositoryWriter {
     );
   }
 
-  verifyTag(repositoryId: string, name: string) {
-    const { path } = this.repositories.resolveActiveRepository(repositoryId);
-    return this.git.verifyTag(path, name);
+  async verifyTag(repositoryId: string, name: string) {
+    const repository = this.repositories.resolveActiveRepository(repositoryId);
+    const tag = await this.git.verifyTag(repository.path, name);
+    const current = this.repositories.resolveActiveRepository(repositoryId);
+    if (current.identityId !== repository.identityId || current.path !== repository.path)
+      throw new GitError({
+        kind: "invalid-input",
+        operation: t("operations.verifyTag"),
+        message: errorText("main.repositoryManager.theRepositoryChangedRefreshAndTryAgain"),
+      });
+    return { ...tag, ...this.signers?.decorate(current.identityId, repositoryId, tag) };
   }
 
   listTags(repositoryId: string): Promise<TagSummary[]> {

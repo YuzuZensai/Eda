@@ -68,6 +68,10 @@ export function registerGitHubHandlers(services: Services): void {
     return ok(undefined);
   });
 
+  handle(IPC_CHANNELS.githubSelectAccount, async (_event, profile, account) =>
+    work(profile, (id) => github.selectAccount(id, requireId(account))),
+  );
+
   handle(IPC_CHANNELS.githubDisconnect, async (_event, profile) =>
     work(profile, (id) => github.disconnect(id)),
   );

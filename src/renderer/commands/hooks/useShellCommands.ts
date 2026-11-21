@@ -11,6 +11,7 @@ import { usePreferencesStore } from "../../stores/preferences-store";
 import { categorizeChanges } from "../../repository/working-changes";
 import {
   dispatchCommand,
+  configuredCommands,
   shortcutCommand,
   type CommandContext,
   type ShellCommandId,
@@ -124,6 +125,9 @@ export function useShellCommands(navigation: ShellNavigation) {
             case "repository.remotes":
               openSettings("repository-remotes");
               break;
+            case "repository.compare":
+              useRepositoryStore.getState().compareRevisions();
+              break;
             case "repository.references":
             case "repository.graph":
             case "repository.recovery":
@@ -210,8 +214,19 @@ export function useShellCommands(navigation: ShellNavigation) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      if (
+        event.target instanceof HTMLElement &&
+        (event.target.isContentEditable || event.target.closest("input, textarea")) &&
+        /^[acvxyz]$/i.test(event.key) &&
+        (event.ctrlKey || event.metaKey)
+      )
+        return;
 
-      const command = shortcutCommand(event, platform);
+      const command = shortcutCommand(
+        event,
+        platform,
+        configuredCommands(usePreferencesStore.getState().values.shortcutOverrides.value),
+      );
 
       if (!command) return;
 

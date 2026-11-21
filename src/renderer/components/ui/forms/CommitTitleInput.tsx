@@ -10,6 +10,7 @@ export function CommitTitleInput({ value, onChange, ...props }: CommitTitleInput
   return (
     <Input
       size="sm"
+      spellCheck
       aria-label={t("commitBox.commitTitle")}
       placeholder={t("commitBox.commitTitle")}
       {...props}

@@ -4,14 +4,19 @@ import type { SettingValues } from "@shared/preferences/settings";
 import { useEffect, useId, useState } from "react";
 import {
   DefinitionList,
+  TextButton,
+  StateMessage,
   Disclosure,
   ErrorDialog,
   NoticeBanner,
   RadioCard,
 } from "../../../components/ui/index";
+import { useRepositoryRead } from "../../../repository/hooks/useRepositoryRead";
 import { useAppStore } from "../../../stores/app-store";
 
 export function GitEngineSettings() {
+  const [inspect, setInspect] = useState(false);
+  const details = useRepositoryRead(() => window.eda.app.gitDiagnostics(), inspect ? true : null);
   const groupName = useId();
   const engine = useAppStore((state) => state.gitEngine);
   const [selected, setSelected] = useState<SettingValues["gitEngine"]>("bundled");
@@ -82,6 +87,11 @@ export function GitEngineSettings() {
                 description: t("settings.gitEngineSettings.includedWithEdaAndReadyToUse"),
               },
               {
+                value: "custom",
+                label: t("settings.tools.git"),
+                description: t("settings.tools.gitHint"),
+              },
+              {
                 value: "system",
                 label: t("settings.gitEngineSettings.systemGitPath"),
                 description: t(
@@ -117,7 +127,10 @@ export function GitEngineSettings() {
       </p>
       <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>
       {engine ? (
-        <Disclosure title={t("settings.gitEngineSettings.runningGitDetails")}>
+        <Disclosure
+          title={t("settings.gitEngineSettings.runningGitDetails")}
+          onToggle={(event) => setInspect(event.currentTarget.open)}
+        >
           <div className="mt-3">
             <DefinitionList
               items={[
@@ -127,14 +140,64 @@ export function GitEngineSettings() {
                   value:
                     engine.source === "bundled"
                       ? t("gitEngineSettings.bundledGit")
-                      : t("gitEngineSettings.systemGit"),
+                      : engine.source === "custom"
+                        ? t("settings.tools.git")
+                        : t("gitEngineSettings.systemGit"),
                 },
                 {
                   label: t("settings.gitEngineSettings.executable"),
-                  value: <span className="font-mono text-xs">{engine.path}</span>,
+                  value: (
+                    <span className="font-mono text-xs">
+                      {details.value?.executable ?? engine.path}
+                    </span>
+                  ),
                 },
+                ...(details.value
+                  ? [
+                      ...(details.value.wsl
+                        ? [
+                            {
+                              label: t("diagnostics.wsl"),
+                              value: t(
+                                details.value.wsl === "wslg"
+                                  ? "diagnostics.wslg"
+                                  : "diagnostics.wslLinux",
+                              ),
+                            },
+                          ]
+                        : []),
+                      { label: t("gitDiagnostics.platform"), value: details.value.platform },
+                      {
+                        label: t("gitDiagnostics.commands"),
+                        value: details.value.commands.join(", "),
+                      },
+                      {
+                        label: t("gitDiagnostics.lfs"),
+                        value: details.value.lfsVersion ?? t("gitDiagnostics.lfsMissing"),
+                      },
+                      {
+                        label: t("gitDiagnostics.build"),
+                        value: (
+                          <pre className="selectable whitespace-pre-wrap">
+                            {details.value.build}
+                          </pre>
+                        ),
+                      },
+                    ]
+                  : []),
               ]}
             />
+            {inspect && !details.value && (
+              <StateMessage
+                tone={details.error ? "error" : "loading"}
+                title={details.error ?? t("gitDiagnostics.loading")}
+                action={
+                  details.error && (
+                    <TextButton onClick={details.retry}>{t("common.retry")}</TextButton>
+                  )
+                }
+              />
+            )}
           </div>
         </Disclosure>
       ) : (

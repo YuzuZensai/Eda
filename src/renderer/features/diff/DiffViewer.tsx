@@ -1,24 +1,27 @@
+import type { CommitDiffRequest, WorkingDiffRequest } from "@shared/repository/repository-read";
+import { useRepositoryRead } from "../../repository/hooks/useRepositoryRead";
 import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { isImagePath } from "@shared/repository/image-preview";
-import type { DiffMode } from "@shared/repository/repository-read";
-import {
-  ArrowLeftIcon as ArrowLeft,
-  Columns2Icon as Columns2,
-  EyeOffIcon as EyeOff,
-  Rows3Icon as Rows3,
-} from "../../components/ui/icons";
-import { useEffect, useState } from "react";
+import { ArrowLeftIcon as ArrowLeft, EyeOffIcon as EyeOff } from "../../components/ui/icons";
+import { useEffect, useMemo, useState } from "react";
 import { PanelHeader } from "../../components/layout/PanelHeader";
 import { usePanel } from "../../components/layout/hooks/usePanel";
-import { LoadingContent } from "../../components/ui/feedback/Skeleton";
-import { ErrorDialog, IconButton, StateMessage, TextButton } from "../../components/ui/index";
+import { DIFF_ROW_HEIGHT } from "./DiffRows";
+import { Skeleton } from "../../components/ui/feedback/Skeleton";
+import { IconButton, StateMessage, TextButton } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
-import { usePreferencesStore } from "../../stores/preferences-store";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { IgnoreDialog } from "../changes/IgnoreDialog";
 import { PartialStageProvider, PartialStageToolbar } from "../changes/PartialStageControls";
 import { DiffContent } from "./DiffContent";
+import {
+  DiffLayoutControls,
+  useDiffLayout,
+  DiffDisplayControls,
+  useDiffDisplay,
+} from "./DiffLayout";
+import { ExportPatchButton } from "./ExportPatchButton";
 import { ImageDiff } from "./ImageDiff";
 
 export function DiffViewer({ pending = false }: { pending?: boolean }) {
@@ -45,26 +48,15 @@ export function DiffViewer({ pending = false }: { pending?: boolean }) {
     setIgnorePath(null);
   }, [repositoryId, profileId]);
 
-  const mode = usePreferencesStore((state) => state.values.diffMode.value);
-
-  useEffect(() => {
-    if (profileId && repositoryId)
-      void usePreferencesStore.getState().load({ profileId, repositoryId });
-  }, [profileId, repositoryId]);
-
-  const setMode = (value: DiffMode) => {
-    if (profileId && repositoryId)
-      void usePreferencesStore
-        .getState()
-        .set("diffMode", { kind: "repository", profileId, repositoryId }, value);
-  };
-
+  const layout = useDiffLayout(profileId, repositoryId);
+  const { mode } = layout;
   const panel = usePanel("diff");
   const displayedDiff = selection?.kind === "commit" ? commitFileDiff : diff;
 
-  const imageFile =
+  const previewFile =
     displayedDiff?.files.length === 1 &&
-    isImagePath(displayedDiff.files[0]?.newPath ?? displayedDiff.files[0]?.oldPath ?? "")
+    (displayedDiff.files[0]?.binary ||
+      isImagePath(displayedDiff.files[0]?.newPath ?? displayedDiff.files[0]?.oldPath ?? ""))
       ? displayedDiff.files[0]
       : undefined;
 
@@ -88,6 +80,32 @@ export function DiffViewer({ pending = false }: { pending?: boolean }) {
         ? `${selection.area}:${selection.path}`
         : "";
 
+  const display = useDiffDisplay();
+  const { options } = display;
+  const adjusted = !!(options.context || options.ignoreWhitespace);
+  const request = useMemo(() => {
+    if (!adjusted || !repositoryId || !selection || !path || previewFile || !displayedDiff || empty)
+      return null;
+    if (selection.kind === "commit") {
+      const file = displayedDiff.files.find((entry) => (entry.newPath ?? entry.oldPath) === path);
+      const paths = file?.oldPath && file.oldPath !== path ? [file.oldPath, path] : [path];
+      return { repositoryId, oid: selection.oid, paths, ...options };
+    }
+    return {
+      repositoryId,
+      paths: [path],
+      area: selection.area === "staged" ? ("staged" as const) : ("unstaged" as const),
+      ...options,
+    };
+  }, [adjusted, repositoryId, selection, path, previewFile, displayedDiff, empty, options]);
+  const preview = useRepositoryRead(
+    (input: CommitDiffRequest | WorkingDiffRequest) =>
+      "oid" in input
+        ? window.eda.repository.commitDiff(input)
+        : window.eda.repository.workingDiff(input),
+    request,
+  );
+  const visibleDiff = request ? preview.value : displayedDiff;
   const contentKey = `${profileId}:${repositoryId}:${selectionKey}`;
 
   return (
@@ -130,34 +148,30 @@ export function DiffViewer({ pending = false }: { pending?: boolean }) {
 
           <span className="ml-auto" />
 
-          {!empty && !imageFile && (
-            <div
-              role="group"
-              data-tour="diff-layout"
-              aria-label={t("diffViewer.diffLayout")}
-              className="flex shrink-0 gap-0.5"
-            >
-              <IconButton
-                size="xs"
-                aria-label={t("diffViewer.unified")}
-                title={t("diffViewer.unified")}
-                aria-pressed={mode === "unified"}
-                className={mode === "unified" ? "bg-accent-muted text-accent-text" : undefined}
-                onClick={() => setMode("unified")}
-                icon={<Rows3 size={14} aria-hidden="true" />}
-              />
-
-              <IconButton
-                size="xs"
-                aria-label={t("diffViewer.sideBySide")}
-                title={t("diffViewer.sideBySide")}
-                aria-pressed={mode === "split"}
-                className={mode === "split" ? "bg-accent-muted text-accent-text" : undefined}
-                onClick={() => setMode("split")}
-                icon={<Columns2 size={14} aria-hidden="true" />}
-              />
-            </div>
-          )}
+          {!empty &&
+          repositoryId &&
+          path &&
+          displayedDiff?.files.length &&
+          selection &&
+          (selection.kind === "commit" || selection.area !== "conflicted") ? (
+            <ExportPatchButton
+              oldPath={displayedDiff.files[0]?.oldPath ?? undefined}
+              key={contentKey}
+              request={{
+                repositoryId,
+                path,
+                ...(selection.kind === "commit"
+                  ? { oid: selection.oid }
+                  : { area: selection.area === "staged" ? "staged" : "unstaged" }),
+                ...(selection.kind === "commit" &&
+                  displayedDiff.files[0]?.oldPath &&
+                  displayedDiff.files[0].oldPath !== path && {
+                    oldPath: displayedDiff.files[0].oldPath,
+                  }),
+              }}
+            />
+          ) : null}
+          {!empty && !previewFile && <DiffLayoutControls {...layout} />}
 
           {!empty && selection?.kind === "change" && (
             <IconButton
@@ -170,7 +184,13 @@ export function DiffViewer({ pending = false }: { pending?: boolean }) {
           )}
         </PanelHeader>
 
-        {!empty && <PartialStageToolbar fileOnly={!!imageFile} />}
+        {!empty && !previewFile && !displayedDiff?.files[0]?.binary && (
+          <DiffDisplayControls {...display} />
+        )}
+        {!empty && <PartialStageToolbar fileOnly={!!previewFile || adjusted} />}
+        {request && selection?.kind === "change" && (
+          <p className="px-3 py-1 text-xs text-text-secondary">{t("diff.options.staging")}</p>
+        )}
 
         {!empty && ignorePath && repositoryId && (
           <IgnoreDialog
@@ -181,41 +201,64 @@ export function DiffViewer({ pending = false }: { pending?: boolean }) {
           />
         )}
 
-        {pending || (!empty && loading) ? (
-          <LoadingContent label={t("diffViewer.loadingDiff")} />
+        {pending || (!empty && (loading || (!!request && !preview.value && !preview.error))) ? (
+          <div
+            role="status"
+            aria-label={t("diffViewer.loadingDiff")}
+            className="min-h-0 flex-1 overflow-hidden"
+          >
+            <div className="flex items-center gap-2 border-b border-border-subtle px-3 py-1">
+              <Skeleton className="h-6 flex-1" />
+              <Skeleton className="w-24" />
+            </div>
+            {Array.from({ length: 16 }, (_, row) => (
+              <div key={row} className="flex" style={{ height: DIFF_ROW_HEIGHT }}>
+                {Array.from({ length: mode === "split" ? 2 : 1 }, (_, side) => (
+                  <div
+                    key={side}
+                    className="flex min-w-0 flex-1 items-center gap-2 border-r border-border-subtle"
+                  >
+                    <span className={mode === "split" ? "w-10 shrink-0" : "w-20 shrink-0"} />
+                    <Skeleton className={row % 3 ? "w-1/2" : "w-1/3"} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
         ) : empty ? (
           <StateMessage
             className="min-h-0 flex-1"
             title={t("diffViewer.selectACommitOrFile")}
             description={t("diffViewer.itsChangesWillAppearHere")}
           />
-        ) : error ? (
-          <ErrorDialog
+        ) : error || preview.error ? (
+          <StateMessage
+            tone="error"
+            className="min-h-0 flex-1"
             title={t("diffViewer.couldNotLoadChanges")}
-            actions={
-              selection?.kind === "commit" && commitFilePath ? (
-                <TextButton
-                  onClick={() =>
-                    void useRepositoryStore.getState().selectCommitFile(commitFilePath)
-                  }
-                >
-                  {t("diffViewer.retryFileDiff")}
-                </TextButton>
-              ) : undefined
+            description={preview.error ?? errorMessage(error)}
+            action={
+              <TextButton
+                onClick={() =>
+                  preview.error ? preview.retry() : void useRepositoryStore.getState().retryDiff()
+                }
+              >
+                {t("diffViewer.retryFileDiff")}
+              </TextButton>
             }
-          >
-            {errorMessage(error)}
-          </ErrorDialog>
-        ) : !displayedDiff || displayedDiff.files.length === 0 ? (
+          />
+        ) : !visibleDiff || visibleDiff.files.length === 0 ? (
           <StateMessage className="min-h-0 flex-1" title={t("diffViewer.noTextualChanges")} />
-        ) : imageFile ? (
-          <ImageDiff key={contentKey} file={imageFile} revision={displayedDiff} />
+        ) : previewFile ? (
+          <ImageDiff key={contentKey} file={previewFile} revision={visibleDiff} />
         ) : (
           <DiffContent
             key={contentKey}
-            diff={displayedDiff}
+            diff={visibleDiff}
+            wrap={display.wrap}
+            groupContext={!!options.context}
             mode={mode}
-            readOnly={selection?.kind === "commit"}
+            readOnly={selection?.kind === "commit" || adjusted}
           />
         )}
       </section>

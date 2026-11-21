@@ -86,6 +86,11 @@ export class OperationManager {
       }, 150);
   }
 
+  attachRepository(repositoryId: string): void {
+    const context = this.context.getStore();
+    if (context) context.record.repositoryId = repositoryId;
+  }
+
   started(label: string): void {
     const context = this.context.getStore();
 

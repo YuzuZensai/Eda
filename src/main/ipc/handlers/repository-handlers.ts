@@ -1,21 +1,35 @@
 import { keyError } from "../../providers/public-signing-keys";
-import type { PublicKeyRequest } from "@shared/repository/repository-read";
+import { isFlowConfig, isFlowPlan, flowKinds, type FlowAction } from "@shared/workflows/gitflow";
+import { isOneOf } from "@shared/validation";
+import type { WorktreeAction, SubmoduleAction } from "@shared/repository/repository-write";
+import type {
+  DiffDisplayOptions,
+  PatchExportRequest,
+  PublicKeyRequest,
+} from "@shared/repository/repository-read";
 import { errorText } from "@shared/error-codes";
 import { ok } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { IPC_CHANNELS, IPC_EVENTS } from "@shared/ipc";
 import type { PartialStageRequest } from "@shared/repository/partial-stage";
 import type { InitRepositoryOptions } from "@shared/repository/repository";
-import { MAX_HISTORY_PAGE_SIZE } from "@shared/repository/repository-read";
-import { BrowserWindow, dialog, shell } from "electron";
+import {
+  isHistorySearchField,
+  MAX_HISTORY_PAGE_SIZE,
+  submoduleUpdateModes,
+} from "@shared/repository/repository-read";
+import { shell } from "electron";
+import { readRegularFile } from "../../filesystem/read-regular-file";
+import { saveFile } from "../../filesystem/save-file";
 import { writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { repositoryCapabilities } from "../../repo/lifecycle/repository-capabilities";
 import { RepositoryWatcher } from "../../repo/lifecycle/repository-watcher";
+import type { ImagePreviewRequest } from "@shared/repository/image-preview";
 import { readImagePreview } from "../../repo/working-tree/image-preview";
 import type { Services } from "../../services";
-import { showOpenDialog } from "../dialogs";
-import { invalidRequest } from "../request-errors";
+import { showOpenDialog, showSaveDialog } from "../dialogs";
+import { invalidRequest } from "../../request-errors";
 import { broadcast, handle, withRepositoryChange } from "../transport";
 import {
   optionalInteger,
@@ -25,6 +39,17 @@ import {
   requireString,
   requireStringArray,
 } from "../validate";
+
+function diffDisplayOptions(input: Record<string, unknown>): DiffDisplayOptions {
+  const context = input["context"];
+  const ignoreWhitespace = input["ignoreWhitespace"];
+  if (
+    (context !== undefined && context !== "expanded" && context !== "full") ||
+    (ignoreWhitespace !== undefined && typeof ignoreWhitespace !== "boolean")
+  )
+    throw invalidRequest(errorText("main.repositoryHandlers.invalidDiffDisplay"));
+  return { ...(context && { context }), ...(ignoreWhitespace && { ignoreWhitespace }) };
+}
 
 export function registerRepositoryHandlers(services: Services): void {
   const { git, repositories } = services;
@@ -168,16 +193,12 @@ export function registerRepositoryHandlers(services: Services): void {
         stage,
       );
 
-      const window = BrowserWindow.fromWebContents(event.sender);
-
       const options = {
         title: t("main.repositoryHandlers.saveRecoveredFileCopy"),
         defaultPath: `${basename(path)}.recovered`,
       };
 
-      const destination = await (window
-        ? dialog.showSaveDialog(window, options)
-        : dialog.showSaveDialog(options));
+      const destination = await showSaveDialog(event, options);
 
       if (destination.canceled || !destination.filePath) return ok(false);
 
@@ -282,9 +303,14 @@ export function registerRepositoryHandlers(services: Services): void {
     broadcast(IPC_EVENTS.repositoryChanged, repositoryId, warning),
   );
 
-  services.identity.onChange(() => watcher.closeAll());
+  let watchGeneration = 0;
+  services.identity.onChange(() => {
+    watchGeneration++;
+    watcher.closeAll();
+  });
 
   handle(IPC_CHANNELS.repositoryWatch, async (_e, rawId) => {
+    const generation = ++watchGeneration;
     watcher.closeAll();
     if (rawId === null) return ok(undefined);
 
@@ -292,7 +318,8 @@ export function registerRepositoryHandlers(services: Services): void {
       requireId(rawId, t("fields.repositoryId")),
     );
 
-    watcher.watch(repository.id, repository.path);
+    const metadata = await git.trust?.checked(repository.path);
+    if (generation === watchGeneration) watcher.watch(repository.id, repository.path, metadata);
     return ok(undefined);
   });
 
@@ -381,7 +408,10 @@ export function registerRepositoryHandlers(services: Services): void {
   });
 
   handle(IPC_CHANNELS.repositoryRemove, async (_e, rawId) => {
-    repositories.remove(requireId(rawId));
+    const id = requireId(rawId);
+    const repository = repositories.resolveActiveRepository(id);
+    repositories.remove(id);
+    services.terminals.forget(repository.identityId, id);
     broadcast(IPC_EVENTS.repositoriesChanged);
     return ok(undefined);
   });
@@ -393,7 +423,7 @@ export function registerRepositoryHandlers(services: Services): void {
 
     const [status, capabilities] = await Promise.all([
       git.status(repository.path),
-      repositoryCapabilities(git, repository.path),
+      repositoryCapabilities(git, repository.path, true),
     ]);
 
     const workflow = await services.workflows.observe(repository.path, status);
@@ -423,8 +453,18 @@ export function registerRepositoryHandlers(services: Services): void {
     if (input["showInternalRefs"] !== undefined && typeof input["showInternalRefs"] !== "boolean")
       throw invalidRequest(errorText("main.repositoryHandlers.chooseWhetherToShowInternalRefs"));
 
+    let search;
+    if (input["search"] !== undefined) {
+      const filter = requireRecord(input["search"], t("historySearch.title"));
+      const field = filter["field"];
+      if (!isHistorySearchField(field))
+        throw invalidRequest(errorText("historySearch.invalidField"));
+      search = { field, text: requireString(filter["text"], t("historySearch.title")) };
+    }
+
     return ok(
       await git.history(repository.path, {
+        ...(search && { search }),
         showStashes: input["showStashes"] === true,
         showInternalRefs:
           input["showInternalRefs"] ?? services.preferences.resolve("showInternalRefs").value,
@@ -464,6 +504,217 @@ export function registerRepositoryHandlers(services: Services): void {
     );
   });
 
+  const repositoryRequest = (raw: unknown, label: string) => {
+    const input = requireRecord(raw, label);
+    return { input, repositoryId: requireId(input["repositoryId"], t("fields.repositoryId")) };
+  };
+
+  handle(IPC_CHANNELS.repositoryExportPatch, async (event, raw, rawMailbox) => {
+    const { input, repositoryId } = repositoryRequest(raw, t("patch.export"));
+    const area = input["area"];
+    const path =
+      input["path"] === undefined ? undefined : requireString(input["path"], t("fields.filePath"));
+    const oldPath =
+      input["oldPath"] === undefined
+        ? undefined
+        : requireString(input["oldPath"], t("fields.filePath"));
+    const oid =
+      input["oid"] === undefined
+        ? undefined
+        : requireString(input["oid"], t("fields.commitObjectId"), 64);
+    let request: PatchExportRequest;
+    if (oid && area === undefined && (!oldPath || path)) {
+      request = { repositoryId, oid, ...(path && { path }), ...(oldPath && { oldPath }) };
+    } else if (!oid && !oldPath && path && (area === "staged" || area === "unstaged")) {
+      request = { repositoryId, area, path };
+    } else {
+      throw invalidRequest(errorText("main.repositoryHandlers.chooseAValidDiffArea"));
+    }
+    const owner = repositories.resolveActiveRepository(repositoryId);
+    const mailbox =
+      rawMailbox === undefined ? undefined : requireRecord(rawMailbox, t("mailbox.export"));
+    if (mailbox && (!oid || path)) throw invalidRequest(errorText("mailbox.range"));
+    const after =
+      mailbox?.["after"] === undefined
+        ? undefined
+        : requireString(mailbox["after"], t("mailbox.base"), 64);
+    const bytes =
+      mailbox && oid
+        ? await services.repositoryReader.mailboxPatch(repositoryId, oid, after)
+        : await services.repositoryReader.filePatch(request);
+    const name = "oid" in request ? (request.path ?? request.oid.slice(0, 12)) : request.path;
+    if (!bytes.length) throw invalidRequest(errorText("patch.empty"));
+    const options = {
+      title: t("patch.save", { path: name, bytes: bytes.length }),
+      defaultPath: basename(name) + (mailbox ? ".mbox" : ".patch"),
+      filters: mailbox
+        ? [{ name: t("mailbox.export"), extensions: ["mbox"] }]
+        : [{ name: t("patch.export"), extensions: ["patch", "diff"] }],
+    };
+    const result = await showSaveDialog(event, options);
+    if (result.canceled || !result.filePath) return ok(false);
+    repositories.assertCurrentRepository(owner);
+    await saveFile(result.filePath, bytes);
+    return ok(true);
+  });
+
+  handle(IPC_CHANNELS.repositoryResumeMailbox, async (_e, rawId, action, rawToken) => {
+    if (action !== "continue" && action !== "abort")
+      throw invalidRequest(errorText("mailbox.invalid"));
+    const id = requireId(rawId);
+    const token = requireString(rawToken, t("mailbox.preview"), 64);
+    await withRepositoryChange(id, () => writer.mailbox(id, { action, token }));
+    return ok(undefined);
+  });
+  handle(IPC_CHANNELS.repositoryApplyPatch, async (event, rawId, mailbox) => {
+    const id = requireId(rawId);
+    const owner = repositories.resolveActiveRepository(id);
+    const file = await showOpenDialog(event, {
+      title: t(mailbox === true ? "mailbox.apply" : "patch.apply"),
+      buttonLabel: t(mailbox === true ? "mailbox.apply" : "patch.apply"),
+      properties: ["openFile"],
+      filters: [
+        {
+          name: t("patch.files"),
+          extensions: mailbox === true ? ["mbox", "patch"] : ["patch", "diff"],
+        },
+        { name: t("patch.allFiles"), extensions: ["*"] },
+      ],
+    });
+    if (file.canceled || !file.filePaths[0]) return ok(false);
+    const { bytes } = await readRegularFile(file.filePaths[0], 32 * 1024 * 1024, () =>
+      invalidRequest(errorText("patch.invalidFile")),
+    );
+    repositories.assertCurrentRepository(owner);
+    await withRepositoryChange(id, () =>
+      mailbox === true ? writer.mailbox(id, { bytes }) : writer.applyPatch(id, bytes),
+    );
+    return ok(true);
+  });
+
+  handle(IPC_CHANNELS.repositoryChangeSubmodule, async (_e, rawId, raw) => {
+    const id = requireId(rawId);
+    const input = requireRecord(raw, t("submodules.manage"));
+    const kind = input["kind"];
+    let action: SubmoduleAction;
+    if (kind === "automatic" && typeof input["enabled"] === "boolean")
+      action = { kind, enabled: input["enabled"] };
+    else {
+      const path = requireString(input["path"], t("submodules.path"));
+      const mode = input["mode"];
+      if (kind === "add")
+        action = { kind, path, url: requireString(input["url"], t("submodules.url")) };
+      else if (kind === "remove") action = { kind, path };
+      else if (
+        (kind === "update" || kind === "init" || kind === "sync") &&
+        typeof input["recursive"] === "boolean" &&
+        isOneOf(mode, submoduleUpdateModes)
+      )
+        action = { kind, path, recursive: input["recursive"], mode };
+      else throw invalidRequest(errorText("submodules.invalid"));
+    }
+    await withRepositoryChange(id, () => services.writer.changeSubmodule(id, action));
+    return ok(undefined);
+  });
+
+  handle(IPC_CHANNELS.repositorySubmodules, async (_event, id) =>
+    ok(await services.repositoryReader.submodules(requireId(id))),
+  );
+
+  handle(
+    IPC_CHANNELS.repositoryRestoreRevision,
+    async (_e, rawId, rawOid, rawPaths, destination) => {
+      const id = requireId(rawId);
+      if (destination !== "index" && destination !== "worktree" && destination !== "both")
+        throw invalidRequest(errorText("revision.destination"));
+      const oid = requireString(rawOid, t("fields.commitObjectId"), 64);
+      const paths = requireStringArray(rawPaths, t("revision.restore"));
+      await withRepositoryChange(id, () =>
+        services.writer.restoreRevision(id, oid, paths, destination),
+      );
+      return ok(undefined);
+    },
+  );
+  handle(IPC_CHANNELS.repositorySparseCheckout, async (_e, id) =>
+    ok(await services.repositoryReader.sparseCheckout(requireId(id))),
+  );
+  handle(IPC_CHANNELS.repositoryChangeSparseCheckout, async (_e, rawId, action, rawPaths) => {
+    if (action !== "set" && action !== "disable" && action !== "reapply")
+      throw invalidRequest(errorText("sparse.invalid"));
+    const id = requireId(rawId);
+    const paths = requireStringArray(rawPaths, t("sparse.directories"));
+    await withRepositoryChange(id, () => services.remotes.changeSparseCheckout(id, action, paths));
+    return ok(undefined);
+  });
+  handle(IPC_CHANNELS.repositoryChangeWorktree, async (_e, rawId, raw) => {
+    const id = requireId(rawId);
+    const input = requireRecord(raw, t("worktrees.title"));
+    const kind = input["kind"];
+    let action: WorktreeAction;
+    if (kind === "prune") action = { kind };
+    else {
+      const path = requireAbsolutePath(input["path"]);
+      if (kind === "create")
+        action = {
+          kind,
+          path,
+          branch: requireString(input["branch"], t("worktrees.branch"), 255),
+          ...(input["base"] !== undefined && {
+            base: requireString(input["base"], t("worktrees.base"), 255),
+          }),
+        };
+      else if (kind === "lock" || kind === "unlock") action = { kind, path };
+      else if (kind === "remove" || kind === "cleanup")
+        action = {
+          kind,
+          path,
+          oid: requireString(input["oid"], t("fields.commitObjectId"), 64),
+          ...(input["branch"] !== undefined && {
+            branch: requireString(input["branch"], t("worktrees.branch"), 255),
+          }),
+        };
+      else throw invalidRequest(errorText("worktrees.invalid"));
+    }
+    const change = () => services.writer.changeWorktree(id, action);
+    const ref = await withRepositoryChange(id, () =>
+      action.kind === "remove" || action.kind === "cleanup"
+        ? services.terminals.whileWorktreeIdle(action.path, change)
+        : change(),
+    );
+    broadcast(IPC_EVENTS.repositoriesChanged);
+    return ok(ref);
+  });
+  handle(IPC_CHANNELS.repositoryFlowState, async (_e, id) =>
+    ok(await services.writer.flowState(requireId(id))),
+  );
+  handle(IPC_CHANNELS.repositoryGitflow, async (_e, rawId, raw) => {
+    const id = requireId(rawId);
+    const input = requireRecord(raw, t("flow.title"));
+    const kind = input["kind"];
+    let action: FlowAction;
+    if (kind === "configure" && isFlowConfig(input["config"]))
+      action = { kind, config: input["config"] };
+    else if (kind === "finish" && isFlowPlan(input["plan"])) action = { kind, plan: input["plan"] };
+    else if (kind === "resume" || kind === "retain") action = { kind };
+    else if (
+      (kind === "start" || kind === "preview") &&
+      isOneOf(input["type"], flowKinds) &&
+      typeof input["retain"] === "boolean"
+    )
+      action = {
+        kind,
+        type: input["type"],
+        name: requireString(input["name"], t("flow.name"), 255),
+        retain: input["retain"],
+      };
+    else throw invalidRequest(errorText("flow.changed"));
+    return ok(await withRepositoryChange(id, () => services.writer.gitflow(id, action)));
+  });
+
+  handle(IPC_CHANNELS.repositoryWorktrees, async (_event, id) =>
+    ok(await services.repositoryReader.worktrees(requireId(id))),
+  );
+
   handle(IPC_CHANNELS.repositoryWorkingDiff, async (_e, raw) => {
     const input = requireRecord(raw, t("main.repositoryHandlers.workingDiffRequest"));
 
@@ -479,6 +730,7 @@ export function registerRepositoryHandlers(services: Services): void {
     return ok(
       await git.workingDiff(repository.path, {
         area,
+        ...diffDisplayOptions(input),
         ...(input["paths"] !== undefined && {
           paths: requireStringArray(input["paths"], t("fields.paths"), 256),
         }),
@@ -500,16 +752,78 @@ export function registerRepositoryHandlers(services: Services): void {
         input["paths"] === undefined
           ? undefined
           : requireStringArray(input["paths"], t("fields.paths"), 256),
+        diffDisplayOptions(input),
       ),
     );
   });
 
-  handle(IPC_CHANNELS.repositoryImagePreview, async (_e, raw) => {
+  handle(IPC_CHANNELS.repositoryCompareRevisions, async (_e, raw) => {
+    const { input, repositoryId } = repositoryRequest(
+      raw,
+      t("main.repositoryHandlers.revisionComparison"),
+    );
+    const mode = input["mode"];
+    if (mode !== "direct" && mode !== "merge-base")
+      throw invalidRequest(errorText("main.repositoryHandlers.chooseAComparisonMode"));
+
+    return ok(
+      await services.repositoryReader.compareRevisions({
+        repositoryId,
+        left: requireString(input["left"], t("fields.referenceName"), 255),
+        right: requireString(input["right"], t("fields.referenceName"), 255),
+        mode,
+      }),
+    );
+  });
+
+  handle(IPC_CHANNELS.repositoryBlame, async (_e, raw) => {
+    const { input, repositoryId } = repositoryRequest(raw, t("revision.blame"));
+    return ok(
+      await services.repositoryReader.blame({
+        repositoryId,
+        oid: requireString(input["oid"], t("fields.commitObjectId"), 64),
+        path: requireString(input["path"], t("fields.filePath")),
+        start: optionalInteger(input["start"], t("fields.historyOffset"), 1, 1_000_000) ?? 1,
+      }),
+    );
+  });
+
+  handle(IPC_CHANNELS.repositoryRevisionPath, async (_e, raw) => {
+    const { input, repositoryId } = repositoryRequest(raw, t("revision.browse"));
+    return ok(
+      await services.repositoryReader.revisionPath({
+        repositoryId,
+        oid: requireString(input["oid"], t("fields.commitObjectId"), 64),
+        ...(input["path"] !== undefined && {
+          path: requireString(input["path"], t("fields.filePath")),
+        }),
+      }),
+    );
+  });
+
+  handle(IPC_CHANNELS.repositoryComparisonDiff, async (_e, raw) => {
+    const { input, repositoryId } = repositoryRequest(
+      raw,
+      t("main.repositoryHandlers.revisionComparison"),
+    );
+    return ok(
+      await services.repositoryReader.comparisonDiff({
+        ...diffDisplayOptions(input),
+        repositoryId,
+        baseOid: requireString(input["baseOid"], t("fields.commitObjectId"), 64),
+        rightOid: requireString(input["rightOid"], t("fields.commitObjectId"), 64),
+        path: requireString(input["path"], t("fields.filePath")),
+        ...(input["oldPath"] !== undefined && {
+          oldPath: requireString(input["oldPath"], t("fields.filePath")),
+        }),
+      }),
+    );
+  });
+
+  const imageRequest = (raw: unknown) => {
     const input = requireRecord(raw, t("main.repositoryHandlers.imagePreviewRequest"));
 
-    const repository = repositories.resolveActiveRepository(
-      requireId(input["repositoryId"], t("fields.repositoryId")),
-    );
+    const repositoryId = requireId(input["repositoryId"], t("fields.repositoryId"));
 
     const kind = input["kind"];
 
@@ -517,22 +831,29 @@ export function registerRepositoryHandlers(services: Services): void {
       throw invalidRequest(errorText("main.repositoryHandlers.chooseAValidImageSource"));
 
     const request = {
-      repositoryId: repository.id,
+      repositoryId,
       path: requireString(input["path"], t("fields.imagePath"), 4096),
       ...(input["oldPath"] !== undefined && {
         oldPath: requireString(input["oldPath"], t("fields.originalImagePath"), 4096),
       }),
     };
 
-    return ok(
-      await readImagePreview(
-        git,
-        repository.path,
-        kind === "commit"
-          ? { ...request, kind, oid: requireString(input["oid"], t("fields.commitObjectId"), 64) }
-          : { ...request, kind },
-      ),
-    );
+    const selected: ImagePreviewRequest =
+      kind === "commit"
+        ? { ...request, kind, oid: requireString(input["oid"], t("fields.commitObjectId"), 64) }
+        : { ...request, kind };
+    return selected;
+  };
+
+  handle(IPC_CHANNELS.repositoryExternalDiff, async (_event, raw) => {
+    await services.externalTools.openDiff(imageRequest(raw));
+    return ok(undefined);
+  });
+
+  handle(IPC_CHANNELS.repositoryImagePreview, async (_event, raw) => {
+    const selected = imageRequest(raw);
+    const repository = repositories.resolveActiveRepository(selected.repositoryId);
+    return ok(await readImagePreview(git, repository.path, selected));
   });
 
   handle(IPC_CHANNELS.repositoryChooseFolder, async (event) => {
@@ -598,11 +919,6 @@ export function registerRepositoryHandlers(services: Services): void {
     return ok(undefined);
   });
 
-  const repositoryRequest = (raw: unknown, label: string) => {
-    const input = requireRecord(raw, label);
-    return { input, repositoryId: requireId(input["repositoryId"], t("fields.repositoryId")) };
-  };
-
   const optionalPaths = (raw: unknown) =>
     raw === undefined ? undefined : requireStringArray(raw, t("fields.paths"), 256);
 
@@ -639,7 +955,11 @@ export function registerRepositoryHandlers(services: Services): void {
     );
 
     const message = requireString(input["message"], t("fields.commitMessage"), 100_000);
-    const options = { amend: input["amend"] === true, signOff: input["signOff"] === true };
+    const options = {
+      amend: input["amend"] === true,
+      signOff: input["signOff"] === true,
+      ...(input["skipCommitHooks"] === true && { skipCommitHooks: true }),
+    };
     const stagePaths = optionalPaths(input["stagePaths"]);
 
     const result = await withRepositoryChange(repositoryId, async () =>

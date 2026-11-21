@@ -22,7 +22,7 @@ import { FetchSettings } from "./git/FetchSettings";
 import { GitEngineSettings } from "./git/GitEngineSettings";
 import { SshAgentSettings } from "./git/SshAgentSettings";
 import { HistorySettings } from "./git/HistorySettings";
-import { IntegrationsSettings } from "./integrations/IntegrationsSettings";
+import { ProviderConnections } from "../connections/ProviderConnections";
 
 const ComponentGallery = lazy(() =>
   import("../../devtools/component-gallery/ComponentGallery").then((module) => ({
@@ -115,7 +115,7 @@ export function SettingsContent({
       return <CredentialsSettings key={profile?.id ?? "none"} />;
     case "integrations":
       return profile ? (
-        <IntegrationsSettings key={profile.id} profileId={profile.id} />
+        <ProviderConnections key={profile.id} profileId={profile.id} />
       ) : (
         <p className="text-sm text-text-secondary">{t("settings.selectAProfileToConnectGitHub")}</p>
       );

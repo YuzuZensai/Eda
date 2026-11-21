@@ -4,6 +4,7 @@ import {
   commandReason,
   dispatchCommand,
   searchCommands,
+  configuredCommands,
   shortcutCommand,
   shortcutLabel,
   type CommandContext,
@@ -154,6 +155,15 @@ describe("shell commands", () => {
       "repositories.browse",
     );
     expect(shortcutLabel({ key: "p", shift: true }, "mac")).toBe("Cmd+Shift+P");
+  });
+
+  it("matches reassigned shortcuts and removes the previous binding", () => {
+    const commands = configuredCommands({ "commands.open": "shift+k", "repositories.browse": "" });
+    expect(shortcutCommand(key("K", { shiftKey: true }), "linux", commands)?.id).toBe(
+      "commands.open",
+    );
+    expect(shortcutCommand(key("p", { shiftKey: true }), "linux", commands)).toBeUndefined();
+    expect(shortcutCommand(key("p"), "linux", commands)).toBeUndefined();
   });
 
   it("does not bind native editing shortcuts, composition, repeats or extra modifiers", () => {

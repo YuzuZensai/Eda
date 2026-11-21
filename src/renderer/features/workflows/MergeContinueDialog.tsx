@@ -2,7 +2,14 @@ import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { MergeContinuation } from "@shared/workflows/workflow";
 import { useEffect, useState } from "react";
-import { Button, Dialog, ErrorDialog, ReviewActions, Textarea } from "../../components/ui/index";
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  ErrorDialog,
+  ReviewActions,
+  Textarea,
+} from "../../components/ui/index";
 import { useRepositoryStore } from "../../stores/repository-store";
 
 export function MergeContinueDialog({
@@ -12,14 +19,16 @@ export function MergeContinueDialog({
   repositoryId: string;
   onClose: () => void;
 }) {
+  const [reviewWorktrees, setReviewWorktrees] = useState(false);
   const [review, setReview] = useState<MergeContinuation | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"prepare" | "execute" | null>(null);
+  const busy = phase !== null;
   const [discard, setDiscard] = useState(false);
 
   const refresh = async (keepMessage = false) => {
-    setBusy(true);
+    setPhase("prepare");
     setError(null);
 
     try {
@@ -34,7 +43,7 @@ export function MergeContinueDialog({
 
       if (!keepMessage || !review) setMessage(result.value.message);
     } finally {
-      setBusy(false);
+      setPhase(null);
     }
   };
 
@@ -50,7 +59,7 @@ export function MergeContinueDialog({
   const complete = async () => {
     if (!review) return;
 
-    setBusy(true);
+    setPhase("execute");
     setError(null);
 
     try {
@@ -63,8 +72,12 @@ export function MergeContinueDialog({
 
       await useRepositoryStore.getState().syncFromDisk();
       onClose();
+      if (reviewWorktrees && useRepositoryStore.getState().repositoryId === repositoryId)
+        useRepositoryStore.setState({
+          commandDialog: { kind: "repository.worktrees", oid: undefined },
+        });
     } finally {
-      setBusy(false);
+      setPhase(null);
     }
   };
 
@@ -76,6 +89,7 @@ export function MergeContinueDialog({
       busy={busy}
       footer={
         <ReviewActions
+          preparing={phase === "prepare"}
           busy={busy}
           onClose={close}
           onReview={() => void refresh(true)}
@@ -86,6 +100,9 @@ export function MergeContinueDialog({
         />
       }
     >
+      <Checkbox checked={reviewWorktrees} onChange={(e) => setReviewWorktrees(e.target.checked)}>
+        {t("worktrees.reviewAfterMerge")}
+      </Checkbox>
       <div className="space-y-3">
         {review && (
           <>

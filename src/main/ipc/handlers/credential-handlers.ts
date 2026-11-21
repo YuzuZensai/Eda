@@ -4,7 +4,7 @@ import { t } from "@shared/i18n";
 import { IPC_CHANNELS } from "@shared/ipc";
 import type { Services } from "../../services";
 import { captureProfile } from "../profile-context";
-import { missingIdentity } from "../request-errors";
+import { missingIdentity } from "../../request-errors";
 import { handle } from "../transport";
 import { optionalRecord } from "../validate";
 

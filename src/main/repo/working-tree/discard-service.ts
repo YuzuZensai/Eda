@@ -7,11 +7,11 @@ import { GIT_FILE_MODE, isRegularFileMode } from "@shared/repository/git-file-mo
 import type { PartialStageRequest } from "@shared/repository/partial-stage";
 import type { DiscardPreview, RecoverySummary } from "@shared/workflows/recovery";
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { mkdir, open, rename, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import type { GitService } from "../../git/git-service";
 import { partialPatch } from "../../git/operations/partial-patch";
-import { assertRepositoryPath } from "../../git/validation";
+import { workingFilePath } from "../../filesystem/working-file-path";
 import {
   recoveryFileHash,
   type ContentRecoveryRecord,
@@ -294,34 +294,8 @@ export class DiscardService {
     private readonly store: ContentRecoveryRepository,
   ) {}
 
-  async safePath(root: string, path: string): Promise<string> {
-    assertRepositoryPath(path, t("operations.discardLocalChanges"));
-
-    const target = resolve(root, path);
-    const local = relative(resolve(root), target);
-
-    if (
-      !local ||
-      local.startsWith(`..${sep}`) ||
-      local.split(sep).some((part) => part.toLowerCase() === ".git")
-    )
-      throw invalid(errorText("main.discardService.selectAWorkingFileInsideThisRepository"));
-
-    let current = resolve(root);
-
-    for (const part of local.split(sep)) {
-      current = join(current, part);
-
-      const stat = await lstat(current).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return null;
-        throw error;
-      });
-
-      if (stat?.isSymbolicLink())
-        throw invalid(errorText("main.discardService.useExternalToolsForSymlinkChangesEdaWill"));
-    }
-
-    return target;
+  safePath(root: string, path: string) {
+    return workingFilePath(root, path, t("operations.discardLocalChanges"));
   }
 
   private async capture(root: string, path: string, tracked: boolean): Promise<SavedFile> {

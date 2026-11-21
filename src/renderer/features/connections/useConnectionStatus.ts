@@ -8,12 +8,14 @@ export function useConnectionStatus<
 >(
   profileId: string,
   api: {
+    selectAccount: (profileId: string, accountId: string) => Promise<Result<Status>>;
     status: (profileId: string) => Promise<Result<Status>>;
     profile: (profileId: string) => Promise<Result<Profile | null>>;
     cancel: (profileId: string, sessionId: string) => Promise<unknown>;
   },
   loadError: string,
 ) {
+  const [busy, setBusy] = useState(false);
   const [statusRevision, setStatusRevision] = useState(0);
   const [statusLoading, setStatusLoading] = useState(true);
   const [status, setStatus] = useState<Status | null>(null);
@@ -81,7 +83,27 @@ export function useConnectionStatus<
     };
   }, [api, profileId, status?.account?.id]);
 
+  const selectAccount = async (accountId: string) => {
+    if (!accountId) return;
+    setBusy(true);
+    setError(null);
+
+    try {
+      const result = await api.selectAccount(profileId, accountId);
+      if (!alive.current) return;
+      if (result.ok) setStatus(result.value);
+      else setError(errorMessage(result.error));
+    } catch (error) {
+      if (alive.current) setError(errorMessage(error));
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  };
+
   return {
+    busy,
+    setBusy,
+    selectAccount,
     status,
     setStatus,
     statusLoading,

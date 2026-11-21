@@ -136,11 +136,10 @@ it("keeps a partial-discard review through a diff refresh and closes it when the
 it("rejects stale image responses after file switches and retains a retry after a preview failure", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const requests: ((result: Result<ImagePreview>) => void)[] = [];
-  vi.stubGlobal("eda", {
-    repository: {
-      imagePreview: () => new Promise<Result<ImagePreview>>((finish) => requests.push(finish)),
-    },
-  });
+  const imagePreview = vi.fn(
+    () => new Promise<Result<ImagePreview>>((finish) => requests.push(finish)),
+  );
+  vi.stubGlobal("eda", { repository: { imagePreview } });
   const initial = useRepositoryStore.getState();
   const container = document.createElement("div");
   document.body.append(container);
@@ -188,11 +187,18 @@ it("rejects stale image responses after file switches and retains a retry after 
         }),
       }),
     );
-    expect(document.body.textContent).toContain("Image read failed");
-    const retry = [...document.querySelectorAll("button")].find(
-      (button) => button.textContent === "Retry image preview",
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Image read failed");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    const retry = () =>
+      [...document.querySelectorAll("button")].find(
+        (button) => button.textContent === "Retry image preview",
+      );
+    imagePreview.mockRejectedValueOnce(new Error("Transport disconnected"));
+    await act(async () => retry()!.click());
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not load image",
     );
-    await act(async () => retry!.click());
+    await act(async () => retry()!.click());
     await act(async () => requests[2]!(ok(preview("second.png"))));
     expect(container.querySelector("img")?.getAttribute("alt")).toBe(
       "Working tree image: second.png",

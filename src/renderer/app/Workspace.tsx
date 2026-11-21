@@ -1,7 +1,7 @@
 import { errorText } from "@shared/error-codes";
 import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { CollapsiblePanel } from "../components/layout/CollapsiblePanel";
 import { usePanel } from "../components/layout/hooks/usePanel";
@@ -25,6 +25,24 @@ const WorkspaceDialogs = lazy(() =>
   import("./WorkspaceDialogs").then((module) => ({ default: module.WorkspaceDialogs })),
 );
 
+const ConflictEditor = lazy(() =>
+  import("../features/changes/ConflictEditor").then((module) => ({
+    default: module.ConflictEditor,
+  })),
+);
+
+const RevisionBrowser = lazy(() =>
+  import("../features/history/RevisionBrowser").then((module) => ({
+    default: module.RevisionBrowser,
+  })),
+);
+
+const RevisionComparison = lazy(() =>
+  import("../features/history/RevisionComparison").then((module) => ({
+    default: module.RevisionComparison,
+  })),
+);
+
 const PANELS: readonly PanelId[] = ["graph", "diff", "rail"];
 
 export function Workspace() {
@@ -41,6 +59,8 @@ export function Workspace() {
 }
 
 function WorkspaceContent() {
+  const filesPanel = useRef<HTMLElement>(null);
+  const graph = useRef<HTMLElement>(null);
   const [narrow, setNarrow] = useState(() => window.innerWidth < 1100);
 
   const [drawer, setDrawer] = useState<{ owner: string; kind: "references" | "commit" } | null>(
@@ -84,6 +104,16 @@ function WorkspaceContent() {
   const contentView = useRepositoryStore((state) => state.contentView);
   const selection = useRepositoryStore((state) => state.selection);
   const showingDiff = !loading && contentView === "diff";
+  const review = !loading && typeof contentView === "object" ? contentView : null;
+  const backToHistory = () => {
+    useRepositoryStore.getState().showHistory();
+    requestAnimationFrame(() => graph.current?.focus());
+  };
+  const conflictPath =
+    showingDiff && selection?.kind === "change" && selection.area === "conflicted"
+      ? selection.path
+      : null;
+  const workflow = useRepositoryStore((state) => state.status?.workflow);
   const inspectingCommit = !loading && selection?.kind === "commit";
   const contentVisible = showingDiff ? diffVisible : graphVisible;
   const contentPanel = showingDiff ? diffPanel : graphPanel;
@@ -171,7 +201,8 @@ function WorkspaceContent() {
             pending={loading}
             key={owner}
             repository={selected}
-            {...(!railVisible && { onOpenCommit: () => setDrawer({ owner, kind: "commit" }) })}
+            {...(!railVisible &&
+              !workflow && { onOpenCommit: () => setDrawer({ owner, kind: "commit" }) })}
           />
 
           {!loading && watchWarning && (
@@ -186,11 +217,62 @@ function WorkspaceContent() {
             </p>
           )}
 
-          <div className="flex min-h-0 flex-1">
+          {conflictPath && (
+            <Suspense
+              fallback={
+                <StateMessage
+                  className="flex-1"
+                  tone="loading"
+                  title={t("conflicts.openingFile")}
+                />
+              }
+            >
+              <ConflictEditor
+                key={JSON.stringify([owner, conflictPath])}
+                repositoryId={selected.id}
+                path={conflictPath}
+                onBack={() => {
+                  useRepositoryStore.getState().showWorkingTree();
+                  requestAnimationFrame(() => filesPanel.current?.focus());
+                }}
+              />
+            </Suspense>
+          )}
+          {review && (
+            <Suspense
+              fallback={
+                <StateMessage
+                  tone="loading"
+                  className="flex-1"
+                  title={t(review.kind === "tree" ? "revision.browse" : "comparison.title")}
+                />
+              }
+            >
+              {review.kind === "tree" ? (
+                <RevisionBrowser
+                  key={JSON.stringify([owner, review.oid, review.path])}
+                  initialPath={review.path ?? ""}
+                  repositoryId={selected.id}
+                  oid={review.oid}
+                  onBack={backToHistory}
+                />
+              ) : (
+                <RevisionComparison
+                  key={JSON.stringify([owner, review.left, review.right])}
+                  repositoryId={selected.id}
+                  initialLeft={review.left}
+                  initialRight={review.right}
+                  onBack={backToHistory}
+                />
+              )}
+            </Suspense>
+          )}
+
+          <div className={conflictPath || review ? "hidden" : "flex min-h-0 flex-1"}>
             <ReferenceSidebar
               key={`${active?.id}:${selected.id}`}
               repositoryId={selected.id}
-              compact={narrow}
+              compact={narrow || showingDiff}
               pending={loading}
               onExpand={() => setDrawer({ owner, kind: "references" })}
             />
@@ -217,10 +299,10 @@ function WorkspaceContent() {
                     className="h-full w-full"
                   >
                     <div className="h-full w-full" hidden={showingDiff} inert={showingDiff}>
-                      <CommitGraph key={owner} pending={loading} />
+                      <CommitGraph key={owner} pending={loading} ref={graph} />
                     </div>
                     <div className="h-full w-full" hidden={!showingDiff} inert={!showingDiff}>
-                      {showingDiff && <DiffViewer key={owner} />}
+                      {showingDiff && !conflictPath && <DiffViewer key={owner} />}
                     </div>
                   </ViewTransition>
                 </CollapsiblePanel>
@@ -242,11 +324,13 @@ function WorkspaceContent() {
                     ) : (
                       <>
                         <div className="min-h-0 flex-1">
-                          <ChangesPanel key={owner} pending={loading} />
+                          <ChangesPanel ref={filesPanel} key={owner} pending={loading} />
                         </div>
-                        <div className="max-h-3/5 shrink-0 overflow-y-auto">
-                          <CommitBox key={owner} pending={loading} />
-                        </div>
+                        {!workflow && (
+                          <div className="max-h-3/5 shrink-0 overflow-y-auto">
+                            <CommitBox key={owner} pending={loading} />
+                          </div>
+                        )}
                       </>
                     )}
                   </ViewTransition>

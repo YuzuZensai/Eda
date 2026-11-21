@@ -4,13 +4,14 @@ import { useRepositoryStore } from "../../stores/repository-store";
 
 export function useReviewedOperation<T>(repositoryId: string, prepare: () => Promise<Result<T>>) {
   const [preview, setPreview] = useState<T | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"prepare" | "execute" | null>(null);
+  const busy = phase !== null;
   const [error, setError] = useState<string | null>(null);
   const revision = useRef(0);
 
   const review = useCallback(async () => {
     const request = ++revision.current;
-    setBusy(true);
+    setPhase("prepare");
     setError(null);
     setPreview(null);
 
@@ -23,7 +24,7 @@ export function useReviewedOperation<T>(repositoryId: string, prepare: () => Pro
     } catch (error) {
       if (request === revision.current) setError(errorMessage(error));
     } finally {
-      if (request === revision.current) setBusy(false);
+      if (request === revision.current) setPhase(null);
     }
   }, [prepare]);
 
@@ -35,14 +36,14 @@ export function useReviewedOperation<T>(repositoryId: string, prepare: () => Pro
     };
   }, [review]);
 
-  const execute = async (
-    operation: (preview: T) => Promise<Result<unknown>>,
-    onSuccess: () => void,
+  const execute = async <Value>(
+    operation: (preview: T) => Promise<Result<Value>>,
+    onSuccess: (value: Value) => void,
   ) => {
     if (!preview || busy) return;
 
     const request = revision.current;
-    setBusy(true);
+    setPhase("execute");
     setError(null);
 
     try {
@@ -53,7 +54,7 @@ export function useReviewedOperation<T>(repositoryId: string, prepare: () => Pro
         await useRepositoryStore.getState().syncFromDisk();
       if (request !== revision.current) return;
 
-      if (result.ok) onSuccess();
+      if (result.ok) onSuccess(result.value);
       else {
         setError(errorMessage(result.error));
         setPreview(null);
@@ -61,9 +62,18 @@ export function useReviewedOperation<T>(repositoryId: string, prepare: () => Pro
     } catch (error) {
       if (request === revision.current) setError(errorMessage(error));
     } finally {
-      if (request === revision.current) setBusy(false);
+      if (request === revision.current) setPhase(null);
     }
   };
 
-  return { preview, setPreview, busy, error, setError, review, execute };
+  return {
+    preview,
+    setPreview,
+    preparing: phase === "prepare",
+    busy,
+    error,
+    setError,
+    review,
+    execute,
+  };
 }

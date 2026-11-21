@@ -431,7 +431,10 @@ export class SshService {
 
     try {
       const result = await this.runner.run({
-        executable,
+        executable:
+          executable === "ssh" && this.baseEnv["EDA_SSH_EXECUTABLE"]
+            ? this.baseEnv["EDA_SSH_EXECUTABLE"]
+            : executable,
         args,
         signal: controller.signal,
         env: buildGitEnvironment({
@@ -496,7 +499,7 @@ async function createAskpassScript(
   const dataPath = join(dir, "passphrase");
   const script = isWindows
     ? '@echo off\r\nsetlocal DisableDelayedExpansion\r\nif exist "%~dp0asked" exit /b 1\r\ntype nul > "%~dp0asked"\r\ntype "%~dp0passphrase"\r\n'
-    : '#!/bin/sh\ncd -- "${0%/*}" || exit 1\n(set -C; : > asked) 2>/dev/null || exit 1\nexec cat passphrase\n';
+    : '#!/bin/sh\ncd -- "${0%/*}" || exit 1\n(set -C; : > asked) 2>/dev/null || exit 1\nexec /bin/cat passphrase\n';
   try {
     await writeFile(dataPath, passphrase, { mode: 0o600, flag: "wx" });
     await writeFile(scriptPath, script, { mode: 0o700, flag: "wx" });

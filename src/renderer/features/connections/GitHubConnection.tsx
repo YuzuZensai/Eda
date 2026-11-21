@@ -12,7 +12,7 @@ import {
   ActionsMenu,
 } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
-import { ServiceAccountCard } from "./ServiceAccountCard";
+import { AccountActions, ServiceAccountCard } from "./ServiceAccountCard";
 import { ConnectionActionSkeleton } from "./ConnectionSkeleton";
 import { useConnectionStatus } from "./useConnectionStatus";
 
@@ -24,6 +24,9 @@ export function GitHubConnection(props: ConnectionProps) {
 
 function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps) {
   const {
+    busy,
+    setBusy,
+    selectAccount,
     status,
     setStatus,
     statusLoading,
@@ -41,7 +44,6 @@ function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps
   );
   const [pending, setPending] = useState<GitHubSignIn | null>(null);
   const hue = useAppStore((state) => state.activeIdentity?.hue ?? 210);
-  const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [connectRequested, setConnectRequested] = useState(false);
   const [copiedSignIn, setCopiedSignIn] = useState<string | null>(null);
@@ -169,6 +171,7 @@ function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps
 
       if (result.ok) {
         setStatus((value) => value && { ...value, account: null });
+        if (status?.alternatives?.length) retryStatus();
         setExpanded(false);
         setConnectRequested(false);
       } else setError(errorMessage(result.error));
@@ -269,6 +272,16 @@ function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps
           <ConnectionActionSkeleton label={t("settings.gitHubConnection.signInWithGitHub")} />
         ) : status ? (
           <>
+            {!compact && (
+              <AccountActions
+                canAdd={!!account}
+                secureStorage={status.secureStorage}
+                alternatives={status.alternatives ?? []}
+                busy={busy}
+                onAdd={begin}
+                onSelect={selectAccount}
+              />
+            )}
             {!isConnected && !compact && (
               <Button
                 size="sm"

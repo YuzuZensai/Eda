@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { ok } from "@shared/errors";
 import { MergeStartDialog } from "@renderer/features/workflows/MergeStartDialog";
 import { MergeAbortDialog } from "@renderer/features/workflows/MergeAbortDialog";
+import { RebaseDialog } from "@renderer/features/workflows/RebaseDialog";
 import { ReplayDialog } from "@renderer/features/workflows/ReplayDialog";
 import { IdentityDialog } from "@renderer/features/profiles/IdentityDialog";
 import { useAppStore } from "@renderer/stores/app-store";
@@ -135,6 +136,7 @@ it("allows retry after profile saving rejects and retains the input", async () =
     expect(updateIdentity).toHaveBeenLastCalledWith(
       "profile",
       expect.objectContaining({ name: "Work", gitEmail: "eda@example.com" }),
+      expect.any(Function),
     );
 
     expect(onClose).toHaveBeenCalledOnce();
@@ -168,7 +170,7 @@ it.each(["repository", "initial commit"])(
             repositoryId="first"
             kind="cherry-pick"
             action="start"
-            initialCommit="old-commit"
+            initialCommits={["old-commit"]}
             onClose={vi.fn()}
           />,
         ),
@@ -180,7 +182,9 @@ it.each(["repository", "initial commit"])(
             repositoryId={change === "repository" ? "second" : "first"}
             kind="cherry-pick"
             action="start"
-            {...(change === "repository" ? {} : { initialCommit: "new-commit" })}
+            {...(change === "repository"
+              ? {}
+              : { initialCommits: ["new-commit", "second-commit"] })}
             onClose={vi.fn()}
           />,
         ),
@@ -190,7 +194,7 @@ it.each(["repository", "initial commit"])(
         change === "repository" ? "second" : "first",
         "cherry-pick",
         "start",
-        change === "repository" ? [] : ["new-commit"],
+        change === "repository" ? [] : ["new-commit", "second-commit"],
         undefined,
       );
 
@@ -244,6 +248,66 @@ it("invalidates a merge abort review when its workflow kind changes", async () =
 
     expect(document.body.textContent).toContain("stash-head");
     expect(document.body.textContent).not.toContain("old-merge");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("preserves a rebase draft through a failed refresh and requires acceptance of a changed head", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const review = {
+    head: "old",
+    onto: null,
+    branch: "main",
+    token: "original",
+    action: "amend",
+    message: "Original",
+    paths: [],
+    publishedCommits: 0,
+  };
+  const prepare = vi
+    .fn()
+    .mockResolvedValueOnce(ok(review))
+    .mockRejectedValueOnce(new Error("Offline"))
+    .mockResolvedValueOnce(
+      ok({ ...review, head: "new", token: "fresh", message: "Different commit" }),
+    );
+  const execute = vi.fn().mockResolvedValue(ok({ state: "completed" }));
+  vi.stubGlobal("eda", { rebase: { prepare, execute } });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const button = (label: string) =>
+    [...document.querySelectorAll("button")].find((item) => item.textContent === label)!;
+  try {
+    await act(async () =>
+      root.render(<RebaseDialog repositoryId="repo" action="amend" onClose={() => {}} />),
+    );
+    const message = document.querySelector("textarea")!;
+    const confirm = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        message,
+        "My draft",
+      );
+      message.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => confirm.click());
+    await act(async () => button("Review current state").click());
+    expect(message.value).toBe("My draft");
+    expect(confirm.checked).toBe(false);
+    expect(confirm.disabled).toBe(true);
+    await act(async () => button("Review current state").click());
+    expect(message.value).toBe("My draft");
+    expect(confirm.disabled).toBe(true);
+    expect(execute).not.toHaveBeenCalled();
+    await act(async () => button("Load new review").click());
+    expect(message.value).toBe("Different commit");
+    await act(async () => confirm.click());
+    await act(async () => button("Amend paused commit").click());
+    expect(execute).toHaveBeenCalledWith("repo", "fresh", undefined, "Different commit");
   } finally {
     await act(async () => root.unmount());
     container.remove();

@@ -1,3 +1,4 @@
+import { registerTerminalHandlers } from "./handlers/terminal-handlers";
 import { registerConflictHandlers } from "./handlers/conflict-handlers";
 import { registerWorkflowHandlers } from "./handlers/workflow-handlers";
 import { registerStashHandlers } from "./handlers/stash-handlers";
@@ -17,6 +18,7 @@ import { registerGitHubHandlers } from "./handlers/github-handlers";
 import { registerUpdateHandlers } from "./handlers/update-handlers";
 
 export function registerIpcHandlers(services: Services): void {
+  registerTerminalHandlers(services);
   registerUpdateHandlers(services);
   registerGitHubHandlers(services);
   registerGitLabHandlers(services);

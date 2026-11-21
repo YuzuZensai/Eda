@@ -1,16 +1,27 @@
+import { lazyRepositoryDialog } from "../repository-dialogs.lazy";
 import { errorAction, errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
 import {
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
+  DiffIcon,
+  SearchIcon,
   GitCommitHorizontalIcon as GitCommitHorizontal,
 } from "../../components/ui/icons";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type Ref,
+} from "react";
 import { PanelHeader } from "../../components/layout/PanelHeader";
 import { usePanel } from "../../components/layout/hooks/usePanel";
 import { useLayoutTransition } from "../../components/layout/hooks/useLayoutTransition";
 import { VirtualRows } from "../../components/ui/display/VirtualRows";
-import { LoadingContent, Skeleton } from "../../components/ui/feedback/Skeleton";
+import { Skeleton } from "../../components/ui/feedback/Skeleton";
 import { ButtonBase, ErrorDialog, IconButton, TextButton } from "../../components/ui/index";
 import { layoutCommitPages } from "../../repository/dag-layout";
 import { ROW_HEIGHT, graphColumnWidth } from "../../repository/graph-geometry";
@@ -19,19 +30,24 @@ import { usePreferencesStore } from "../../stores/preferences-store";
 import { useLayoutStore } from "../../stores/layout-store";
 import type { CommitMenuTarget } from "./CommitMenu";
 import { CommitRow, WorkingTreeRow } from "./CommitRow";
+import { showOpenedRepository } from "../../repository/hooks/useRepositoryNavigation";
+import { useRepositoryRead } from "../../repository/hooks/useRepositoryRead";
 import { useGraphColumns } from "./useGraphColumns";
 import { GraphVisibilityMenu } from "./GraphVisibilityMenu";
 import { useCommitMessage } from "../../repository/hooks/useCommitMessage";
 
-const CommitMenu = lazy(() =>
-  import("../repository-dialogs").then((module) => ({ default: module.CommitMenu })),
-);
+const HistorySearch = lazyRepositoryDialog("HistorySearch");
+const CommitMenu = lazyRepositoryDialog("CommitMenu");
 
-const GraphFilterDialog = lazy(() =>
-  import("../repository-dialogs").then((module) => ({ default: module.GraphFilterDialog })),
-);
+const GraphFilterDialog = lazyRepositoryDialog("GraphFilterDialog");
 
-export function CommitGraph({ pending = false }: { pending?: boolean }) {
+export function CommitGraph({
+  pending = false,
+  ref,
+}: {
+  pending?: boolean;
+  ref?: Ref<HTMLElement>;
+}) {
   const repositoryId = useRepositoryStore((state) => state.repositoryId);
   const identityId = useRepositoryStore((state) => state.identityId);
   const vigilantMode = usePreferencesStore((state) => state.values.vigilantMode.value);
@@ -66,12 +82,50 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
     return () => observer.disconnect();
   }, [vigilantMode, shaColumnShown]);
 
+  const [searchOpen, setSearchOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
 
   const dagBoundary = useRepositoryStore((state) => state.dagBoundary);
   const hoveredRefOid = useRepositoryStore((state) => state.hoveredRefOid);
   const pages = useRepositoryStore((state) => state.pages);
   const status = useRepositoryStore((state) => state.status);
+  const linkedRequest = useMemo(
+    () => (repositoryId && status && !pending ? { repositoryId, status } : null),
+    [repositoryId, status, pending],
+  );
+  const worktrees = useRepositoryRead(
+    (request: { repositoryId: string }) => window.eda.repository.worktrees(request.repositoryId),
+    linkedRequest,
+  );
+  const [worktreeError, setWorktreeError] = useState("");
+  const linkedChanges = worktrees.value?.filter(
+    (entry) => !entry.current && entry.available && !!entry.changedPaths,
+  );
+  const openLinkedChanges = async (path: string) => {
+    if (!repositoryId || !identityId) return;
+    try {
+      const opened = await window.eda.repository.open(path);
+      if (!opened.ok) throw opened.error;
+      if (await showOpenedRepository(opened.value, identityId, repositoryId))
+        useRepositoryStore.getState().showWorkingTree();
+    } catch (error) {
+      setWorktreeError(errorMessage(error));
+    }
+  };
+  const linkedByOid = useMemo(() => {
+    const result = new Map<string, string[]>();
+    for (const entry of worktrees.value ?? []) {
+      if (entry.current || entry.bare || !entry.oid) continue;
+      const label = t(
+        entry.changedPaths === undefined ? "worktrees.graphLocation" : "worktrees.graphChanges",
+        { path: entry.path, count: entry.changedPaths ?? 0 },
+      );
+      const previous = result.get(entry.oid);
+      if (previous) previous.push(label);
+      else result.set(entry.oid, [label]);
+    }
+    return result;
+  }, [worktrees.value]);
   const selection = useRepositoryStore((state) => state.selection);
   const selectCommit = useRepositoryStore((state) => state.selectCommit);
   const showWorkingTree = useRepositoryStore((state) => state.showWorkingTree);
@@ -99,6 +153,23 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
     [pages, dagBoundary],
   );
 
+  const childrenByParent = useMemo(() => {
+    const children = new Map<string, string[]>();
+    for (const { commit } of rows) {
+      for (const parent of commit.parents) {
+        const siblings = children.get(parent);
+        if (siblings) siblings.push(commit.oid.slice(0, 8));
+        else children.set(parent, [commit.oid.slice(0, 8)]);
+      }
+    }
+    return children;
+  }, [rows]);
+
+  const rowHeight = usePreferencesStore((state) =>
+    state.values.compactHistory.value ? 24 : ROW_HEIGHT,
+  );
+  const avatars = usePreferencesStore((state) => state.values.historyAvatars.value);
+  const dateStyle = usePreferencesStore((state) => state.values.historyDateStyle.value);
   const workingRowCount = status?.changes.length ? 1 : 0;
   const graphRows = useMemo(
     () => (workingRowCount && baseOffset === 0 ? [null, ...rows] : rows),
@@ -137,6 +208,7 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
 
   return (
     <section
+      ref={ref}
       data-tour="history"
       data-testid="commit-graph"
       className="app-surface-panel @container flex h-full w-full min-h-0 min-w-0 flex-col"
@@ -233,6 +305,23 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
           />
         )}
 
+        <IconButton
+          size="xs"
+          icon={<SearchIcon />}
+          aria-label={t("historySearch.title")}
+          title={t("historySearch.title")}
+          disabled={pending || !repositoryId}
+          onClick={() => setSearchOpen(true)}
+        />
+        <IconButton
+          size="xs"
+          icon={<DiffIcon />}
+          aria-label={t("comparison.title")}
+          title={t("comparison.title")}
+          disabled={pending || !repositoryId}
+          onClick={() => useRepositoryStore.getState().compareRevisions()}
+        />
+
         <span className="mono ml-auto text-xs text-text-tertiary">
           {pending ? (
             <Skeleton className="w-16" />
@@ -327,7 +416,39 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
       </div>
 
       {pending ? (
-        <LoadingContent label={t("commitGraph.loadingHistory")} rows={12} />
+        <div
+          role="status"
+          aria-label={t("commitGraph.loadingHistory")}
+          className="min-h-0 flex-1 overflow-hidden"
+        >
+          {Array.from({ length: 16 }, (_, index) => (
+            <div
+              key={index}
+              style={{ height: rowHeight }}
+              className="flex items-center border-b border-border-subtle"
+            >
+              <div style={{ width: gutter }} className="flex shrink-0 justify-center">
+                <Skeleton className="size-2 rounded-full" />
+              </div>
+              <div className="flex min-w-0 flex-1 items-center gap-3 pr-3">
+                <div className="flex-1">
+                  <Skeleton className={index % 3 ? "w-2/3" : "w-1/3"} />
+                </div>
+                {columns
+                  .filter((column) => column.visible)
+                  .map((column) => (
+                    <div
+                      key={column.id}
+                      style={{ width: column.width }}
+                      className="hidden shrink-0 @xl:block"
+                    >
+                      <Skeleton className="w-2/3" />
+                    </div>
+                  ))}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <>
           {historyError && (
@@ -357,6 +478,36 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
             </p>
           )}
 
+          {!!linkedChanges?.length && (
+            <ul
+              aria-label={t("worktrees.linkedChanges")}
+              className="max-h-24 shrink-0 overflow-y-auto border-b border-border-subtle"
+            >
+              {linkedChanges.map((entry) => (
+                <li key={entry.path}>
+                  <ButtonBase
+                    className="flex w-full items-center gap-2 truncate px-3 py-1 text-left text-xs"
+                    onClick={() => void openLinkedChanges(entry.path)}
+                  >
+                    <DiffIcon size={14} aria-hidden="true" />
+                    <span className="truncate">
+                      {t("worktrees.graphChanges", {
+                        count: entry.changedPaths!,
+                        path: entry.path,
+                      })}
+                    </span>
+                    <span className="mono shrink-0 text-text-tertiary">
+                      {entry.branch ?? entry.oid?.slice(0, 8)}
+                    </span>
+                  </ButtonBase>
+                </li>
+              ))}
+            </ul>
+          )}
+          {worktreeError && (
+            <ErrorDialog onDismiss={() => setWorktreeError("")}>{worktreeError}</ErrorDialog>
+          )}
+
           {rows.some((row) => row.topologyUnavailable) && (
             <p role="status" className="px-3 py-1 text-xs text-git-modified">
               {t("commitGraph.thisHistoryExceeds512SimultaneousGraphLanesParentRelationships")}
@@ -376,7 +527,7 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
             horizontalScroll={false}
             revealIndex={selectedIndex >= 0 ? graphOffset + selectedIndex : undefined}
             items={graphRows}
-            rowHeight={ROW_HEIGHT}
+            rowHeight={rowHeight}
             itemOffset={graphOffset}
             totalCount={(nextOffset ?? baseOffset + rows.length) + workingRowCount}
             className="min-h-0 flex-1"
@@ -391,6 +542,11 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
                 <CommitRow
                   key={row.commit.oid}
                   row={row}
+                  rowHeight={rowHeight}
+                  avatars={avatars}
+                  dateStyle={dateStyle}
+                  linkedWorktrees={linkedByOid.get(row.commit.oid) ?? []}
+                  loadedChildren={childrenByParent.get(row.commit.oid) ?? []}
                   {...(repositoryId && { repositoryId })}
                   columns={columns}
                   gutter={gutter}
@@ -413,6 +569,7 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
                 />
               ) : (
                 <WorkingTreeDraftRow
+                  rowHeight={rowHeight}
                   pending={pending}
                   key="working-tree"
                   changes={status?.changes ?? []}
@@ -432,9 +589,18 @@ export function CommitGraph({ pending = false }: { pending?: boolean }) {
             </Suspense>
           )}
 
+          {searchOpen && repositoryId && (
+            <Suspense fallback={null}>
+              <HistorySearch repositoryId={repositoryId} onClose={() => setSearchOpen(false)} />
+            </Suspense>
+          )}
           {filterOpen && repositoryId && (
             <Suspense fallback={null}>
-              <GraphFilterDialog repositoryId={repositoryId} onClose={() => setFilterOpen(false)} />
+              <GraphFilterDialog
+                key={repositoryId}
+                repositoryId={repositoryId}
+                onClose={() => setFilterOpen(false)}
+              />
             </Suspense>
           )}
         </>

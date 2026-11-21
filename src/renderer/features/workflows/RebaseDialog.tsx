@@ -2,8 +2,16 @@ import { Localized } from "@renderer/i18n/Localized";
 import { errorMessage } from "@shared/errors";
 import { getLocale, t } from "@shared/i18n";
 import type { RebaseAction, RebasePlanEntry, RebaseReview } from "@shared/workflows/rebase";
-import { useEffect, useState } from "react";
-import { Checkbox, Dialog, ErrorDialog, ReviewActions, Textarea } from "../../components/ui/index";
+import { useEffect, useRef, useState } from "react";
+import {
+  Button,
+  NoticeBanner,
+  Checkbox,
+  Dialog,
+  ErrorDialog,
+  ReviewActions,
+  Textarea,
+} from "../../components/ui/index";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { RebasePlanEditor } from "./RebasePlanEditor";
 
@@ -15,19 +23,23 @@ const labels: Record<RebaseAction, string> = {
   amend: t("rebaseDialog.amendPausedCommit"),
 };
 
-export function RebaseDialog({
-  repositoryId,
-  action,
-  onto,
-  onClose,
-}: {
+interface RebaseDialogProps {
   repositoryId: string;
   action: RebaseAction;
   onto?: string;
   onClose: () => void;
-}) {
+}
+
+export function RebaseDialog(props: RebaseDialogProps) {
+  return (
+    <RebaseForm key={JSON.stringify([props.repositoryId, props.action, props.onto])} {...props} />
+  );
+}
+
+function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) {
   const [review, setReview] = useState<RebaseReview | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"prepare" | "execute" | null>(null);
+  const busy = phase !== null;
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [interactive, setInteractive] = useState(false);
@@ -36,34 +48,66 @@ export function RebaseDialog({
   const [rewritten, setRewritten] = useState(0);
   const [recoveryWarning, setRecoveryWarning] = useState<string | null>(null);
 
-  const prepare = async () => {
-    setBusy(true);
-    setReview(null);
-    setPlan(undefined);
-    setError(null);
+  const request = useRef(0);
+  const [fresh, setFresh] = useState(false);
+  const [replacement, setReplacement] = useState<RebaseReview | null>(null);
+
+  const adopt = (next: RebaseReview) => {
+    setReview(next);
+    setPlan(next.plan);
+    setMessage(next.message ?? "");
+    setReplacement(null);
     setConfirmed(false);
+    setFresh(true);
+  };
+
+  const prepare = async () => {
+    const generation = ++request.current;
+    setPhase("prepare");
+    setError(null);
+    setFresh(false);
+    setConfirmed(false);
+    setReplacement(null);
 
     try {
       const result = await window.eda.rebase.prepare(repositoryId, action, onto, interactive);
-
-      if (result.ok) {
-        setReview(result.value);
-        setPlan(result.value.plan);
-        setMessage(result.value.message ?? "");
-      } else setError(errorMessage(result.error));
+      if (generation !== request.current) return;
+      if (!result.ok) {
+        setError(errorMessage(result.error));
+        return;
+      }
+      const next = result.value;
+      if (!review) adopt(next);
+      else if (
+        review.head === next.head &&
+        review.branch === next.branch &&
+        review.onto === next.onto &&
+        review.message === next.message &&
+        review.plan?.length === next.plan?.length &&
+        (review.plan ?? []).every((entry, index) => entry.oid === next.plan?.[index]?.oid)
+      ) {
+        setReview(next);
+        setFresh(true);
+      } else setReplacement(next);
+    } catch (failure) {
+      if (generation === request.current) setError(errorMessage(failure));
     } finally {
-      setBusy(false);
+      if (generation === request.current) setPhase(null);
     }
   };
 
   useEffect(() => {
     void prepare();
+    return () => {
+      request.current++;
+    };
   }, [repositoryId, action, onto, interactive]);
 
   const execute = async () => {
-    if (!review) return;
+    if (!review || !fresh || !confirmed || busy) return;
+    const generation = request.current;
 
-    setBusy(true);
+    setPhase("execute");
     setError(null);
 
     try {
@@ -74,11 +118,15 @@ export function RebaseDialog({
         action === "amend" ? message : undefined,
       );
 
-      await useRepositoryStore.getState().syncFromDisk();
+      if (generation !== request.current) return;
+      if (useRepositoryStore.getState().repositoryId === repositoryId)
+        await useRepositoryStore.getState().syncFromDisk();
+      if (generation !== request.current) return;
 
       if (!result.ok) {
         setError(errorMessage(result.error));
         setConfirmed(false);
+        setFresh(false);
         return;
       }
 
@@ -86,8 +134,14 @@ export function RebaseDialog({
         setRewritten(result.value.publishedCommits);
       if (result.value.recoveryWarning) setRecoveryWarning(result.value.recoveryWarning);
       else if (!result.value.publishedCommits) onClose();
+    } catch (failure) {
+      if (generation === request.current) {
+        setError(errorMessage(failure));
+        setFresh(false);
+        setConfirmed(false);
+      }
     } finally {
-      setBusy(false);
+      if (generation === request.current) setPhase(null);
     }
   };
 
@@ -110,12 +164,13 @@ export function RebaseDialog({
       }
       footer={
         <ReviewActions
+          preparing={phase === "prepare"}
           busy={busy}
           onClose={onClose}
           onReview={() => void prepare()}
           onConfirm={() => void execute()}
           confirmLabel={labels[action]}
-          confirmDisabled={!review || !confirmed || rewritten > 0 || !!recoveryWarning}
+          confirmDisabled={!fresh || !review || !confirmed || rewritten > 0 || !!recoveryWarning}
           confirmVariant="secondary"
           closeLabel={rewritten || recoveryWarning ? t("common.close") : t("common.cancel")}
           closeVariant="secondary"
@@ -138,10 +193,26 @@ export function RebaseDialog({
           <Checkbox
             checked={interactive}
             disabled={busy}
-            onChange={(event) => setInteractive(event.target.checked)}
+            onChange={(event) => {
+              setReview(null);
+              setFresh(false);
+              setConfirmed(false);
+              setInteractive(event.target.checked);
+            }}
           >
             {t("rebaseDialog.editCommitOrderAndMessages")}
           </Checkbox>
+        )}
+
+        {replacement && (
+          <NoticeBanner
+            tone="warning"
+            action={
+              <Button onClick={() => adopt(replacement)}>{t("rebaseDialog.useNewReview")}</Button>
+            }
+          >
+            {t("rebaseDialog.rangeChanged")}
+          </NoticeBanner>
         )}
 
         {review && !rewritten && (
@@ -238,7 +309,7 @@ export function RebaseDialog({
 
             <Checkbox
               checked={confirmed}
-              disabled={busy}
+              disabled={busy || !fresh}
               onChange={(event) => setConfirmed(event.target.checked)}
             >
               {t("rebaseDialog.iReviewedThisRebaseAction")}

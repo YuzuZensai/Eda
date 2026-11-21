@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { UnplugIcon as Unplug } from "../../components/ui/icons";
 import { ExternalLinkButton, Button, ActionsMenu } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
-import { ServiceAccountCard } from "./ServiceAccountCard";
+import { AccountActions, ServiceAccountCard } from "./ServiceAccountCard";
 import { ConnectionProfile } from "./ConnectionProfile";
 import { ConnectionActionSkeleton } from "./ConnectionSkeleton";
 import { useConnectionStatus } from "./useConnectionStatus";
@@ -18,6 +18,9 @@ export function GitLabConnection(props: ConnectionProps) {
 
 function GitLabConnectionSession({ profileId, compact = false }: ConnectionProps) {
   const {
+    busy,
+    setBusy,
+    selectAccount,
     status,
     setStatus,
     statusLoading,
@@ -35,7 +38,6 @@ function GitLabConnectionSession({ profileId, compact = false }: ConnectionProps
   );
   const [pending, setPending] = useState<GitLabSignIn | null>(null);
   const hue = useAppStore((state) => state.activeIdentity?.hue ?? 210);
-  const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [connectRequested, setConnectRequested] = useState(false);
   const connected = status?.account?.state === "connected";
@@ -151,6 +153,7 @@ function GitLabConnectionSession({ profileId, compact = false }: ConnectionProps
       }
 
       setStatus((value) => value && { ...value, account: null });
+      if (status?.alternatives?.length) retryStatus();
       setExpanded(false);
       setConnectRequested(false);
     } catch {
@@ -229,6 +232,16 @@ function GitLabConnectionSession({ profileId, compact = false }: ConnectionProps
           <ConnectionActionSkeleton label={t("settings.gitLabConnection.signIn")} />
         ) : status ? (
           <>
+            {!compact && (
+              <AccountActions
+                canAdd={!!account}
+                secureStorage={status.secureStorage}
+                alternatives={status.alternatives ?? []}
+                busy={busy}
+                onAdd={begin}
+                onSelect={selectAccount}
+              />
+            )}
             {!connected && (
               <Button
                 size="sm"

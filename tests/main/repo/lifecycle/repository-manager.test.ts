@@ -35,6 +35,22 @@ const setup = async () => {
 };
 
 describe("RepositoryManager", () => {
+  it("explains bare repositories and unsupported formats without registering a membership", async () => {
+    const ctx = await setup();
+    repo = ctx.repo;
+    const owner = ctx.identities.create(draft("Work", "work@example.com"));
+    await ctx.identity.setActive(owner.id);
+    const bare = join(repo.home, "bare");
+    await repo.run(["init", "--bare", bare]);
+    await expect(ctx.repositories.open(bare)).rejects.toThrow(/bare Git repository/);
+    await repo.run(["config", "core.repositoryformatversion", "99"]);
+    await expect(ctx.repositories.open(repo.path)).rejects.toThrow(
+      /cannot interpret this repository format/,
+    );
+    expect(await ctx.repositories.listForActiveIdentity()).toEqual([]);
+    ctx.db.close();
+  });
+
   it("initializes a chosen branch and starter files without overwriting existing content", async () => {
     const ctx = await setup();
 
@@ -145,8 +161,13 @@ describe("RepositoryManager", () => {
     });
 
     const before = sessions.read(work.id, "main");
+    const previousLocation = ctx.repositories.resolveActiveRepository(original.id);
     const relocated = await ctx.repositories.relocate(original.id, repo.path);
 
+    expect(() => ctx.repositories.assertCurrentRepository(previousLocation)).toThrow(
+      "The repository changed",
+    );
+    expect(() => ctx.repositories.assertCurrentRepository(relocated)).not.toThrow();
     expect(relocated.id).toBe(original.id);
     expect(normalize(relocated.path)).toBe(normalize(await realpath(repo.path)));
     expect(sessions.read(work.id, "main")).toEqual(before);

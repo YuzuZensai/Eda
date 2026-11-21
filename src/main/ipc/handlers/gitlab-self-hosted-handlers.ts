@@ -7,7 +7,7 @@ import type { Services } from "../../services";
 import { handle } from "../transport";
 import { captureProfile, profileOperation } from "../profile-context";
 import { optionalInteger, requireBoolean, requireId, requireString } from "../validate";
-import { invalidRequest } from "../request-errors";
+import { invalidRequest } from "../../request-errors";
 
 export function registerGitLabSelfHostedHandlers(services: Services): void {
   const { identity, gitlabSelfHosted: gitlab } = services;

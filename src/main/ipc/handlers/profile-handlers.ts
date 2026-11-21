@@ -5,7 +5,7 @@ import { IPC_CHANNELS, IPC_EVENTS } from "@shared/ipc";
 import type { Services } from "../../services";
 import { parseDraft, parsePartialDraft, parseSigning } from "../identity-draft";
 import { captureProfile } from "../profile-context";
-import { invalidRequest, missingIdentity } from "../request-errors";
+import { invalidRequest, missingIdentity } from "../../request-errors";
 import { broadcast, handle } from "../transport";
 import {
   requireAbsolutePath,
@@ -102,6 +102,7 @@ export function registerProfileHandlers(services: Services): void {
     await services.sessions.transition(event.sender.id, () =>
       services.profiles.delete(id, requireString(rawToken, t("fields.deletionPreview"), 128)),
     );
+    services.terminals.forget(id);
     broadcast(IPC_EVENTS.repositoriesChanged);
     return ok(undefined);
   });

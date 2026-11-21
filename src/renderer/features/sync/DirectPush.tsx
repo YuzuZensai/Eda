@@ -4,7 +4,8 @@ import { ArrowUpIcon as ArrowUp } from "../../components/ui/icons";
 import { DialogActions, Button, Dialog } from "../../components/ui/index";
 import { openSettings } from "../../stores/shell-store";
 import { useRepositoryStore } from "../../stores/repository-store";
-import { CredentialFields, TransferProgress } from "./TransportFields";
+import { HttpsAuthenticationDialog } from "./HttpsAuthenticationDialog";
+import { TransferProgress } from "./TransportFields";
 import { useDirectPush, type PushTagTarget } from "./hooks/useDirectPush";
 import { ProviderIcon } from "../connections/ProviderIcon";
 
@@ -29,10 +30,8 @@ export function DirectPush({
     preview,
     setPreview,
     error,
-    setError,
     showError,
     setShowError,
-    credentials,
     setCredentials,
     needsAuth,
     setNeedsAuth,
@@ -59,35 +58,6 @@ export function DirectPush({
     onClose?.();
   };
 
-  const credentialFields = needsAuth && (
-    <div className="mt-3 space-y-3">
-      <CredentialFields shortLabels value={credentials} onChange={setCredentials} disabled={busy} />
-
-      {githubRemote && (
-        <div className="space-y-2 border-t border-border-subtle pt-3">
-          <p className="text-xs text-text-secondary">
-            {githubFailure === "access"
-              ? t("directPush.gitHubAccessChoice")
-              : t("directPush.gitHubAuthenticationChoice")}
-          </p>
-
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={busy}
-            icon={<ProviderIcon provider="GitHub" />}
-            onClick={() => {
-              close();
-              openSettings("integrations");
-            }}
-          >
-            {t("directPush.useGitHubIntegration")}
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-
   return (
     <>
       {!autoStart && (
@@ -111,37 +81,55 @@ export function DirectPush({
         {busy ? t("directPush.pushing") : (error ?? message)}
       </span>
 
-      {error && !preview && (showError || needsAuth || autoStart) && (
-        <Dialog
-          title={needsAuth ? t("directPush.hTtpsAuthentication") : t("directPush.pushFailed")}
-          {...(needsAuth
-            ? { description: t("directPush.enterYourGitUsernameAndAccessTokenToRetry") }
-            : {})}
+      {error && !preview && needsAuth && (
+        <HttpsAuthenticationDialog
+          shortLabels
+          title={t("directPush.hTtpsAuthentication")}
+          description={t("directPush.enterYourGitUsernameAndAccessTokenToRetry")}
+          submitLabel={t("directPush.retryPush")}
+          error={error}
+          busy={busy}
           onClose={close}
-          footer={
-            needsAuth ? (
+          onSubmit={(auth) => {
+            setCredentials(auth);
+            setNeedsAuth(false);
+            void runPush("normal", auth);
+          }}
+        >
+          {githubRemote && (
+            <div className="space-y-2 border-t border-border-subtle pt-3">
+              <p className="text-xs text-text-secondary">
+                {githubFailure === "access"
+                  ? t("directPush.gitHubAccessChoice")
+                  : t("directPush.gitHubAuthenticationChoice")}
+              </p>
+
               <Button
-                variant="primary"
-                disabled={!credentials.username.trim() || !credentials.password || busy}
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                icon={<ProviderIcon provider="GitHub" />}
                 onClick={() => {
-                  setError(null);
-                  setNeedsAuth(false);
-                  void runPush("normal", credentials);
+                  close();
+                  openSettings("integrations");
                 }}
               >
-                {t("directPush.retryPush")}
+                {t("directPush.useGitHubIntegration")}
               </Button>
-            ) : (
-              <Button variant="quiet" onClick={close}>
-                {t("common.close")}
-              </Button>
-            )
-          }
+            </div>
+          )}
+        </HttpsAuthenticationDialog>
+      )}
+
+      {error && !preview && !needsAuth && (showError || autoStart) && (
+        <Dialog
+          title={t("directPush.pushFailed")}
+          onClose={close}
+          footer={<Button onClick={close}>{t("common.close")}</Button>}
         >
           <p role="alert" className="text-sm text-git-deleted">
             {error}
           </p>
-          {credentialFields}
         </Dialog>
       )}
 
@@ -155,11 +143,8 @@ export function DirectPush({
             <DialogActions
               onClose={close}
               onConfirm={() => void confirmLease()}
-              confirmLabel={
-                needsAuth ? t("directPush.retryForceWithLease") : t("directPush.forceWithLease")
-              }
+              confirmLabel={t("directPush.forceWithLease")}
               busy={busy}
-              confirmDisabled={needsAuth && (!credentials.username.trim() || !credentials.password)}
             />
           }
         >
@@ -184,7 +169,6 @@ export function DirectPush({
             </p>
           )}
 
-          {credentialFields}
           {busy && (
             <TransferProgress repositoryId={repositoryId} kindKey="operationTitles.pushBranch" />
           )}

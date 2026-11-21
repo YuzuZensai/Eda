@@ -18,6 +18,8 @@ import {
   IconButton,
   IdentityIcon,
   Input,
+  Select,
+  TextButton,
   Textarea,
 } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
@@ -25,11 +27,13 @@ import { usePreferencesStore } from "../../stores/preferences-store";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { useSessionStore } from "../../stores/session-store";
 import { DirectPush } from "../sync/DirectPush";
+import { HistorySearch } from "../history/HistorySearch";
 import { CommitPrefixPicker } from "./CommitPrefixPicker";
 import { useCommitDraft } from "./hooks/useCommitDraft";
 import { CommitTitleInput } from "../../components/ui/forms/CommitTitleInput";
 
 export function CommitBox({ pending = false }: { pending?: boolean }) {
+  const [historyOwner, setHistoryOwner] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [coauthorOpen, setCoauthorOpen] = useState(false);
   const [coauthorName, setCoauthorName] = useState("");
@@ -89,6 +93,10 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
     pushRequest,
     disabled: messageDisabled,
   } = useCommitDraft(pending);
+
+  const owner = JSON.stringify([snapshot?.context, repositoryId]);
+  const limit = preferences.commitSummaryLimit.value;
+  const length = Array.from(title).length;
 
   return (
     <section
@@ -151,7 +159,14 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
               </div>
             </div>
 
+            {limit > 0 && length > limit && (
+              <p role="status" className="text-xs text-text-secondary">
+                {t("commitBox.summaryGuidance", { length, limit })}
+              </p>
+            )}
+
             <Textarea
+              spellCheck
               rows={2}
               value={description}
               onChange={(event) =>
@@ -249,9 +264,55 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
                 </div>
               </div>
 
+              <TextButton disabled={!canCommit} onClick={() => void submit(false, true)}>
+                {t("commitBox.skipHooks")}
+              </TextButton>
+
+              <TextButton
+                disabled={messageDisabled || writing || amendLoading}
+                onClick={() => setHistoryOwner(owner)}
+              >
+                {t("commitBox.reuseMessage")}
+              </TextButton>
+              <label className="flex items-center justify-between gap-2">
+                {t("commitBox.summaryLimit")}
+                <Select
+                  aria-label={t("commitBox.summaryLimit")}
+                  value={String(limit)}
+                  disabled={!identity}
+                  onValueChange={(value) => {
+                    if (identity)
+                      void usePreferencesStore
+                        .getState()
+                        .set(
+                          "commitSummaryLimit",
+                          { kind: "profile", profileId: identity.id },
+                          Number(value),
+                        );
+                  }}
+                >
+                  {[0, 50, 72, 100].map((count) => (
+                    <option key={count} value={count}>
+                      {count || t("commitBox.noLimit")}
+                    </option>
+                  ))}
+                </Select>
+              </label>
               {templateMessage && <p role="status">{templateMessage}</p>}
             </div>
           </Disclosure>
+
+          {historyOwner === owner &&
+            repositoryId &&
+            !messageDisabled &&
+            !writing &&
+            !amendLoading && (
+              <HistorySearch
+                repositoryId={repositoryId}
+                onChooseMessage={setMessage}
+                onClose={() => setHistoryOwner(null)}
+              />
+            )}
 
           {coauthorOpen && (
             <Dialog

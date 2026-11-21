@@ -13,6 +13,7 @@ export type ShellCommandId =
   | "repository.unstageAll"
   | "repository.references"
   | "repository.graph"
+  | "repository.compare"
   | "repository.recovery"
   | "repository.editor"
   | "repository.createBranch"
@@ -137,6 +138,13 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
     title: t("shellCommands.createTagAtSelectionOrHead"),
     group: t("shellCommands.references"),
     keywords: t("shellCommands.newAnnotatedLightweightTagCommit"),
+    requirement: "repository",
+  },
+  {
+    id: "repository.compare",
+    title: t("comparison.title"),
+    group: t("shellCommands.history"),
+    keywords: t("comparison.keywords"),
     requirement: "repository",
   },
   {
@@ -334,9 +342,27 @@ export function commandReason(command: ShellCommand, context: CommandContext): s
   return null;
 }
 
-export function searchCommands(query: string): readonly ShellCommand[] {
+export function configuredCommands(
+  overrides: Readonly<Record<string, string>>,
+): readonly ShellCommand[] {
+  const taken = new Set(Object.values(overrides));
+  return SHELL_COMMANDS.map((command) => {
+    const custom = overrides[command.id];
+    const previous = command.shortcut;
+    if (
+      custom === undefined &&
+      (!previous || !taken.has((previous.shift ? "shift+" : "") + previous.key))
+    )
+      return command;
+    const { shortcut: _previous, ...rest } = command;
+    if (!custom) return rest;
+    return { ...rest, shortcut: { key: custom.slice(-1), shift: custom.startsWith("shift+") } };
+  });
+}
+
+export function searchCommands(query: string, commands = SHELL_COMMANDS): readonly ShellCommand[] {
   const matches = createTextSearch(query);
-  return SHELL_COMMANDS.filter((command) =>
+  return commands.filter((command) =>
     matches(`${command.title} ${command.group} ${command.keywords}`),
   );
 }
@@ -351,12 +377,13 @@ export function shortcutCommand(
     "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "isComposing" | "repeat"
   >,
   platform: DesktopPlatform,
+  commands = SHELL_COMMANDS,
 ): ShellCommand | undefined {
   if (event.altKey || event.isComposing || event.repeat) return undefined;
   if (platform === "mac" ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey)
     return undefined;
 
-  return SHELL_COMMANDS.find(
+  return commands.find(
     ({ shortcut }) =>
       shortcut &&
       shortcut.key === event.key.toLowerCase() &&

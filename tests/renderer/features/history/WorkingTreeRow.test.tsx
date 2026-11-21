@@ -180,7 +180,7 @@ it("shows only a green added count when all working files are new", async () => 
   expect(workingRow()!.querySelector(".text-git-modified")).toBeNull();
 });
 
-it("separates staged and unstaged deletions from added and other changes, counting each file once", async () => {
+it("counts conflicts separately from added, modified and deleted files and exposes them on the WIP row", async () => {
   await act(async () =>
     useRepositoryStore.setState({
       status: {
@@ -207,7 +207,10 @@ it("separates staged and unstaged deletions from added and other changes, counti
     "View working changes: 6 file changes in working tree",
   );
   expect(workingRow()!.querySelector('[title="Added"]')!.textContent).toBe("1");
-  expect(workingRow()!.querySelector(".text-git-modified")!.textContent).toBe("2");
+  expect(workingRow()!.querySelector(".text-git-modified")!.textContent).toBe("1");
+  expect(
+    [...workingRow()!.querySelectorAll("button")].map((button) => button.textContent),
+  ).toContain("1 conflicted file");
   const deleted = workingRow()!.querySelector('[title="Deleted"]')!;
   expect(deleted.classList.contains("text-git-deleted")).toBe(true);
   expect(deleted.textContent).toBe("3");

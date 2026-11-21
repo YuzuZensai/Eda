@@ -3,7 +3,7 @@ import { ok } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { IPC_CHANNELS, IPC_EVENTS } from "@shared/ipc";
 import type { Services } from "../../services";
-import { invalidRequest } from "../request-errors";
+import { invalidRequest } from "../../request-errors";
 import { broadcast, handle, withRepositoryChange } from "../transport";
 import { requireId, requireString } from "../validate";
 
@@ -231,6 +231,10 @@ export function registerWorkflowHandlers({
       return ok(undefined);
     });
   });
+
+  handle(IPC_CHANNELS.workflowPredictUpstream, async (_event, id) =>
+    ok(await workflows.predictUpstream(requireId(id))),
+  );
 
   handle(IPC_CHANNELS.workflowPrepareStart, async (_event, id, source, mode) => {
     if (mode !== "ff" && mode !== "no-ff" && mode !== "ff-only" && mode !== "squash")
