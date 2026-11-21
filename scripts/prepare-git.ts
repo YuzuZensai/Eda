@@ -4,10 +4,11 @@ import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { pipeline } from "node:stream/promises";
+import { prepareOpenSsh, sshArtifacts, verifySshTools } from "./prepare-openssh.ts";
 import { x as extract } from "tar";
 
 const project = fileURLToPath(new URL("..", import.meta.url));
-const bundleLayout = 1;
+const bundleLayout = 2;
 
 interface GitArtifact {
   url: string;
@@ -90,27 +91,7 @@ export async function pruneCredentialManager(root: string): Promise<void> {
   }
 }
 
-export async function prepareGit(platform: string = process.platform, arch: string = process.arch) {
-  const target = targetFor(platform, arch);
-  const parent = resolve(project, "vendor/git");
-  const destination = join(parent, target.directory);
-
-  try {
-    const installed = JSON.parse(await readFile(join(destination, "eda-bundle.json"), "utf8"));
-    await access(join(destination, target.executable));
-    if (
-      process.env["EDA_RELEASE"] !== "1" &&
-      installed.sha256 === target.sha256 &&
-      installed.bundleLayout === bundleLayout
-    )
-      return destination;
-  } catch {}
-
-  const cache = resolve(project, ".cache/bundled-git");
-
-  await mkdir(cache, { recursive: true });
-  await mkdir(parent, { recursive: true });
-
+async function downloadArchive(target: GitArtifact, cache: string) {
   const archive = join(cache, `${target.sha256}.tar.gz`);
 
   try {
@@ -119,12 +100,12 @@ export async function prepareGit(platform: string = process.platform, arch: stri
     const partial = join(cache, `${target.sha256}.${process.pid}.download`);
 
     try {
-      console.log(`Downloading bundled Git ${manifest.release} (${platform}/${arch})...`);
+      console.log(`Downloading ${basename(target.url)}...`);
 
       const response = await fetch(target.url, { signal: AbortSignal.timeout(180_000) });
 
       if (!response.ok || !response.body)
-        throw new Error(`Git download failed: HTTP ${response.status}`);
+        throw new Error(`Package download failed: HTTP ${response.status}`);
 
       await pipeline(response.body, createWriteStream(partial, { flags: "wx", mode: 0o600 }));
       await verifyArchive(partial, target.sha256);
@@ -134,15 +115,52 @@ export async function prepareGit(platform: string = process.platform, arch: stri
     }
   }
 
+  return archive;
+}
+
+export async function prepareGit(platform: string = process.platform, arch: string = process.arch) {
+  const target = targetFor(platform, arch);
+  const sshManifestHash = createHash("sha256")
+    .update(JSON.stringify(sshArtifacts(platform, arch)))
+    .digest("hex");
+  const parent = resolve(project, "vendor/git");
+  const destination = join(parent, target.directory);
+
+  try {
+    const installed = JSON.parse(await readFile(join(destination, "eda-bundle.json"), "utf8"));
+    await access(join(destination, target.executable));
+    await verifySshTools(platform, destination);
+    if (
+      process.env["EDA_RELEASE"] !== "1" &&
+      installed.sha256 === target.sha256 &&
+      installed.bundleLayout === bundleLayout &&
+      installed.sshManifestHash === sshManifestHash
+    )
+      return destination;
+  } catch {}
+
+  const cache = resolve(project, ".cache/bundled-git");
+
+  await mkdir(cache, { recursive: true });
+  await mkdir(parent, { recursive: true });
+
+  const archive = await downloadArchive(target, cache);
+
   const staging = await mkdtemp(join(parent, ".extract-"));
 
   try {
     await extract({ file: archive, cwd: staging, strict: true, preservePaths: false });
     await access(join(staging, target.executable));
     await pruneCredentialManager(staging);
+    await prepareOpenSsh(platform, arch, staging, (item) => downloadArchive(item, cache));
+    await verifySshTools(platform, staging);
     await writeFile(
       join(staging, "eda-bundle.json"),
-      JSON.stringify({ release: manifest.release, bundleLayout, ...target }, null, 2),
+      JSON.stringify(
+        { release: manifest.release, bundleLayout, sshManifestHash, ...target },
+        null,
+        2,
+      ),
     );
 
     if (dirname(destination) !== parent) throw new Error("Invalid Git bundle destination.");

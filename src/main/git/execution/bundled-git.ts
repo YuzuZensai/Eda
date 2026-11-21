@@ -36,7 +36,7 @@ export function bundledGitEnvironment(
   const runtime = arch === "arm64" ? "clangarm64" : "ucrt64";
   const bins = windows
     ? [join(root, "cmd"), join(root, runtime, "bin"), join(root, "usr/bin")]
-    : [join(root, "bin")];
+    : [join(root, "openssh/bin"), join(root, "bin")];
   const env: Record<string, string> = {
     PATH: [...bins, source["PATH"] ?? source["Path"] ?? ""].join(windows ? ";" : ":"),
     GIT_EXEC_PATH: join(root, windows ? `${runtime}/libexec/git-core` : "libexec/git-core"),
