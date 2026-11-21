@@ -26,6 +26,8 @@
     "screenshot": "pnpm build && node scripts/screenshot.ts"
   },
   "dependencies": {
+    "@xterm/headless": "^6.0.0",
+    "node-pty": "1.1.0",
     "velopack": "1.2.161"
   },
   "devDependencies": {

@@ -13,7 +13,7 @@ export default {
     enableEmbeddedAsarIntegrityValidation: true,
   },
   npmRebuild: false,
-  asarUnpack: ["node_modules/velopack/**/*.node"],
+  asarUnpack: ["node_modules/velopack/**/*.node", "node_modules/node-pty/**/*"],
   protocols: [{ name: "Eda repository links", schemes: ["eda"] }],
   directories: { output: "release" },
   files: ["dist/**/*", "package.json"],

@@ -2,5 +2,6 @@ allowBuilds:
   electron: true
   electron-winstaller: true
   esbuild: true
+  node-pty: true
   cpu-features: false
   ssh2: false
