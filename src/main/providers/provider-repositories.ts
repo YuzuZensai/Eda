@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readResponseBytes } from "../network/response";
 import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
@@ -8,6 +9,7 @@ import {
   isGitLabInstanceHttps,
   normalizeGitLabInstanceUrl,
 } from "@shared/integrations/gitlab-self-hosted";
+import { hostCapabilities } from "@shared/integrations/provider-repositories";
 import type {
   ProviderRepository,
   ProviderRepositoryPage,
@@ -15,16 +17,25 @@ import type {
 } from "@shared/integrations/provider-repositories";
 import { isRecord } from "@shared/validation";
 
+const pages = new Map<string, { etag: string; page: ProviderRepositoryPage }>();
+
 export async function listProviderRepositories(
   fetch: typeof globalThis.fetch,
   provider: RepositoryProvider,
   accessToken: string,
   page: number,
   gitlabInstance?: { baseUrl: string; signal?: AbortSignal },
+  profileId?: string,
 ): Promise<ProviderRepositoryPage> {
   const fail = (
     kind: "auth-failed" | "network-failed" | "invalid-input",
-    key: "loadFailed" | "invalidResponse" | "signInRequired" | "accessRequired",
+    key:
+      | "loadFailed"
+      | "invalidResponse"
+      | "signInRequired"
+      | "accessRequired"
+      | "rateLimited"
+      | "ssoRequired",
   ) =>
     new GitError({
       kind,
@@ -47,6 +58,10 @@ export async function listProviderRepositories(
       ? `https://api.github.com/user/repos?sort=updated&direction=desc&per_page=50&page=${page}`
       : `${gitlabInstance?.baseUrl ?? "https://gitlab.com"}/api/v4/projects?membership=true&order_by=last_activity_at&sort=desc&per_page=50&page=${page}`;
 
+  const cacheKey =
+    profileId &&
+    JSON.stringify([profileId, url, createHash("sha256").update(accessToken).digest("hex")]);
+  const cached = cacheKey ? pages.get(cacheKey) : undefined;
   try {
     const response = await fetch(url, {
       redirect: "error",
@@ -58,15 +73,30 @@ export async function listProviderRepositories(
       headers: {
         Accept: "application/json",
         "User-Agent": "Eda",
+        ...(cached && { "If-None-Match": cached.etag }),
         ...(gitlabInstance
           ? { "PRIVATE-TOKEN": accessToken }
           : { Authorization: `Bearer ${accessToken}` }),
       },
     });
 
+    if (response.status === 304 && cached) return cached.page;
     if (!response.ok || !response.body) {
+      if (cacheKey) pages.delete(cacheKey);
       await response.body?.cancel();
 
+      if (
+        response.status === 429 ||
+        (response.status === 403 &&
+          (response.headers.get("x-ratelimit-remaining") === "0" ||
+            response.headers.has("retry-after")))
+      )
+        throw fail("network-failed", "rateLimited");
+      if (
+        response.status === 403 &&
+        /^required\b/i.test(response.headers.get("x-github-sso") ?? "")
+      )
+        throw fail("auth-failed", "ssoRequired");
       throw response.status === 401
         ? fail("auth-failed", "signInRequired")
         : response.status === 403
@@ -127,11 +157,24 @@ export async function listProviderRepositories(
     });
 
     const hasNext =
-      provider === "github"
+      hostCapabilities[provider].pagination === "link"
         ? /rel="next"/.test(response.headers.get("link") ?? "")
         : !!response.headers.get("x-next-page");
 
-    return { repositories, nextPage: hasNext && page < 10000 ? page + 1 : null };
+    const result = { repositories, nextPage: hasNext && page < 10000 ? page + 1 : null };
+    const etag = response.headers.get("etag");
+    if (cacheKey) {
+      pages.delete(cacheKey);
+      if (
+        etag &&
+        etag.length <= 512 &&
+        !/no-store/i.test(response.headers.get("cache-control") ?? "")
+      ) {
+        pages.set(cacheKey, { etag, page: result });
+        if (pages.size > 32) pages.delete(pages.keys().next().value!);
+      }
+    }
+    return result;
   } catch (error) {
     if (error instanceof GitError) throw error;
 

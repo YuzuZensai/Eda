@@ -66,16 +66,7 @@ export class GitHubAuth {
   }
 
   status(profileId: string): GitHubStatus {
-    const saved = this.accounts.find(profileId);
-    const account = saved && this.credentialsStore.owns(saved) ? saved : undefined;
-
-    return {
-      secureStorage: this.secrets.available,
-      account:
-        account && !this.credentialsStore.authorized.has(profileId)
-          ? { id: account.accountId, login: account.login, state: account.state }
-          : null,
-    };
+    return this.credentialsStore.status(profileId);
   }
 
   async profile(profileId: string): Promise<GitHubProfileDetails | null> {
@@ -273,13 +264,22 @@ export class GitHubAuth {
     await this.profiles.clear();
   }
 
+  selectAccount(profileId: string, accountId: string) {
+    const selected = this.accounts.find(profileId, accountId);
+    if (!selected || !this.credentialsStore.owns(selected))
+      throw fail(errorText("main.providerRepositories.signInRequired"));
+    this.cancelProfile(profileId);
+    this.accounts.save(selected);
+    return this.status(profileId);
+  }
+
   async disconnect(profileId: string): Promise<void> {
     this.cancelProfile(profileId);
     const account = this.accounts.find(profileId);
     if (!account) return;
     this.requireStorage();
     if (this.credentialsStore.owns(account)) await this.secrets.delete(account.credentialRef);
-    this.accounts.delete(profileId);
+    this.accounts.delete(profileId, account.credentialRef);
   }
 
   async forFetch(profileId: string, url: string): Promise<TransportCredentials | undefined> {
@@ -304,7 +304,17 @@ export class GitHubAuth {
 
     const credentials = await this.credentials(account);
 
-    return listProviderRepositories(this.fetch, "github", credentials.password, page);
+    const result = await listProviderRepositories(
+      this.fetch,
+      "github",
+      credentials.password,
+      page,
+      undefined,
+      profileId,
+    );
+    if (this.accounts.find(profileId)?.credentialRef !== account.credentialRef)
+      throw fail(errorText("main.providerRepositories.signInRequired"));
+    return result;
   }
 
   private async credentials(account: SavedProviderAccount): Promise<TransportCredentials> {

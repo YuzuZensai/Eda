@@ -10,6 +10,7 @@ export interface GitHubAccount {
 }
 
 export interface GitHubStatus {
+  alternatives?: GitHubAccount[];
   secureStorage: boolean;
   account: GitHubAccount | null;
 }

@@ -105,3 +105,33 @@ it("rejects oversized responses and invalid pages", async () => {
   });
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it("revalidates cached pages within an account and drops them after access is revoked", async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>();
+  const page = () =>
+    new Response(JSON.stringify([githubRepository]), { headers: { etag: '"one"' } });
+  const load = (owner: string, token: string) =>
+    listProviderRepositories(fetch, "github", token, 1, undefined, owner);
+  fetch.mockResolvedValueOnce(page());
+  const first = await load("p1", "token");
+  fetch.mockResolvedValueOnce(new Response(null, { status: 304 }));
+  await expect(load("p1", "token")).resolves.toEqual(first);
+  expect(new Headers(fetch.mock.lastCall?.[1]?.headers).get("if-none-match")).toBe('"one"');
+  for (const [owner, token] of [
+    ["p2", "token"],
+    ["p1", "new"],
+  ] as const) {
+    fetch.mockResolvedValueOnce(page());
+    await load(owner, token);
+    expect(new Headers(fetch.mock.lastCall?.[1]?.headers).has("if-none-match")).toBe(false);
+  }
+  fetch.mockResolvedValueOnce(
+    new Response(null, { status: 403, headers: { "x-github-sso": "required" } }),
+  );
+  await expect(load("p1", "token")).rejects.toThrow(/single sign-on/);
+  fetch.mockResolvedValueOnce(
+    new Response(null, { status: 403, headers: { "x-ratelimit-remaining": "0" } }),
+  );
+  await expect(load("p1", "token")).rejects.toThrow(/rate limit/);
+  expect(new Headers(fetch.mock.lastCall?.[1]?.headers).has("if-none-match")).toBe(false);
+});

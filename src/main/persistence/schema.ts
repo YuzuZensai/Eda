@@ -96,13 +96,17 @@ export const githubAccounts = sqliteTable(
     profileId: text("profile_id")
       .notNull()
       .references(() => identities.id, { onDelete: "cascade" }),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
     accountId: text("account_id").notNull(),
     login: text("login").notNull(),
     credentialRef: text("credential_ref").notNull(),
     state: text("state", { enum: ["connected", "expired", "revoked"] }).notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.profileId] }),
+    primaryKey({ columns: [table.profileId, table.accountId] }),
+    uniqueIndex("github_active_account")
+      .on(table.profileId)
+      .where(sql`${table.active} = 1`),
     check("github_accounts_state", sql`${table.state} IN ('connected', 'expired', 'revoked')`),
   ],
 );
@@ -113,13 +117,17 @@ export const gitlabAccounts = sqliteTable(
     profileId: text("profile_id")
       .notNull()
       .references(() => identities.id, { onDelete: "cascade" }),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
     accountId: text("account_id").notNull(),
     login: text("login").notNull(),
     credentialRef: text("credential_ref").notNull(),
     state: text("state", { enum: ["connected", "expired", "revoked"] }).notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.profileId] }),
+    primaryKey({ columns: [table.profileId, table.accountId] }),
+    uniqueIndex("gitlab_active_account")
+      .on(table.profileId)
+      .where(sql`${table.active} = 1`),
     check("gitlab_accounts_state", sql`${table.state} IN ('connected', 'expired', 'revoked')`),
   ],
 );

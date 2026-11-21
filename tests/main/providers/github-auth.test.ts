@@ -546,6 +546,36 @@ it("browses with the active profile's saved GitHub credential and refuses an unc
   expect(ctx.fetch).not.toHaveBeenCalled();
 });
 
+it("switches accounts on the same host without losing credentials or exposing another profile", async () => {
+  const ctx = setup();
+  await ctx.connect();
+  ctx.fetch
+    .mockResolvedValueOnce(json(device))
+    .mockResolvedValueOnce(json({ ...token, access_token: "gho_second_fixture" }))
+    .mockResolvedValueOnce(json({ id: 8, login: "second-user" }));
+  const signIn = await ctx.service.begin(ctx.profile.id);
+  ctx.advance(5000);
+  await ctx.service.poll(ctx.profile.id, signIn.id);
+  expect(ctx.service.status(ctx.profile.id)).toMatchObject({
+    account: { id: "8" },
+    alternatives: [{ id: "7" }],
+  });
+  expect(ctx.service.selectAccount(ctx.profile.id, "7").account?.login).toBe("work-user");
+  expect(
+    (await ctx.service.forFetch(ctx.profile.id, "https://github.com/owner/repo.git"))?.password,
+  ).toBe(token.access_token);
+  expect(() => ctx.service.selectAccount(ctx.other.id, "8")).toThrow();
+  await ctx.service.disconnect(ctx.profile.id);
+  expect(ctx.service.status(ctx.profile.id)).toMatchObject({
+    account: null,
+    alternatives: [{ id: "8" }],
+  });
+  ctx.service.selectAccount(ctx.profile.id, "8");
+  expect(
+    (await ctx.service.forFetch(ctx.profile.id, "https://github.com/owner/repo.git"))?.password,
+  ).toBe("gho_second_fixture");
+});
+
 it("keeps hosted provider accounts separate when they share a profile", async () => {
   const ctx = setup();
   await ctx.connect();

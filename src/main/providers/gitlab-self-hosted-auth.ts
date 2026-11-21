@@ -300,6 +300,7 @@ export class GitLabSelfHostedAuth {
         credentials.password,
         page,
         { baseUrl: account.baseUrl },
+        profileId,
       );
 
       this.assertCurrent(account);

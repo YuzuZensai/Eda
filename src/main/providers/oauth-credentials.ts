@@ -44,6 +44,24 @@ export class OAuthCredentials {
     return account.credentialRef.startsWith(this.prefix(account.profileId, account.accountId));
   }
 
+  status(profileId: string) {
+    const saved = this.accounts.find(profileId);
+    const account = saved && this.owns(saved) ? saved : undefined;
+
+    const alternatives = this.accounts
+      .list(profileId)
+      .filter((item) => item.accountId !== account?.accountId && this.owns(item))
+      .map((item) => ({ id: item.accountId, login: item.login, state: item.state }));
+    return {
+      ...(alternatives.length && { alternatives }),
+      secureStorage: this.secrets.available,
+      account:
+        account && !this.authorized.has(profileId)
+          ? { id: account.accountId, login: account.login, state: account.state }
+          : null,
+    };
+  }
+
   async settle(): Promise<void> {
     await Promise.allSettled([...this.committing.values(), ...this.reading.values()]);
   }
@@ -93,7 +111,7 @@ export class OAuthCredentials {
 
   private async save(candidate: AuthorizedAccount): Promise<void> {
     const { profileId, accountId, login, tokens } = candidate;
-    const previous = this.accounts.find(profileId);
+    const previous = this.accounts.find(profileId, accountId);
     const credentialRef = this.prefix(profileId, accountId) + randomUUID();
 
     await this.secrets.set(credentialRef, JSON.stringify(tokens));

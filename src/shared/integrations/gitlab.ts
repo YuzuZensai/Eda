@@ -4,6 +4,7 @@ export interface GitLabAccount {
   state: "connected" | "expired" | "revoked";
 }
 export interface GitLabStatus {
+  alternatives?: GitLabAccount[];
   secureStorage: boolean;
   account: GitLabAccount | null;
 }
