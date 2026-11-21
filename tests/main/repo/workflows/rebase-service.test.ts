@@ -1,6 +1,7 @@
 import { RepositoryMemberships } from "@main/persistence/repository-memberships";
 import { afterEach, expect, it } from "vitest";
 import { readFile, unlink, writeFile } from "node:fs/promises";
+import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 import { openDatabase } from "@main/persistence/database";
@@ -513,3 +514,86 @@ it("applies reviewed history plans and resumes autosquash/edit stops without los
   expect((await repo.run(["rev-parse", "HEAD"])).trim()).toBe(merge);
   expect(await repo.run(["status", "--porcelain"])).toBe("");
 }, 60_000);
+
+it("rewords the selected commit while preserving its tree, authors, staged files and other branches", async () => {
+  repo = await createTempRepo();
+  const context = services();
+  const profile = context.identities.create({
+    name: "Editor",
+    gitName: "Editor",
+    gitEmail: "editor@eda.invalid",
+    hue: 0,
+    signing: { format: "none", signCommits: false },
+  });
+  context.identities.setActiveId(profile.id);
+  const { id } = await context.repositories.open(repo.path);
+  await repo.writeFile("file.txt", "first\n");
+  await repo.commit("First\n\nOriginal body");
+  const root = (await repo.run(["rev-parse", "HEAD"])).trim();
+  await repo.writeFile("file.txt", "second\n");
+  await repo.commit("Second");
+  const tip = (await repo.run(["rev-parse", "HEAD"])).trim();
+  await repo.run(["branch", "original", tip]);
+  await repo.run(["update-ref", "refs/remotes/origin/main", tip]);
+  await repo.writeFile("file.txt", "staged\n");
+  await repo.run(["add", "file.txt"]);
+  await repo.writeFile("file.txt", "unstaged\n");
+  const index = await repo.run(["write-tree"]);
+  const treesAndAuthors = () => repo.run(["log", "--format=%T %an %ae"]);
+  const before = await treesAndAuthors();
+  const editTip = await context.rebase.prepare(id, "reword", tip);
+  expect(editTip).toMatchObject({ message: "Second", publishedCommits: 1, rewrittenCount: 1 });
+  await expect(context.rebase.prepare(id, "reword", root)).rejects.toThrow(/stash/);
+  expect(() => context.rebase.execute(id, editTip.token, undefined, "   ")).toThrow();
+  await context.rebase.execute(id, editTip.token, undefined, "Edited tip\n\n# Body");
+  expect(await repo.run(["log", "-1", "--format=%B"])).toContain("Edited tip\n\n# Body");
+  expect(await repo.run(["write-tree"])).toBe(index);
+  expect(await repo.run(["diff"])).toContain("+unstaged");
+  expect(await treesAndAuthors()).toBe(before);
+  await repo.run(["restore", "--staged", "--worktree", "file.txt"]);
+  await expect(context.rebase.prepare(id, "reword", tip)).rejects.toThrow(/checked-out branch/);
+
+  const editRoot = await context.rebase.prepare(id, "reword", root);
+  expect(editRoot).toMatchObject({
+    message: "First\n\nOriginal body",
+    publishedCommits: 1,
+    rewrittenCount: 2,
+  });
+  const result = await context.rebase.execute(
+    id,
+    editRoot.token,
+    undefined,
+    "Edited root\n\nNew body",
+  );
+  expect(result.state).toBe("completed");
+  expect(await repo.run(["log", "-1", "--format=%B", "HEAD^"])).toContain(
+    "Edited root\n\nNew body",
+  );
+  expect(await repo.run(["log", "-1", "--format=%B"])).toContain("Edited tip\n\n# Body");
+  expect(await repo.run(["rev-parse", "original"])).toContain(tip);
+  expect(await treesAndAuthors()).toBe(before);
+
+  const head = (await repo.run(["rev-parse", "HEAD"])).trim();
+  const stale = await context.rebase.prepare(id, "reword", head);
+  await repo.run(["commit", "--allow-empty", "-m", "New head"]);
+  await expect(context.rebase.execute(id, stale.token, undefined, "Wrong commit")).rejects.toThrow(
+    /changed after review/,
+  );
+  const unchangedParent = (await repo.run(["rev-parse", "HEAD~2"])).trim();
+  const editMiddle = await context.rebase.prepare(id, "reword", head);
+  expect(editMiddle.rewrittenCount).toBe(2);
+  await context.rebase.execute(id, editMiddle.token, undefined, "Middle");
+  expect((await repo.run(["log", "-2", "--format=%s"])).trim().split("\n")).toEqual([
+    "New head",
+    "Middle",
+  ]);
+  expect((await repo.run(["rev-parse", "HEAD~2"])).trim()).toBe(unchangedParent);
+
+  const shallowPath = join(repo.home, "shallow");
+  await repo.run(["clone", "--depth=1", pathToFileURL(repo.path).href, shallowPath]);
+  const shallow = await context.repositories.open(shallowPath);
+  const boundary = (await repo.run(["rev-parse", "HEAD"])).trim();
+  await expect(context.rebase.prepare(shallow.id, "reword", boundary)).rejects.toThrow(
+    /shallow boundary/,
+  );
+});

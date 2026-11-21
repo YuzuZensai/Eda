@@ -4,7 +4,12 @@ import { errorMessage, GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { stateLabel } from "@shared/i18n/labels";
 import type { Identity } from "@shared/identity/identity";
-import type { RebaseAction, RebaseResult, RebaseReview } from "@shared/workflows/rebase";
+import type {
+  RebaseAction,
+  RebasePlanEntry,
+  RebaseResult,
+  RebaseReview,
+} from "@shared/workflows/rebase";
 import { randomUUID } from "node:crypto";
 import type { GitService } from "../../git/git-service";
 import { createPullAutostash } from "../../git/operations/pull-autostash";
@@ -22,7 +27,8 @@ import type { ContentRecoveryRepository } from "../../persistence/content-recove
 import type { WorkflowJournal, WorkflowJournalRecord } from "../../persistence/workflow-journal";
 import { PreviewStore } from "../preview-store";
 import { captureRewriteStart, finalizeRewrite } from "../history/rewrite-history";
-import { publishedRangeCount } from "../history/shared-history";
+import { CommitHistory } from "../history/commit-history";
+import { isPublishedCommit, publishedRangeCount } from "../history/shared-history";
 import type { RepositoryManager } from "../lifecycle/repository-manager";
 import { DiscardService, type OperationSnapshot } from "../working-tree/discard-service";
 import type { RepositoryWriter } from "../working-tree/repository-writer";
@@ -45,6 +51,7 @@ export class RebaseService {
     record?: WorkflowJournalRecord;
     snapshot?: OperationSnapshot;
     autostash: boolean;
+    rewordPlan?: RebasePlanEntry[];
   }>();
 
   constructor(
@@ -66,6 +73,7 @@ export class RebaseService {
     interactive = false,
     autostash = false,
   ): Promise<RebaseReview> {
+    if (action === "reword") return this.prepareReword(repositoryId, onto ?? "");
     if (!["start", "continue", "skip", "abort", "amend"].includes(action))
       throw invalid(errorText("main.rebaseService.chooseARebaseAction"));
     if (action === "start") assertFullObjectId(onto ?? "", t("operations.reviewRebaseBase"));
@@ -247,11 +255,100 @@ export class RebaseService {
     );
   }
 
+  private prepareReword(repositoryId: string, target: string): Promise<RebaseReview> {
+    assertFullObjectId(target, t("operations.reviewRebaseBase"));
+    return this.writer.remoteOperation(
+      repositoryId,
+      t("commitMenu.editMessage"),
+      async (root, identity) => {
+        const status = await this.git.status(root);
+        const { oid: head, head: branch, detached } = status.branch;
+        if (!head || !branch || detached || (await this.workflows.observe(root, status)))
+          throw invalid(errorText("reword.branchRequired"));
+
+        const tip = head === target;
+        const options = { cwd: root, operation: t("commitMenu.editMessage") };
+        const selected = await this.git.exec(
+          [
+            "show",
+            "--no-patch",
+            "--no-notes",
+            "--no-show-signature",
+            "--format=%P%x00%B",
+            target,
+            "--",
+          ],
+          {
+            ...options,
+            maxStdoutBytes: 128 * 1024,
+          },
+        );
+        const [parents, body] = selected.stdout.split("\0");
+        if (body === undefined) throw invalid(errorText("reword.branchRequired"));
+        const base = parents?.split(" ")[0] || null;
+        if (
+          !base &&
+          (await this.git.exec(["rev-parse", "--is-shallow-repository"], options)).stdout.trim() ===
+            "true"
+        )
+          throw invalid(errorText("reword.shallowBoundary"));
+
+        let plan: RebasePlanEntry[] | undefined;
+        if (!tip) {
+          const ancestor = await this.git.exec(["merge-base", "--is-ancestor", target, head], {
+            ...options,
+            allowedExitCodes: [0, 1],
+          });
+          if (ancestor.exitCode !== 0) throw invalid(errorText("reword.branchRequired"));
+          if (status.changes.length) throw invalid(errorText("reword.cleanRequired"));
+          const merges = await this.git.exec(
+            ["rev-list", "--merges", "--max-count=1", base ? `${base}..${head}` : head, "--"],
+            options,
+          );
+          if (merges.stdout.trim())
+            throw invalid(
+              errorText("main.rebaseService.thisRangeContainsMergeCommitsMergePreservingRebase"),
+            );
+          plan = await readRebasePlan(this.git, root, base, head);
+          if (plan[0]?.oid !== target) throw invalid(errorText("reword.branchRequired"));
+        }
+        const review: RebaseReview = {
+          token: randomUUID(),
+          action: "reword",
+          head,
+          branch,
+          onto: base,
+          rewordTarget: target,
+          rewrittenCount: plan?.length ?? 1,
+          message: body.replace(/\n{1,2}$/, ""),
+          author: identity.gitName,
+          email: identity.gitEmail,
+          paths: [],
+          recoveryBytes: 0,
+          publishedCommits: tip
+            ? Number(await isPublishedCommit(this.git, root, target))
+            : await publishedRangeCount(this.git, root, head, base ?? ""),
+        };
+        this.reviews.set(review.token, {
+          review,
+          root,
+          repositoryId,
+          identity,
+          workflowToken: null,
+          autostash: false,
+          ...(plan ? { rewordPlan: plan } : {}),
+          fingerprint: await workflowFingerprint(this.git, root, status),
+        });
+        return review;
+      },
+    );
+  }
+
   execute(
     repositoryId: string,
     token: string,
     inputPlan?: unknown,
-    message?: unknown,
+    inputMessage?: unknown,
   ): Promise<RebaseResult> {
     const repository = this.repositories.resolveActiveRepository(repositoryId);
     const pending = this.reviews.get(token);
@@ -266,28 +363,32 @@ export class RebaseService {
         errorText("main.rebaseService.thisRebaseReviewExpiredOrBelongsToAnotherContextReviewAgain"),
       );
 
-    const plan = pending.review.plan
-      ? validateRebasePlan(inputPlan, pending.review.plan)
-      : undefined;
+    let plan = pending.review.plan ? validateRebasePlan(inputPlan, pending.review.plan) : undefined;
 
     if (!plan && inputPlan !== undefined)
       throw invalid(errorText("main.rebaseService.reviewAnInteractivePlanBeforeEditingCommits"));
 
+    const message = typeof inputMessage === "string" ? inputMessage : "";
     if (
-      pending.review.action === "amend" &&
-      (typeof message !== "string" ||
-        !message.trim() ||
-        message.includes("\0") ||
-        Buffer.byteLength(message) > 64 * 1024)
+      (pending.review.action === "amend" || pending.review.action === "reword") &&
+      (!message.trim() || message.includes("\0") || Buffer.byteLength(message) > 64 * 1024)
     )
       throw invalid(errorText("main.rebaseService.enterAnAmendMessageWithin64KiB"));
 
+    if (pending.review.action === "reword") {
+      if (message === pending.review.message) throw invalid(errorText("reword.unchanged"));
+      plan = pending.rewordPlan?.map((entry) =>
+        entry.oid === pending.review.rewordTarget ? { ...entry, action: "reword", message } : entry,
+      );
+    }
     return this.writer.remoteOperation(repositoryId, t("operationTitles.rebase"), async (root) => {
       const { review, identity } = pending;
       const status = await this.git.status(root);
       const workflow = await this.workflows.observe(root, status);
 
       if (
+        (review.action === "reword" &&
+          (status.branch.oid !== review.head || status.branch.head !== review.branch)) ||
         (workflow?.token ?? null) !== pending.workflowToken ||
         (await workflowFingerprint(this.git, root, status)) !== pending.fingerprint
       )
@@ -298,22 +399,46 @@ export class RebaseService {
       if (workflow?.ownerProfileId && workflow.ownerProfileId !== identity.id)
         throw invalid(errorText("main.rebaseService.anotherProfileOwnsThisRebase"));
 
+      const editingTip = review.action === "reword" && review.head === review.rewordTarget;
       if (
-        Math.max(
-          pending.record?.publishedCommits ?? 0,
-          await publishedRangeCount(
-            this.git,
-            root,
-            review.head,
-            review.onto ?? workflow?.head ?? "",
-          ),
-        ) !== review.publishedCommits
+        (editingTip
+          ? Number(await isPublishedCommit(this.git, root, review.head))
+          : Math.max(
+              pending.record?.publishedCommits ?? 0,
+              await publishedRangeCount(
+                this.git,
+                root,
+                review.head,
+                review.onto ?? workflow?.head ?? "",
+              ),
+            )) !== review.publishedCommits
       )
         throw invalid(
           errorText("main.rebaseService.remoteTrackingHistoryChangedAfterReviewReviewAgain"),
         );
 
       if (review.action !== "abort") this.identities.assertOperationIdentity(identity);
+      if (editingTip) {
+        this.reviews.delete(token);
+        const result = await new CommitHistory(this.git, this.journal).run(
+          root,
+          repositoryId,
+          identity,
+          true,
+          () =>
+            this.git.commit(
+              root,
+              message,
+              { amend: true, messageOnly: true, allowEmpty: true },
+              identity,
+            ),
+        );
+        return {
+          state: "completed",
+          head: result.oid,
+          publishedCommits: result.publishedCommits ?? 0,
+        };
+      }
       if (review.action === "continue" || review.action === "skip")
         await assertSafeRebaseState(this.git, root);
 
@@ -349,7 +474,7 @@ export class RebaseService {
 
       record.publishedCommits = review.publishedCommits;
 
-      if (review.action === "amend") record.amendMessage = message as string;
+      if (review.action === "amend") record.amendMessage = message;
 
       this.journal.save(record);
       this.reviews.delete(token);
@@ -382,7 +507,7 @@ export class RebaseService {
         if (review.action === "amend") {
           const head = await this.git.commit(
             root,
-            message as string,
+            message,
             { amend: true, allowEmpty: true },
             identity,
           );
@@ -401,7 +526,7 @@ export class RebaseService {
           [
             ...Object.entries(config).flatMap(([key, value]) => ["-c", `${key}=${value}`]),
             "rebase",
-            ...(review.action === "start"
+            ...(review.action === "start" || review.action === "reword"
               ? [
                   "--merge",
                   "--no-autostash",
@@ -416,7 +541,7 @@ export class RebaseService {
                         "--empty=keep",
                       ]
                     : []),
-                  review.onto!,
+                  review.onto ?? "--root",
                 ]
               : [`--${review.action}`]),
           ],

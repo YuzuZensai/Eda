@@ -10,7 +10,12 @@ import type { GitService } from "../git-service";
 const invalid = (message: ErrorText) =>
   new GitError({ kind: "invalid-input", operation: t("operations.interactiveRebase"), message });
 
-export async function readRebasePlan(git: GitService, root: string, onto: string) {
+export async function readRebasePlan(
+  git: GitService,
+  root: string,
+  onto: string | null,
+  head = "HEAD",
+) {
   const result = await git.exec(
     [
       "log",
@@ -19,7 +24,7 @@ export async function readRebasePlan(git: GitService, root: string, onto: string
       "--max-count=201",
       "-z",
       "--format=%H%x00%B",
-      `${onto}..HEAD`,
+      onto ? `${onto}..${head}` : head,
       "--",
     ],
     { cwd: root, operation: t("operations.readRebasePlan"), maxStdoutBytes: 2 * 1024 * 1024 },

@@ -1,6 +1,6 @@
 import { Localized } from "@renderer/i18n/Localized";
 import { errorMessage } from "@shared/errors";
-import { getLocale, t } from "@shared/i18n";
+import { getLocale, t, type MessageKey } from "@shared/i18n";
 import type { RebaseAction, RebasePlanEntry, RebaseReview } from "@shared/workflows/rebase";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -16,12 +16,22 @@ import { useRepositoryStore } from "../../stores/repository-store";
 import { RebasePlanEditor } from "./RebasePlanEditor";
 
 const labels: Record<RebaseAction, string> = {
+  reword: t("commitMenu.editMessage"),
   start: t("rebaseDialog.rebaseCurrentBranch"),
   continue: t("rebaseDialog.continueRebase"),
   skip: t("rebaseDialog.skipCurrentCommit"),
   abort: t("rebaseDialog.abortRebase"),
   amend: t("rebaseDialog.amendPausedCommit"),
 };
+
+const descriptions = {
+  start: "rebaseDialog.replayTheCurrentBranchSCommitsOnThe",
+  skip: "rebaseDialog.discardTheCurrentReplayedCommitAndItsResolution",
+  abort: "rebaseDialog.returnToTheBranchStateBeforeTheRebase",
+  amend: "rebaseDialog.replaceThePausedCommitWithTheStagedChanges",
+  continue: "rebaseDialog.commitTheStagedResolutionAndResumeTheRemaining",
+  reword: "reword.description",
+} satisfies Record<RebaseAction, MessageKey>;
 
 interface RebaseDialogProps {
   repositoryId: string;
@@ -51,6 +61,15 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
   const request = useRef(0);
   const [fresh, setFresh] = useState(false);
   const [replacement, setReplacement] = useState<RebaseReview | null>(null);
+
+  const reword = action === "reword";
+  const editsMessage = reword || action === "amend";
+  const needsConfirmation = !reword || (review?.publishedCommits ?? 0) > 0;
+  const canExecute =
+    !!review &&
+    fresh &&
+    (!needsConfirmation || confirmed) &&
+    (!reword || (!!message.trim() && message !== review.message));
 
   const adopt = (next: RebaseReview) => {
     setReview(next);
@@ -104,7 +123,7 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
   }, [repositoryId, action, onto, interactive]);
 
   const execute = async () => {
-    if (!review || !fresh || !confirmed || busy) return;
+    if (!review || !canExecute || busy) return;
     const generation = request.current;
 
     setPhase("execute");
@@ -115,7 +134,7 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
         repositoryId,
         review.token,
         plan,
-        action === "amend" ? message : undefined,
+        editsMessage ? message : undefined,
       );
 
       if (generation !== request.current) return;
@@ -151,17 +170,7 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
       title={labels[action]}
       busy={busy}
       onClose={onClose}
-      description={
-        action === "start"
-          ? t("rebaseDialog.replayTheCurrentBranchSCommitsOnThe")
-          : action === "skip"
-            ? t("rebaseDialog.discardTheCurrentReplayedCommitAndItsResolution")
-            : action === "abort"
-              ? t("rebaseDialog.returnToTheBranchStateBeforeTheRebase")
-              : action === "amend"
-                ? t("rebaseDialog.replaceThePausedCommitWithTheStagedChanges")
-                : t("rebaseDialog.commitTheStagedResolutionAndResumeTheRemaining")
-      }
+      description={t(descriptions[action])}
       footer={
         <ReviewActions
           preparing={phase === "prepare"}
@@ -169,8 +178,8 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
           onClose={onClose}
           onReview={() => void prepare()}
           onConfirm={() => void execute()}
-          confirmLabel={labels[action]}
-          confirmDisabled={!fresh || !review || !confirmed || rewritten > 0 || !!recoveryWarning}
+          confirmLabel={reword ? t("reword.save") : labels[action]}
+          confirmDisabled={!canExecute || rewritten > 0 || !!recoveryWarning}
           confirmVariant="secondary"
           closeLabel={rewritten || recoveryWarning ? t("common.close") : t("common.cancel")}
           closeVariant="secondary"
@@ -225,12 +234,21 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
               </p>
             )}
 
-            <p>
-              <Localized
-                id="rebaseDialog.originalHead"
-                values={{ code: <code>{review.head}</code> }}
-              />
-            </p>
+            {reword ? (
+              <p>
+                {t("reword.target", {
+                  oid: onto?.slice(0, 10) ?? "",
+                  count: review.rewrittenCount ?? 1,
+                })}
+              </p>
+            ) : (
+              <p>
+                <Localized
+                  id="rebaseDialog.originalHead"
+                  values={{ code: <code>{review.head}</code> }}
+                />
+              </p>
+            )}
 
             {review.branch && (
               <p>
@@ -241,7 +259,7 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
               </p>
             )}
 
-            {review.onto && (
+            {!reword && review.onto && (
               <p>
                 <Localized
                   id="rebaseDialog.newBase"
@@ -264,9 +282,12 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
               </p>
             )}
 
-            {action === "amend" && (
+            {editsMessage && (
               <Textarea
-                aria-label={t("rebaseDialog.pausedCommitMessage")}
+                aria-label={
+                  reword ? t("historySearch.message") : t("rebaseDialog.pausedCommitMessage")
+                }
+                autoFocus={reword}
                 rows={5}
                 value={message}
                 disabled={busy}
@@ -307,13 +328,15 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
               </>
             )}
 
-            <Checkbox
-              checked={confirmed}
-              disabled={busy || !fresh}
-              onChange={(event) => setConfirmed(event.target.checked)}
-            >
-              {t("rebaseDialog.iReviewedThisRebaseAction")}
-            </Checkbox>
+            {needsConfirmation && (
+              <Checkbox
+                checked={confirmed}
+                disabled={busy || !fresh}
+                onChange={(event) => setConfirmed(event.target.checked)}
+              >
+                {t(reword ? "reword.confirmPublished" : "rebaseDialog.iReviewedThisRebaseAction")}
+              </Checkbox>
+            )}
           </>
         )}
 

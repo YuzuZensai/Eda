@@ -1,5 +1,5 @@
 import { t } from "@shared/i18n";
-export type RebaseAction = "start" | "continue" | "skip" | "abort" | "amend";
+export type RebaseAction = "start" | "continue" | "skip" | "abort" | "amend" | "reword";
 
 export interface RebasePlanEntry {
   oid: string;
@@ -18,6 +18,8 @@ export interface RebaseReview {
   paths: string[];
   recoveryBytes: number;
   publishedCommits: number;
+  rewordTarget?: string;
+  rewrittenCount?: number;
   plan?: RebasePlanEntry[];
   message?: string;
 }

@@ -1094,6 +1094,7 @@ export class GitService {
       skipCommitHooks?: boolean;
       signOff?: boolean;
       allowEmpty?: boolean;
+      messageOnly?: boolean;
     } = {},
     identity?: Identity,
   ): Promise<string> {
@@ -1107,7 +1108,12 @@ export class GitService {
       });
     }
 
-    const args = ["commit", "--file=-", "--cleanup=strip"];
+    const args = [
+      "commit",
+      "--file=-",
+      options.messageOnly ? "--cleanup=verbatim" : "--cleanup=strip",
+    ];
+    if (options.messageOnly) args.push("--only");
 
     if (options.amend) args.push("--amend");
     if (options.skipCommitHooks) args.push("--no-verify");

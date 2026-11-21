@@ -199,7 +199,8 @@ export function registerWorkflowHandlers({
       action !== "continue" &&
       action !== "skip" &&
       action !== "abort" &&
-      action !== "amend"
+      action !== "amend" &&
+      action !== "reword"
     )
       throw invalidRequest(errorText("main.workflowHandlers.chooseARebaseAction"));
 
