@@ -42,6 +42,10 @@ export interface RepositoryStatus {
 }
 
 export interface RepositoryCapabilities {
+  shallow?: boolean;
+  sparse?: boolean;
+  partial?: boolean;
+  objectFormat?: string;
   write: boolean;
   reason?: string;
 }
@@ -76,7 +80,22 @@ export interface HistoryPage {
   nextOffset: number | null;
 }
 
+export const HISTORY_SEARCH_FIELDS = [
+  "message",
+  "author",
+  "path",
+  "since",
+  "until",
+  "ref",
+  "sha",
+] as const;
+export type HistorySearchField = (typeof HISTORY_SEARCH_FIELDS)[number];
+export function isHistorySearchField(field: unknown): field is HistorySearchField {
+  return HISTORY_SEARCH_FIELDS.some((item) => item === field);
+}
+
 export interface HistoryPageRequest {
+  search?: { field: HistorySearchField; text: string };
   showStashes?: boolean;
   showInternalRefs?: boolean;
   repositoryId: string;
@@ -201,10 +220,99 @@ export interface RepositoryPathsRequest {
   paths?: string[];
 }
 
-export interface WorkingDiffRequest extends RepositoryPathsRequest {
+export interface DiffDisplayOptions {
+  context?: "expanded" | "full";
+  ignoreWhitespace?: boolean;
+}
+
+export interface WorkingDiffRequest extends RepositoryPathsRequest, DiffDisplayOptions {
   area: DiffArea;
 }
 
-export interface CommitDiffRequest extends RepositoryPathsRequest {
+export interface CommitDiffRequest extends RepositoryPathsRequest, DiffDisplayOptions {
   oid: ObjectId;
+}
+
+export type RevisionComparisonMode = "direct" | "merge-base";
+
+export interface RevisionComparisonRequest {
+  repositoryId: string;
+  left: string;
+  right: string;
+  mode: RevisionComparisonMode;
+}
+
+export type ComparisonFile = Pick<FileDiff, "oldPath" | "newPath" | "status">;
+
+export interface RevisionComparison {
+  leftOid: ObjectId;
+  rightOid: ObjectId;
+  /** The left commit for a direct comparison, or the common ancestor for a merge-base comparison. */
+  baseOid: ObjectId;
+  files: ComparisonFile[];
+  omittedFiles: number;
+}
+
+export interface ComparisonDiffRequest extends DiffDisplayOptions {
+  repositoryId: string;
+  baseOid: ObjectId;
+  rightOid: ObjectId;
+  path: string;
+  oldPath?: string;
+}
+
+export type PatchExportRequest = { repositoryId: string } & (
+  { area: DiffArea; path: string } | { oid: ObjectId; path?: string; oldPath?: string }
+);
+
+export interface SubmoduleSummary {
+  path: string;
+  state: "missing" | "uninitialized" | "uninspected" | "initialized" | "outOfSync" | "conflicted";
+  directory?: string;
+  dirty?: boolean;
+}
+
+export const submoduleUpdateModes = ["checkout", "merge", "rebase"] as const;
+export type SubmoduleUpdateMode = (typeof submoduleUpdateModes)[number];
+
+export interface SubmoduleListing {
+  automatic?: boolean;
+  defaultMode?: SubmoduleUpdateMode;
+  entries: SubmoduleSummary[];
+  parent?: string;
+}
+
+export interface WorktreeSummary {
+  current?: boolean;
+  changedPaths?: number;
+  path: string;
+  main: boolean;
+  bare: boolean;
+  available: boolean;
+  branch?: string;
+  oid?: ObjectId;
+  locked?: string;
+  prunable?: string;
+}
+
+export interface RevisionPathRequest {
+  repositoryId: string;
+  oid: ObjectId;
+  path?: string;
+}
+
+export type RevisionPath =
+  | { kind: "tree"; entries: { name: string; type: "tree" | "blob" | "commit"; oid: string }[] }
+  | { kind: "text"; text: string; lfs?: { oid: string; bytes: number } }
+  | { kind: "binary" | "large"; bytes: number };
+
+export interface BlameRequest extends RevisionPathRequest {
+  path: string;
+  start: number;
+}
+export interface BlameLine {
+  oid: string;
+  author: string;
+  text: string;
+  previous?: { oid: string; path: string };
 }

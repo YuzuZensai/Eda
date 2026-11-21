@@ -18,9 +18,12 @@ it.each([true, false])(
     const message = "remote: café 日本語";
     const bytes = Buffer.from(message + (newline ? "\n" : ""));
     const lines: string[] = [];
+    const progress: string[] = [];
 
     vi.mocked(spawn).mockImplementationOnce(() => {
       queueMicrotask(() => {
+        for (const byte of Buffer.from("receiving 50%\rcafé 100%"))
+          child.stdout!.emit("data", Buffer.from([byte]));
         for (const byte of bytes) child.stderr!.emit("data", Buffer.from([byte]));
         child.emit("close", 0);
       });
@@ -31,10 +34,12 @@ it.each([true, false])(
       executable: process.execPath,
       args: [],
       env: {},
+      onStdoutLine: (line) => progress.push(line),
       onStderrLine: (line) => lines.push(line),
     });
 
     expect(lines).toEqual([message]);
+    expect(progress).toEqual(["receiving 50%", "café 100%"]);
     expect(result.stderr).toEqual(bytes);
   },
 );

@@ -146,7 +146,12 @@ describe("tags against real Git", () => {
 
     await writeFile(allowed, `test@eda.invalid ${await readFile(`${key}.pub`, "utf8")}`);
     await repo.run(["config", "gpg.ssh.allowedSignersFile", allowed]);
-    expect((await repo.git.verifyTag(repo.path, "signed")).status).toBe("verified");
+    expect(await repo.git.verifyTag(repo.path, "signed")).toMatchObject({
+      status: "verified",
+      validity: "valid",
+      signerTrust: "local",
+      format: "ssh",
+    });
 
     const bytes = await repo.run(["cat-file", "tag", "refs/tags/signed"]);
     const changed = await repo.git.exec(["hash-object", "-t", "tag", "-w", "--stdin"], {
@@ -156,7 +161,10 @@ describe("tags against real Git", () => {
     });
 
     await repo.run(["update-ref", "refs/tags/tampered", changed.stdout.trim()]);
-    expect((await repo.git.verifyTag(repo.path, "tampered")).status).toBe("unverified");
+    expect(await repo.git.verifyTag(repo.path, "tampered")).toMatchObject({
+      status: "invalid",
+      reasonCode: "bad-signature",
+    });
 
     await repo.run(["config", "tag.gpgSign", "true"]);
     await repo.git.createTag(repo.path, "unsigned", { message: "Unsigned annotation" }, identity);

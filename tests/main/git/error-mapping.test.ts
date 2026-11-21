@@ -103,6 +103,16 @@ describe("mapGitError", () => {
     }
   });
 
+  it.each([
+    ["sh: git-lfs: command not found", "gitDiagnostics.lfsMissing"],
+    [
+      "Error downloading object: data.bin (123): Smudge error: object was not found",
+      "gitDiagnostics.lfsDownload",
+    ],
+  ])("identifies LFS failures in Git diagnostics: %s", (stderr, key) => {
+    expect(map(stderr).toData().text?.key).toBe(key);
+  });
+
   it("keeps raw stderr for the log without exposing it in the message", () => {
     const error = map(fx.nonFastForward);
     expect(error.rawStderr).toContain("hint:");

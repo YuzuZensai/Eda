@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { GitError } from "@shared/errors";
+import { MAX_DIFF_FILES } from "@shared/repository/diff-limits";
 import { FakeProcessRunner } from "../../helpers/fake-process-runner";
 import { GitService } from "@main/git/git-service";
+import { listSubmodules } from "@main/git/operations/submodules";
+import { repositoryCapabilities } from "@main/repo/lifecycle/repository-capabilities";
+import { listWorktrees } from "@main/git/operations/worktrees";
+import { readRevisionPath, readBlame } from "@main/git/operations/revision-path";
+import { readRevisionComparison } from "@main/git/operations/revision-comparison";
 import { transportOptions } from "@main/git/operations/remotes";
 import { ProcessSpawnError } from "@main/git/execution/process-runner";
 import type { GitEngine } from "@main/git/execution/git-engine";
 import { assertHermetic, createTempRepo, type TempRepo } from "../../helpers/temp-repo";
-import { access, writeFile, unlink } from "node:fs/promises";
+import { access, writeFile, unlink, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { pushErrorFixtures } from "../../fixtures/git-errors";
 
@@ -34,6 +40,185 @@ describe("GitService against real Git", () => {
     expect(root.endsWith("repo")).toBe(true);
 
     expect(await repo.git.isRepository(repo.path)).toBe(true);
+  });
+
+  it("stages, commits and inspects history in a sparse SHA-256 checkout with a promisor configured", async () => {
+    repo = await createTempRepo({ init: false });
+    await repo.run(["init", "--object-format=sha256", "-b", "main"]);
+    await repo.writeFile("dir/a", "a");
+    await repo.commit("base");
+    await repo.run(["sparse-checkout", "set", "dir"]);
+    await repo.run(["config", "remote.local.promisor", "true"]);
+    expect(await repositoryCapabilities(repo.git, repo.path, true)).toMatchObject({
+      write: true,
+      objectFormat: "sha256",
+      shallow: false,
+      sparse: true,
+      partial: true,
+    });
+
+    const parent = (await repo.run(["rev-parse", "HEAD"])).trim();
+    await repo.writeFile("dir/a", "updated\n");
+    await repo.git.stage(repo.path, ["dir/a"]);
+    const tip = await repo.git.commit(repo.path, "Update sparse file");
+
+    expect(tip).toMatch(/^[a-f0-9]{64}$/);
+    expect((await repo.git.status(repo.path)).changes).toEqual([]);
+    expect((await repo.git.history(repo.path)).commits[0]).toMatchObject({
+      oid: tip,
+      parents: [parent],
+    });
+    expect(
+      await readRevisionComparison(repo.git, repo.path, {
+        repositoryId: "repo",
+        left: parent,
+        right: tip,
+        mode: "direct",
+      }),
+    ).toMatchObject({
+      baseOid: parent,
+      rightOid: tip,
+      files: [{ status: "modified", oldPath: "dir/a", newPath: "dir/a" }],
+    });
+    expect(await repo.run(["show", tip + ":dir/a"])).toBe("updated\n");
+  });
+
+  it("inspects submodule changes, recorded commits, missing directories and the parent path", async () => {
+    repo = await createTempRepo();
+    await repo.writeFile("seed", "original");
+    await repo.commit("base");
+    const child = join(repo.path, "child module");
+    await repo.run([
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      repo.path,
+      "child module",
+    ]);
+    await repo.commit("record child");
+    expect((await listSubmodules(repo.git, repo.path)).entries).toEqual([
+      { path: "child module", directory: child, state: "initialized", dirty: false },
+    ]);
+    expect((await listSubmodules(repo.git, child)).parent).toBe(repo.path);
+    await writeFile(join(child, "seed"), "modified");
+    expect((await listSubmodules(repo.git, repo.path)).entries[0]?.dirty).toBe(true);
+    await repo.run(["commit", "-am", "child advances"], child);
+    expect((await listSubmodules(repo.git, repo.path)).entries[0]?.state).toBe("outOfSync");
+    await repo.run(["submodule", "deinit", "-f", "--", "child module"]);
+    expect((await listSubmodules(repo.git, repo.path)).entries[0]?.state).toBe("uninitialized");
+    await rename(child, child + "-moved");
+    expect((await listSubmodules(repo.git, repo.path)).entries[0]?.state).toBe("missing");
+  });
+
+  it("distinguishes the main worktree, detached locked worktrees and prunable registrations", async () => {
+    repo = await createTempRepo();
+    await repo.writeFile("tracked", "contents");
+    await repo.commit("Seed");
+    const linked = join(repo.home, "linked worktree");
+    await repo.run(["worktree", "add", "--detach", linked]);
+    await repo.run(["worktree", "lock", "--reason", "offline", linked]);
+    expect(await listWorktrees(repo.git, linked)).toMatchObject([
+      { path: repo.path, main: true, branch: "main" },
+      { path: linked, main: false, locked: "offline" },
+    ]);
+    await repo.run(["worktree", "unlock", linked]);
+    await rename(linked, linked + "-moved");
+    const entries = await listWorktrees(repo.git, repo.path);
+    expect(entries[1]?.prunable).toBeTruthy();
+    expect(entries[1]?.branch).toBeUndefined();
+  });
+
+  it("browses committed content and follows a renamed file through history and blame", async () => {
+    repo = await createTempRepo();
+    await repo.writeFile("old [x].txt", "unchanged\nold\nmore\n");
+    await repo.commit("Original");
+    const first = (await repo.run(["rev-parse", "HEAD"])).trim();
+    await repo.run(["mv", "old [x].txt", "new [x].txt"]);
+    await repo.writeFile("new [x].txt", "unchanged\nnew\nmore\n");
+    await repo.commit("Rename");
+    const oid = (await repo.run(["rev-parse", "HEAD"])).trim();
+    await repo.writeFile("new [x].txt", "worktree only");
+    const request = { repositoryId: "repo", oid, path: "new [x].txt" };
+    expect(
+      await readRevisionPath(repo.git, repo.path, { repositoryId: "repo", oid }),
+    ).toMatchObject({ kind: "tree", entries: [{ name: request.path, type: "blob" }] });
+    expect(await readRevisionPath(repo.git, repo.path, request)).toEqual({
+      kind: "text",
+      text: "unchanged\nnew\nmore\n",
+    });
+    const history = await repo.git.history(repo.path, {
+      refs: [oid],
+      search: { field: "path", text: request.path },
+    });
+    expect(history.commits.map((c) => c.oid)).toEqual([oid, first]);
+    const blame = await readBlame(repo.git, repo.path, { ...request, start: 1 });
+    expect(blame.map((line) => line.oid)).toEqual([first, oid, first]);
+    expect(blame[1]?.previous).toEqual({ oid: first, path: "old [x].txt" });
+    const found = await repo.git.history(repo.path, {
+      search: { field: "message", text: "ORIGINAL" },
+    });
+    expect(found.commits.map((c) => c.oid)).toEqual([first]);
+  });
+
+  it("exports an applicable Git patch for untracked binary content, staged renames and committed mode changes", async () => {
+    repo = await createTempRepo();
+    const path = "bytes [new].bin";
+    const request = { repositoryId: "repo", path };
+    await writeFile(join(repo.path, path), Buffer.from([0, 12, 255]));
+    const binary = await repo.git.filePatch(repo.path, { ...request, area: "unstaged" });
+    expect(binary.toString()).toContain("GIT binary patch");
+    const patch = join(repo.home, "change.patch");
+    await writeFile(patch, binary);
+    await unlink(join(repo.path, path));
+    await repo.run(["apply", "--index", patch]);
+    await repo.run(["commit", "-m", "binary"]);
+    const nextPath = "renamed.bin";
+    await repo.run(["mv", "--", path, nextPath]);
+    await repo.run(["update-index", "--chmod=+x", "--", nextPath]);
+    const staged = await repo.git.filePatch(repo.path, {
+      ...request,
+      path: nextPath,
+      area: "staged",
+    });
+    expect(staged.toString()).toContain("rename from " + path);
+    expect(staged.toString()).toContain("new mode 100755");
+    await repo.run(["commit", "-m", "rename"]);
+    const oid = (await repo.run(["rev-parse", "HEAD"])).trim();
+    expect(
+      await repo.git.filePatch(repo.path, { ...request, oid, oldPath: path, path: nextPath }),
+    ).toEqual(staged);
+    expect(await repo.git.filePatch(repo.path, { repositoryId: "repo", oid })).toEqual(staged);
+    await writeFile(patch, staged);
+    await repo.run(["apply", "--reverse", "--cached", "--check", patch]);
+  });
+
+  it("uses the requested context and whitespace rules for working, staged and historical diffs", async () => {
+    repo = await createTempRepo();
+    const original = Array.from({ length: 90 }, (_, i) => "row " + i).join("\n") + "\n";
+    const path = "context.txt";
+    await repo.writeFile(path, original);
+    await repo.commit("Base");
+    const base = (await repo.run(["rev-parse", "HEAD"])).trim();
+    await repo.writeFile(path, original.replace("row 45", "row     45"));
+    const options = { paths: [path], context: "full" as const };
+    const working = await repo.git.workingDiff(repo.path, { ...options, area: "unstaged" });
+    expect(working.files[0]?.hunks[0]?.lines.at(-1)?.content).toBe("row 89");
+    const filtered = { ...options, ignoreWhitespace: true };
+    expect(
+      (await repo.git.workingDiff(repo.path, { ...filtered, area: "unstaged" })).files,
+    ).toEqual([]);
+    await repo.run(["add", "--", path]);
+    expect((await repo.git.workingDiff(repo.path, { ...filtered, area: "staged" })).files).toEqual(
+      [],
+    );
+    await repo.commit("Spaces");
+    const right = (await repo.run(["rev-parse", "HEAD"])).trim();
+    expect((await repo.git.commitDiff(repo.path, right, [path], filtered)).files).toEqual([]);
+    const compared = await repo.git.compareDiff(repo.path, base, right, [path], {
+      context: "expanded",
+    });
+    expect(compared.files[0]?.hunks[0]?.lines[0]?.content).toBe("row 15");
   });
 
   it("does not execute tracked clone hooks selected by global configuration", async () => {
@@ -264,10 +449,159 @@ describe("GitService against real Git", () => {
 
     expect(await repo.run(["fsck", "--full"])).toBe("");
   });
+
+  it("compares branch tips or their merge base and keeps file reads on the reviewed objects", async () => {
+    repo = await createTempRepo();
+    await repo.writeFile("old [topic].txt", "original\nsecond line\nthird line\n");
+    await repo.commit("Base");
+    const base = (await repo.run(["rev-parse", "HEAD"])).trim();
+    await repo.run(["checkout", "-b", "topic"]);
+    await repo.run(["mv", "--", "old [topic].txt", "new [topic].txt"]);
+    await repo.writeFile("new [topic].txt", "change\nsecond line\nthird line\n");
+    await repo.commit("Rename on topic");
+    const topic = (await repo.run(["rev-parse", "HEAD"])).trim();
+    await repo.run(["tag", "-a", "topic-version", "-m", "snapshot"]);
+    await repo.run(["checkout", "main"]);
+    await repo.writeFile("on-main", "left only\n");
+    await repo.commit("Advance main");
+    const main = (await repo.run(["rev-parse", "HEAD"])).trim();
+    await repo.run(["config", "diff.renames", "false"]);
+    const request = { repositoryId: "repo", left: "main", right: "refs/tags/topic-version" };
+    const renamed = { status: "renamed", oldPath: "old [topic].txt", newPath: "new [topic].txt" };
+
+    const direct = await readRevisionComparison(repo.git, repo.path, {
+      ...request,
+      mode: "direct",
+    });
+    expect(direct).toEqual({
+      leftOid: main,
+      rightOid: topic,
+      baseOid: main,
+      files: [renamed, { status: "deleted", oldPath: "on-main" }],
+      omittedFiles: 0,
+    });
+    const merged = await readRevisionComparison(repo.git, repo.path, {
+      ...request,
+      left: main,
+      right: "topic",
+      mode: "merge-base",
+    });
+    expect(merged).toEqual({
+      leftOid: main,
+      rightOid: topic,
+      baseOid: base,
+      files: [renamed],
+      omittedFiles: 0,
+    });
+    const ancestors = await readRevisionComparison(repo.git, repo.path, {
+      ...request,
+      left: "HEAD~1",
+      right: "topic^",
+      mode: "direct",
+    });
+    expect(ancestors).toEqual({
+      leftOid: base,
+      rightOid: base,
+      baseOid: base,
+      files: [],
+      omittedFiles: 0,
+    });
+
+    await repo.run(["branch", "-f", "topic", "main"]);
+    await repo.writeFile("on-main", "uncommitted and unrelated");
+    const diff = await repo.git.compareDiff(repo.path, merged.baseOid, merged.rightOid, [
+      renamed.oldPath,
+      renamed.newPath,
+    ]);
+    expect(diff.files).toHaveLength(1);
+    expect(diff.files[0]).toMatchObject(renamed);
+    expect(diff.files[0]?.hunks[0]?.lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "deletion", content: "original" }),
+        expect.objectContaining({ type: "addition", content: "change" }),
+      ]),
+    );
+    expect((await repo.git.status(repo.path)).changes).toMatchObject([
+      { path: "on-main", worktree: "M", index: "." },
+    ]);
+    expect((await repo.run(["rev-parse", "HEAD"])).trim()).toBe(main);
+  });
+
+  it("reports ambiguous names and unrelated histories while direct comparisons remain available", async () => {
+    repo = await createTempRepo();
+    await repo.writeFile("one", "one\n");
+    await repo.commit("One");
+    await repo.run(["switch", "--orphan", "other"]);
+    await repo.writeFile("two", "two\n");
+    await repo.commit("Two");
+    await repo.run(["tag", "main"]);
+    await repo.run(["config", "core.warnAmbiguousRefs", "false"]);
+    const request = { repositoryId: "repo", left: "main", right: "other", mode: "direct" } as const;
+
+    await expect(readRevisionComparison(repo.git, repo.path, request)).rejects.toMatchObject({
+      kind: "invalid-input",
+      code: "main.git.gitService.ambiguousComparisonRevision",
+    });
+    await expect(
+      readRevisionComparison(repo.git, repo.path, {
+        ...request,
+        left: "refs/heads/main",
+        mode: "merge-base",
+      }),
+    ).rejects.toMatchObject({
+      kind: "invalid-input",
+      code: "main.git.gitService.noCommonAncestor",
+    });
+    const direct = await readRevisionComparison(repo.git, repo.path, {
+      ...request,
+      left: "refs/heads/main",
+    });
+    expect(direct.files).toEqual([
+      { status: "deleted", oldPath: "one" },
+      { status: "added", newPath: "two" },
+    ]);
+    await expect(
+      readRevisionComparison(repo.git, repo.path, { ...request, left: "missing" }),
+    ).rejects.toMatchObject({ kind: "invalid-input" });
+  });
+
+  it("limits a selected historical file to that path when a directory replaces it", async () => {
+    repo = await createTempRepo();
+    await repo.writeFile("item", "previous contents\n");
+    await repo.commit("File");
+    const base = (await repo.run(["rev-parse", "HEAD"])).trim();
+    await repo.run(["rm", "item"]);
+    await repo.writeFile("item/nested", "directory contents\n");
+    await repo.commit("Directory");
+    const tip = (await repo.run(["rev-parse", "HEAD"])).trim();
+
+    const diff = await repo.git.compareDiff(repo.path, base, tip, ["item"]);
+    expect(diff.files.map((file) => file.oldPath ?? file.newPath)).toEqual(["item"]);
+  });
 });
 
 describe("GitService command construction", () => {
   const service = (runner: FakeProcessRunner) => new GitService(runner, FAKE_ENGINE);
+
+  it("reports the number of changed files beyond the comparison display limit", async () => {
+    const runner = new FakeProcessRunner()
+      .when(({ args }) => args.includes("rev-parse"), {
+        stdout: "a".repeat(40),
+      })
+      .otherwise({
+        stdout: Array.from({ length: MAX_DIFF_FILES + 3 }, (_, index) => `M\0file-${index}\0`).join(
+          "",
+        ),
+      });
+    const result = await readRevisionComparison(service(runner), "/repo", {
+      repositoryId: "repo",
+      left: "main",
+      right: "topic",
+      mode: "direct",
+    });
+    expect(result.files).toHaveLength(MAX_DIFF_FILES);
+    expect(result.omittedFiles).toBe(3);
+  });
 
   it("uses porcelain stdout to distinguish a server hook rejection from generic push stderr", async () => {
     const runner = new FakeProcessRunner().otherwise({
@@ -319,6 +653,26 @@ describe("GitService command construction", () => {
     expect(runner.lastCall?.args).toEqual(
       expect.arrayContaining(["core.hooksPath=/dev/null", "init.templateDir="]),
     );
+  });
+
+  it("limits opted-in credential helpers to HTTPS without explicit credentials", () => {
+    const helpers = (url: string, credentials?: { username: string; password: string }) => {
+      const env = transportOptions(url, { name: "fixture" }, credentials, false, "cache").env!
+        .overrides!;
+      return Array.from({ length: Number(env["GIT_CONFIG_COUNT"]) }, (_, index) => [
+        env["GIT_CONFIG_KEY_" + index],
+        env["GIT_CONFIG_VALUE_" + index],
+      ]).filter(([key]) => key?.startsWith("credential."));
+    };
+    expect(helpers("https://git.example/repo")).toEqual([
+      ["credential.helper", ""],
+      ["credential.helper", "cache"],
+      ["credential.useHttpPath", "true"],
+    ]);
+    expect(helpers("https://git.example/repo", { username: "test", password: "fixture" })).toEqual([
+      ["credential.helper", ""],
+    ]);
+    expect(helpers("git@git.example:repo")).toEqual([["credential.helper", ""]]);
   });
 
   it("pins SSH to one key so the agent cannot offer another identity's", async () => {

@@ -40,3 +40,30 @@ it("builds GitLab links for configured HTTPS instances, including base paths", (
   expect(referenceLink(remote, "commit", "abc123")).toBeNull();
   expect(referenceLink(remote, "commit", "abc123", ["https://other.company.test"])).toBeNull();
 });
+
+it.each([
+  ["github-enterprise", "https://github.corp.test", "/org/repo", "/org/repo/tree/feature%2Fone"],
+  [
+    "bitbucket-server",
+    "https://git.corp.test/bitbucket",
+    "/scm/proj/repo",
+    "/projects/proj/repos/repo/browse?at=refs%2Fheads%2Ffeature%2Fone",
+  ],
+  [
+    "azure",
+    "https://dev.azure.com/org/My%20Project",
+    "/_git/repo",
+    "/_git/repo?version=GBfeature%2Fone",
+  ],
+] as const)(
+  "routes configured %s branch links within their instance",
+  (kind, base, path, route) => {
+    const account = { kind, base, username: "alice" };
+    expect(referenceLink(base + path + ".git", "branch", "feature/one", [], [account])).toBe(
+      base + route,
+    );
+    expect(
+      referenceLink(base + "-other" + path + ".git", "branch", "feature/one", [], [account]),
+    ).toBeNull();
+  },
+);

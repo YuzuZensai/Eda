@@ -10,6 +10,7 @@ import type {
   RemoteSummary,
   TransportCredentials,
 } from "@shared/integrations/remotes";
+import { HTTPS_HELPERS, type HttpsHelper } from "@shared/integrations/remotes";
 import { buildSshCommand, SSH_HOST_TRUST_OPTIONS } from "../execution/environment";
 import type { GitExecOptions, GitService } from "../git-service";
 import { assertAllowedRemoteUrl, assertValidRefName } from "../validation";
@@ -151,6 +152,7 @@ export function transportOptions(
   identity: Pick<Identity, "name" | "sshKeyPath">,
   credentials?: TransportCredentials,
   ignoreTlsErrors = false,
+  helper: HttpsHelper = "none",
 ): Pick<GitExecOptions, "env" | "identityName" | "redactValues"> {
   remoteUrl(url);
 
@@ -175,6 +177,8 @@ export function transportOptions(
   const redactValues: string[] = [];
 
   if (url.startsWith("https://")) {
+    if (!credentials && helper !== "none" && HTTPS_HELPERS.includes(helper))
+      config.push(["credential.helper", helper], ["credential.useHttpPath", "true"]);
     config.push(["http.extraHeader", ""], [`http.${url.replace(/\/$/, "")}/.extraHeader`, ""]);
     if (ignoreTlsErrors) config.push([`http.${url.replace(/\/$/, "")}/.sslVerify`, "false"]);
   }

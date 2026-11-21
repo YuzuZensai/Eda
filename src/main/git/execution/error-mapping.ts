@@ -18,7 +18,27 @@ export interface MappingContext {
   stdout?: string;
 }
 
+export const unsupportedRepositoryFormat =
+  /expected git repo version <=|unknown repository extensions?:|unknown repository format|unsupported repository version/i;
+
 const PATTERNS: readonly Pattern[] = [
+  {
+    kind: "invalid-input",
+    test: unsupportedRepositoryFormat,
+    message: () => errorText("repositoryFormat.unsupported"),
+  },
+  {
+    kind: "invalid-input",
+    test: /(?:git-lfs(?: filter-process)?|git lfs): (?:command )?not found|'lfs' is not a git command/i,
+    message: () => errorText("gitDiagnostics.lfsMissing"),
+    suggestedAction: () => errorText("gitDiagnostics.installLfs"),
+  },
+  {
+    kind: "network-failed",
+    test: /(?:smudge error:.*|error )downloading (?:object|.+?: smudge error)|\[404\] object does not exist on the server/i,
+    message: () => errorText("gitDiagnostics.lfsDownload"),
+    suggestedAction: () => errorText("gitDiagnostics.checkLfsAccess"),
+  },
   {
     kind: "network-failed",
     test: /ssl certificate problem|certificate.*(verify|issuer|subject|hostname)|SSL:|schannel:/i,

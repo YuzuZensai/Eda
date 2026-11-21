@@ -210,3 +210,27 @@ it("detects tracked hook locations before checkout while ignoring inert script f
     await f.cleanup();
   }
 });
+
+it("opens linked worktrees without an optional config file and reviews shared hooks and per-worktree settings", async () => {
+  const f = await fixture();
+  try {
+    await f.repo.writeFile("file.txt", "fixture");
+    await f.repo.commit("initial");
+    const linked = join(f.repo.home, "linked");
+    await f.repo.run(["worktree", "add", "--detach", linked, "HEAD"]);
+    await f.repo.run(["sparse-checkout", "set", "--cone", "--", "docs"]);
+    await f.trust.authorize(linked);
+    expect(f.confirm).not.toHaveBeenCalled();
+    await f.repo.run(["config", "--worktree", "filter.fixture.clean", "cat"], linked);
+    const hook = join(f.repo.path, ".git", "hooks", "pre-commit");
+    await f.repo.writeFile(".git/hooks/pre-commit", "#!/bin/sh\nexit 0\n");
+    await chmod(hook, 0o755);
+    await f.trust.authorize(linked, false, true);
+    expect(f.confirm).toHaveBeenCalledWith(
+      await realpath(linked),
+      expect.arrayContaining(["filter.fixture.clean", "hooks/pre-commit"]),
+    );
+  } finally {
+    await f.cleanup();
+  }
+});

@@ -110,13 +110,14 @@ function parseHeaderPaths(value: string): Pick<FileDiff, "oldPath" | "newPath"> 
 }
 
 function parseMarkerPath(value: string): string | undefined {
-  const path = unquotePath(value);
+  // Git terminates marker paths containing spaces with a tab. Tabs in file names are quoted.
+  const path = unquotePath(value.split("\t", 1)[0]!);
   if (path === "/dev/null") return undefined;
   if (path.startsWith("a/") || path.startsWith("b/")) return path.slice(2);
   return path;
 }
 
-function unquotePath(value: string): string {
+export function unquotePath(value: string): string {
   if (!value.startsWith('"') || !value.endsWith('"')) return value;
   try {
     const normalized = value.replace(/(?:\\[0-3][0-7]{2})+|\\./g, (escape) => {

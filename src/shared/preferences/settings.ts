@@ -1,11 +1,23 @@
+import {
+  defaultTerminalOptions,
+  isTerminalOptions,
+  type TerminalOptions,
+} from "../repository/terminal";
+import { isCollectionList, type LocalCollection } from "../repository/collections";
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { t } from "@shared/i18n";
 import { GitError } from "../errors";
 import { supportedLocales } from "../i18n";
 import { isCommitIdentity, type CommitIdentity } from "../identity/identity";
+import { HTTPS_HELPERS, type HttpsHelper } from "../integrations/remotes";
 import type { SshAgentMode } from "../identity/ssh";
 import type { GitEnginePreference } from "../integrations/git-engine";
-import { defaultMergeTool, isMergeTool, type MergeTool } from "../integrations/merge-tool";
+import {
+  defaultMergeTool,
+  isDiffTool,
+  isMergeTool,
+  type MergeTool,
+} from "../integrations/merge-tool";
 import { isOneOf, isRecord } from "../validation";
 import type { DiffMode } from "../repository/repository-read";
 import { isPullStrategy, type PullStrategy } from "../workflows/pull";
@@ -93,11 +105,41 @@ export interface WindowTransparency {
 const percentage = (v: unknown): v is number =>
   typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 100;
 
+export type ShortcutOverrides = Record<string, string>;
+function isShortcutOverrides(value: unknown): value is ShortcutOverrides {
+  if (!isRecord(value) || Object.keys(value).length > 100) return false;
+  const taken = new Set<string>();
+  for (const [id, chord] of Object.entries(value)) {
+    if (
+      !/^[a-z]+\.[a-zA-Z0-9]+$/.test(id) ||
+      typeof chord !== "string" ||
+      !/^(?:|(?:shift\+)?[a-z0-9,/])$/.test(chord) ||
+      (chord && taken.has(chord))
+    )
+      return false;
+    if (chord) taken.add(chord);
+  }
+  return true;
+}
+
 export const SETTING_DEFINITIONS = {
+  shortcutOverrides: define<ShortcutOverrides>({
+    defaultValue: {},
+    scopes: profile,
+    validate: isShortcutOverrides,
+  }),
   repositoryRoot: define<string>({
     defaultValue: "",
     scopes: ["profile"],
     validate: optionalAbsolutePath,
+  }),
+  compactHistory: define<boolean>({ defaultValue: false, scopes: application, validate: boolean }),
+  historyAvatars: define<boolean>({ defaultValue: true, scopes: application, validate: boolean }),
+  historyDateStyle: define<"short" | "local" | "iso">({
+    defaultValue: "short",
+    scopes: application,
+    validate: (value): value is "short" | "local" | "iso" =>
+      isOneOf(value, ["short", "local", "iso"]),
   }),
   historyVisibleColumns: define<GraphColumnId[]>({
     defaultValue: [...GRAPH_COLUMN_IDS],
@@ -107,6 +149,17 @@ export const SETTING_DEFINITIONS = {
       value.length <= GRAPH_COLUMN_IDS.length &&
       value.every((id: unknown) => isOneOf(id, GRAPH_COLUMN_IDS)) &&
       new Set(value).size === value.length,
+  }),
+  mailboxPreview: define<boolean>({ defaultValue: false, scopes: application, validate: boolean }),
+  localCollections: define<LocalCollection[]>({
+    defaultValue: [],
+    scopes: ["profile"],
+    validate: isCollectionList,
+  }),
+  terminalOptions: define<TerminalOptions>({
+    defaultValue: defaultTerminalOptions,
+    scopes: ["profile"],
+    validate: isTerminalOptions,
   }),
   showInternalRefs: define<boolean>({
     defaultValue: false,
@@ -138,6 +191,12 @@ export const SETTING_DEFINITIONS = {
     defaultValue: null,
     scopes: ["repository"],
     validate: (value): value is CommitIdentity | null => value === null || isCommitIdentity(value),
+  }),
+  commitSummaryLimit: define<number>({
+    defaultValue: 72,
+    scopes: profile,
+    validate: (value): value is number =>
+      typeof value === "number" && [0, 50, 72, 100].includes(value),
   }),
   conventionalCommitsEnabled: define<boolean>({
     defaultValue: false,
@@ -203,6 +262,11 @@ export const SETTING_DEFINITIONS = {
     scopes: profile,
     validate: isMergeTool,
   }),
+  predictUpstreamConflicts: define<boolean>({
+    defaultValue: false,
+    scopes: repository,
+    validate: boolean,
+  }),
   fetchPrune: define<boolean>({
     defaultValue: true,
     scopes: repository,
@@ -231,6 +295,54 @@ export const SETTING_DEFINITIONS = {
     scopes: profile,
     validate: optionalAbsolutePath,
   }),
+  httpsHelper: define<HttpsHelper>({
+    defaultValue: "none",
+    scopes: profile,
+    validate: (value): value is HttpsHelper => isOneOf(value, HTTPS_HELPERS),
+  }),
+  gitExecutable: define<string>({
+    defaultValue: "",
+    scopes: application,
+    validate: optionalAbsolutePath,
+  }),
+  sshExecutable: define<string>({
+    defaultValue: "",
+    scopes: application,
+    validate: optionalAbsolutePath,
+  }),
+  gpgExecutable: define<string>({
+    defaultValue: "",
+    scopes: application,
+    validate: optionalAbsolutePath,
+  }),
+  toolbarLabels: define<boolean>({ defaultValue: false, scopes: profile, validate: boolean }),
+  updateNotices: define<boolean>({ defaultValue: true, scopes: profile, validate: boolean }),
+  repositoryHints: define<string[]>({
+    defaultValue: [],
+    scopes: ["profile"],
+    validate: (value): value is string[] =>
+      Array.isArray(value) &&
+      value.length <= 4096 &&
+      value.every(
+        (path) => typeof path === "string" && path.length > 0 && optionalAbsolutePath(path),
+      ) &&
+      new Set(value).size === value.length,
+  }),
+  diffTool: define<MergeTool | null>({
+    defaultValue: null,
+    scopes: profile,
+    validate: (value): value is MergeTool | null => value === null || isDiffTool(value),
+  }),
+  diffExecutable: define<string>({
+    defaultValue: "",
+    scopes: profile,
+    validate: optionalAbsolutePath,
+  }),
+  terminalExecutable: define<string>({
+    defaultValue: "",
+    scopes: profile,
+    validate: optionalAbsolutePath,
+  }),
   editorExecutable: define<string>({
     defaultValue: "",
     scopes: profile,
@@ -249,7 +361,8 @@ export const SETTING_DEFINITIONS = {
   gitEngine: define<GitEnginePreference>({
     defaultValue: "bundled",
     scopes: application,
-    validate: (value): value is GitEnginePreference => value === "bundled" || value === "system",
+    validate: (value): value is GitEnginePreference =>
+      value === "bundled" || value === "system" || value === "custom",
   }),
   theme: define<ThemePreference>({
     defaultValue: { mode: "system", light: "eda-light", dark: "eda-dark" },

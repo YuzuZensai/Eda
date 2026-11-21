@@ -1,5 +1,15 @@
 import type { BranchSummary } from "../repository/repository-write";
 
+export const HTTPS_HELPERS = [
+  "none",
+  "manager",
+  "osxkeychain",
+  "wincred",
+  "libsecret",
+  "cache",
+] as const;
+export type HttpsHelper = (typeof HTTPS_HELPERS)[number];
+
 export interface RemoteSummary {
   name: string;
   fetchUrls: string[];
@@ -28,6 +38,7 @@ export interface FetchRequest {
   prune: boolean;
   tags: boolean;
   tag?: string;
+  deepen?: number | "all";
   credentials?: TransportCredentials;
 }
 
@@ -68,7 +79,18 @@ export interface PushPreview {
   mode: PushMode;
 }
 
+export type LfsAction =
+  | { kind: "install" | "previewPrune" | "prune" }
+  | { kind: "track" | "untrack"; pattern: string }
+  | { kind: "fetch" | "pull" | "push" | "locks"; remote: string }
+  | { kind: "lock" | "unlock"; remote: string; path: string };
+
 export interface CloneRequest {
+  sparseDirectories?: string[];
+  blobless?: boolean;
+  branch?: string;
+  depth?: number;
+  since?: string;
   profileId: string;
   url: string;
   parent: string;

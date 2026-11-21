@@ -1,4 +1,26 @@
-import type { ObjectId, RepositoryPathsRequest } from "./repository-read";
+import type {
+  CommitSignatureVerification,
+  ObjectId,
+  RepositoryPathsRequest,
+  SubmoduleUpdateMode,
+} from "./repository-read";
+
+export type SubmoduleAction =
+  | { kind: "add"; path: string; url: string }
+  | {
+      kind: "init" | "sync" | "update";
+      path: string;
+      recursive: boolean;
+      mode: SubmoduleUpdateMode;
+    }
+  | { kind: "remove"; path: string }
+  | { kind: "automatic"; enabled: boolean };
+
+export type WorktreeAction =
+  | { kind: "create"; path: string; branch: string; base?: string }
+  | { kind: "lock" | "unlock"; path: string }
+  | { kind: "remove" | "cleanup"; path: string; oid: string; branch?: string }
+  | { kind: "prune" };
 
 export interface BranchSummary {
   name: string;
@@ -25,6 +47,7 @@ export interface CommitRequest {
   message: string;
   amend?: boolean;
   signOff?: boolean;
+  skipCommitHooks?: boolean;
   stagePaths?: string[];
 }
 
@@ -66,10 +89,8 @@ export interface TagRequest {
   name: string;
 }
 
-export interface TagVerification {
+export interface TagVerification extends CommitSignatureVerification {
   oid: string;
-  status: "verified" | "unverified" | "unsigned";
-  diagnostics: string;
 }
 
 export interface CommitPreview {

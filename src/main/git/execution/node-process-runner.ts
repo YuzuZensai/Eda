@@ -55,8 +55,8 @@ export class NodeProcessRunner implements ProcessRunner {
       let outputLimitExceeded: "stdout" | "stderr" | undefined;
       let cancelled = false;
       let settled = false;
-      const stderrDecoder = new StringDecoder("utf8");
-      let stderrLineBuffer = "";
+      const stdoutLines = request.onStdoutLine && lineReader(request.onStdoutLine);
+      const stderrLines = request.onStderrLine && lineReader(request.onStderrLine);
       let stopKillTimer: (() => void) | undefined;
 
       const stop = () => {
@@ -103,7 +103,9 @@ export class NodeProcessRunner implements ProcessRunner {
       };
 
       child.stdout?.on("data", (chunk: Buffer) => {
+        const previousBytes = stdoutBytes;
         stdoutBytes = capture(chunk, stdoutChunks, stdoutBytes, maxStdoutBytes, "stdout");
+        stdoutLines?.write(chunk.subarray(0, stdoutBytes - previousBytes));
       });
 
       child.stderr?.on("data", (chunk: Buffer) => {
@@ -111,17 +113,7 @@ export class NodeProcessRunner implements ProcessRunner {
 
         stderrBytes = capture(chunk, stderrChunks, stderrBytes, maxStderrBytes, "stderr");
 
-        if (!request.onStderrLine) return;
-
-        stderrLineBuffer += stderrDecoder.write(chunk.subarray(0, stderrBytes - previousBytes));
-
-        const lines = stderrLineBuffer.split(/\r\n|\r|\n/);
-
-        stderrLineBuffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (line.length > 0) request.onStderrLine(line);
-        }
+        stderrLines?.write(chunk.subarray(0, stderrBytes - previousBytes));
       });
 
       child.on("error", (error: NodeJS.ErrnoException) => {
@@ -142,8 +134,8 @@ export class NodeProcessRunner implements ProcessRunner {
         settled = true;
         cleanup();
 
-        stderrLineBuffer += stderrDecoder.end();
-        if (stderrLineBuffer.length > 0) request.onStderrLine?.(stderrLineBuffer);
+        stdoutLines?.end();
+        stderrLines?.end();
 
         if (inputError && code === 0 && !cancelled && !outputLimitExceeded) {
           reject(inputError);
@@ -176,6 +168,22 @@ export class NodeProcessRunner implements ProcessRunner {
       throw new ProcessSpawnError(executable, error as NodeJS.ErrnoException);
     }
   }
+}
+
+function lineReader(emit: (line: string) => void) {
+  const decoder = new StringDecoder("utf8");
+  let pending = "";
+  return {
+    write(chunk: Buffer) {
+      const lines = (pending + decoder.write(chunk)).split(/\r\n|\r|\n/);
+      pending = lines.pop() ?? "";
+      for (const line of lines) if (line) emit(line);
+    },
+    end() {
+      pending += decoder.end();
+      if (pending) emit(pending);
+    },
+  };
 }
 
 function cancelledResult(): ProcessResult {

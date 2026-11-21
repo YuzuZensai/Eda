@@ -75,6 +75,8 @@ export interface ConflictVersion {
 export interface ConflictPreview {
   token: string;
   path: string;
+  markerSize: number;
+  hasMarkers: boolean;
   workflow: WorkflowState | null;
   base: ConflictVersion | null;
   current: ConflictVersion | null;

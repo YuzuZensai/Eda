@@ -1,3 +1,4 @@
+import { release as kernelRelease } from "node:os";
 import { commitGitConfig } from "@shared/identity/identity";
 import { isUtf8 } from "node:buffer";
 import { errorText } from "@shared/error-codes";
@@ -13,7 +14,10 @@ import {
   type CommitSignatureVerification,
   UNSIGNED_COMMIT_SIGNATURE,
   type DiffArea,
+  type DiffDisplayOptions,
+  type PatchExportRequest,
   type HistoryPage,
+  type HistoryPageRequest,
   type RepositoryStatus,
   type UnifiedDiff,
 } from "@shared/repository/repository-read";
@@ -28,9 +32,15 @@ import type {
   TagSummary,
   TagVerification,
 } from "@shared/repository/repository-write";
-import { buildGitEnvironment, type GitEnvironmentOptions } from "./execution/environment";
+import {
+  quoteForSshCommand,
+  buildGitEnvironment,
+  type GitEnvironmentOptions,
+} from "./execution/environment";
 import { mapGitError } from "./execution/error-mapping";
 import type { GitEngine } from "./execution/git-engine";
+import type { GitDiagnostics } from "@shared/integrations/git-engine";
+import { resolveExecutable } from "./execution/executable";
 import { ProcessSpawnError, type ProcessRunner } from "./execution/process-runner";
 import { readStashHistory } from "./operations/stash-history";
 import { readCommitTemplate } from "./commit-template";
@@ -39,15 +49,25 @@ import { LOG_ARGUMENTS, parseLog } from "./parsers/log-parser";
 import { BRANCH_ARGUMENTS, TAG_ARGUMENTS, parseBranches, parseTags } from "./parsers/ref-parser";
 import { commitSignatureFormat, parseCommitVerification } from "./security/commit-signature";
 
+import { checkChildWorktrees } from "./operations/submodules";
 import { parseStatus } from "./parsers/status-parser";
-import { assertFullObjectId, assertRepositoryPath, assertValidRefName } from "./validation";
+import {
+  assertFullObjectId,
+  assertValidObjectId,
+  assertRepositoryPath,
+  assertValidRefName,
+} from "./validation";
 
-const UNIFIED_DIFF_FLAGS = [
-  "--no-ext-diff",
-  "--no-textconv",
-  "--full-index",
-  "--unified=3",
-] as const;
+function unifiedDiffFlags(options: DiffDisplayOptions = {}) {
+  const lines = options.context === "full" ? 2147483647 : options.context === "expanded" ? 30 : 3;
+  return [
+    "--no-ext-diff",
+    "--no-textconv",
+    "--full-index",
+    "--unified=" + lines,
+    ...(options.ignoreWhitespace ? ["--ignore-all-space"] : []),
+  ];
+}
 
 const DIFF_OUTPUT_LIMITS = { maxStdoutBytes: 32 * 1024 * 1024, maxStderrBytes: 1024 * 1024 };
 
@@ -58,14 +78,19 @@ export interface GitExecOptions {
   identityName?: string;
   env?: GitEnvironmentOptions;
   signal?: AbortSignal;
+  reportStdoutProgress?: boolean;
   onProgress?: (line: string) => void;
-  stdin?: string;
+  stdin?: string | Uint8Array;
   allowedExitCodes?: readonly number[];
   maxStdoutBytes?: number;
   maxStderrBytes?: number;
 }
 
-function literalPathspecs(paths: readonly string[] | undefined, operation: string): string[] {
+function literalPathspecs(
+  paths: readonly string[] | undefined,
+  operation: string,
+  match: "recursive" | "exact-file" = "recursive",
+): string[] {
   if (paths === undefined) return [];
 
   if (paths.length > 256) {
@@ -79,6 +104,11 @@ function literalPathspecs(paths: readonly string[] | undefined, operation: strin
 
   return paths.map((path) => {
     assertRepositoryPath(path, operation);
+    if (match === "exact-file") {
+      // A literal Git pathspec also includes descendants. Escaping the final character
+      // forces an exact glob match, including when a file became a directory.
+      return `:(top,glob)${path.replace(/[\\*?[\]]|.$/gsu, "\\$&")}`;
+    }
     return `:(literal)${path}`;
   });
 }
@@ -131,6 +161,41 @@ export class GitService {
     readonly trust?: RepositoryTrust,
   ) {}
 
+  async diagnostics(): Promise<GitDiagnostics> {
+    const options = {
+      operation: t("settings.gitEngineSettings.runningGitDetails"),
+      maxStdoutBytes: 32 * 1024,
+      maxStderrBytes: 8 * 1024,
+      env: { configScope: "none" as const },
+    };
+    const environment = buildGitEnvironment({
+      overrides: { ...this.engine.environment, ...this.baseEnv },
+    });
+    const [executable, build, commands, lfs] = await Promise.all([
+      resolveExecutable(this.engine.path, environment),
+      this.exec(["version", "--build-options"], options),
+      this.exec(["--list-cmds=builtins"], options),
+      this.exec(["lfs", "version"], { ...options, allowedExitCodes: [0, 1, 127, 128] }),
+    ]);
+    const supported = new Set(commands.stdout.trim().split(/\s+/));
+    return {
+      executable,
+      platform: process.platform + " " + process.arch,
+      build: build.stdout.trim(),
+      commands: ["worktree", "merge-tree", "sparse-checkout", "rebase", "range-diff"].filter(
+        (name) => supported.has(name),
+      ),
+      ...(process.platform === "linux" &&
+        /microsoft/i.test(kernelRelease()) && {
+          wsl:
+            process.env["WAYLAND_DISPLAY"] && existsSync("/mnt/wslg")
+              ? ("wslg" as const)
+              : ("linux" as const),
+        }),
+      lfsVersion: lfs.exitCode === 0 ? (/^git-lfs\/(\S+)/m.exec(lfs.stdout)?.[1] ?? null) : null,
+    };
+  }
+
   get gitVersion(): string {
     return this.engine.version;
   }
@@ -163,6 +228,12 @@ export class GitService {
       overrides: { ...this.engine.environment, ...this.baseEnv, ...options.env?.overrides },
     });
 
+    if (this.baseEnv["EDA_SSH_EXECUTABLE"]) {
+      const command = env["GIT_SSH_COMMAND"] ?? "ssh";
+      env["GIT_SSH_COMMAND"] = command.replace(/^ssh(?= |$)/, () =>
+        quoteForSshCommand(this.baseEnv["EDA_SSH_EXECUTABLE"]!),
+      );
+    }
     if (this.baseEnv["SSH_AUTH_SOCK"] !== undefined) {
       // Don't let ~/.ssh/config switch away from Eda's SSH agent.
       env["SSH_AUTH_SOCK"] = this.baseEnv["SSH_AUTH_SOCK"];
@@ -170,7 +241,9 @@ export class GitService {
     }
 
     let cwd = options.cwd ?? this.trust?.neutralDirectory;
-    const repositoryArgs: string[] = [];
+    const repositoryArgs: string[] = this.baseEnv["EDA_GPG_EXECUTABLE"]
+      ? ["-c", `gpg.openpgp.program=${this.baseEnv["EDA_GPG_EXECUTABLE"]}`]
+      : [];
 
     if (this.trust) {
       if (options.cwd) {
@@ -193,8 +266,10 @@ export class GitService {
               "log",
               "show",
               "rev-parse",
+              "merge-base",
               "ls-files",
               "ls-tree",
+              "blame",
               "cat-file",
               "for-each-ref",
               "config",
@@ -226,12 +301,15 @@ export class GitService {
                   });
               }
             }
-            if (!readOnly.has(command)) {
+            const isReadOnly =
+              readOnly.has(command) ||
+              (command === "worktree" && args[commandIndex + 1] === "list");
+            if (!isReadOnly) {
               for (let i = 0; i < repositoryArgs.length; i++)
                 if (/^filter\..+\.required=false$/.test(repositoryArgs[i]!))
                   repositoryArgs[i] = repositoryArgs[i]!.replace(/false$/, "true");
             }
-            if (repository.execution?.blocksWrites && !readOnly.has(command))
+            if (repository.execution?.blocksWrites && !isReadOnly)
               throw new GitError({
                 kind: "invalid-input",
                 operation: options.operation,
@@ -263,6 +341,7 @@ export class GitService {
         for (const [key, variable] of [
           ["http.sslCAInfo", "GIT_SSL_CAINFO"],
           ["http.sslBackend", ""],
+          ["http.proxy", "https_proxy"],
         ] as const) {
           const { stdout, exitCode } = await this.exec(["config", "--get-urlmatch", key, remote], {
             operation: options.operation,
@@ -289,6 +368,11 @@ export class GitService {
     let result;
 
     try {
+      const reportProgress = (line: string) => {
+        const safeLine = redact(line);
+        options.onProgress?.(safeLine);
+        this.operations?.progress(safeLine);
+      };
       result = await this.runner.run({
         executable: this.engine.path,
         args: [
@@ -313,10 +397,8 @@ export class GitService {
         env,
         ...(options.stdin !== undefined && { stdin: options.stdin }),
         ...(signal !== undefined && { signal }),
-        onStderrLine: (line) => {
-          options.onProgress?.(redact(line));
-          this.operations?.progress(redact(line));
-        },
+        onStderrLine: reportProgress,
+        ...(options.reportStdoutProgress && { onStdoutLine: reportProgress }),
         ...(options.maxStdoutBytes !== undefined && { maxStdoutBytes: options.maxStdoutBytes }),
         ...(options.maxStderrBytes !== undefined && { maxStderrBytes: options.maxStderrBytes }),
       });
@@ -456,14 +538,7 @@ export class GitService {
 
   async history(
     path: string,
-    page: {
-      offset?: number;
-      limit?: number;
-      refs?: string[];
-      hiddenRefs?: string[];
-      showStashes?: boolean;
-      showInternalRefs?: boolean;
-    } = {},
+    page: Omit<HistoryPageRequest, "repositoryId"> = {},
   ): Promise<HistoryPage> {
     const offset = page.offset ?? 0;
     const limit = page.limit ?? HISTORY_PAGE_SIZE;
@@ -503,6 +578,52 @@ export class GitService {
         "--all",
       ];
 
+    const searchFlags: string[] = [];
+    const paths: string[] = [];
+    if (page.search) {
+      const { field, text } = page.search;
+      switch (field) {
+        case "message":
+        case "author":
+          searchFlags.push(
+            "--fixed-strings",
+            "--regexp-ignore-case",
+            (field === "message" ? "--grep=" : "--author=") + text,
+          );
+          break;
+        case "path":
+          paths.push(...literalPathspecs([text], t("operations.filterHistory")));
+          if (page.refs?.length === 1) searchFlags.push("--follow", "--no-patch");
+          break;
+        case "since":
+        case "until":
+          if (
+            !/^\d{4}-\d{2}-\d{2}$/.test(text) ||
+            !Number.isFinite(Date.parse(text)) ||
+            new Date(text).toISOString().slice(0, 10) !== text
+          )
+            throw new GitError({
+              kind: "invalid-input",
+              operation: t("operations.filterHistory"),
+              message: errorText("historySearch.invalidDate"),
+            });
+          searchFlags.push(
+            (field === "since" ? "--since-as-filter=" : "--until=") +
+              text +
+              (field === "since" ? "T00:00:00Z" : "T23:59:59Z"),
+          );
+          break;
+        case "ref":
+          assertValidRefName(text, t("operations.filterHistory"));
+          revisions = [text];
+          break;
+        case "sha":
+          assertValidObjectId(text, t("operations.filterHistory"));
+          revisions = [text + "^{commit}"];
+          searchFlags.push("--no-walk");
+          break;
+      }
+    }
     const stashes = page.showStashes ? await readStashHistory(this, path) : null;
 
     const { stdoutBytes } = await this.exec(
@@ -520,7 +641,9 @@ export class GitService {
         `--max-count=${limit + 1}`,
         `--skip=${offset}`,
         ...LOG_ARGUMENTS,
+        ...searchFlags,
         "--",
+        ...paths,
       ],
       {
         cwd: path,
@@ -686,10 +809,10 @@ export class GitService {
 
   async workingDiff(
     path: string,
-    options: { area: DiffArea; paths?: readonly string[] },
+    options: DiffDisplayOptions & { area: DiffArea; paths?: readonly string[] },
   ): Promise<UnifiedDiff> {
     const paths = literalPathspecs(options.paths, t("operations.readWorkingDiff"));
-    const args = ["-c", "core.quotePath=false", "diff", ...UNIFIED_DIFF_FLAGS];
+    const args = ["-c", "core.quotePath=false", "diff", ...unifiedDiffFlags(options)];
 
     if (options.area === "staged") args.push("--cached");
 
@@ -729,7 +852,7 @@ export class GitService {
           "core.quotePath=false",
           "diff",
           "--no-index",
-          ...UNIFIED_DIFF_FLAGS,
+          ...unifiedDiffFlags(options),
           "--",
           nullPath,
           change.path,
@@ -758,7 +881,12 @@ export class GitService {
     return boundDiff(diff);
   }
 
-  async commitDiff(path: string, oid: string, paths?: readonly string[]): Promise<UnifiedDiff> {
+  async commitDiff(
+    path: string,
+    oid: string,
+    paths?: readonly string[],
+    options?: DiffDisplayOptions,
+  ): Promise<UnifiedDiff> {
     assertFullObjectId(oid, t("operations.readCommitDiff"));
 
     const safePaths = literalPathspecs(paths, t("operations.readCommitDiff"));
@@ -773,7 +901,7 @@ export class GitService {
         "--no-commit-id",
         "-r",
         "-p",
-        ...UNIFIED_DIFF_FLAGS,
+        ...unifiedDiffFlags(options),
         oid,
         "--",
         ...safePaths,
@@ -808,12 +936,30 @@ export class GitService {
     return parseOutput(parseUnifiedDiff, stdoutBytes, path, t("operations.readCommitDiff"));
   }
 
-  async compareDiff(path: string, from: string, to: string): Promise<UnifiedDiff> {
+  async compareDiff(
+    path: string,
+    from: string,
+    to: string,
+    paths?: readonly string[],
+    options?: DiffDisplayOptions,
+  ): Promise<UnifiedDiff> {
     assertFullObjectId(from, t("operations.compareRevisions"));
     assertFullObjectId(to, t("operations.compareRevisions"));
 
+    const pathspecs = literalPathspecs(paths, t("operations.compareRevisions"), "exact-file");
     const { stdoutBytes } = await this.exec(
-      ["-c", "core.quotePath=false", "diff", "--no-color", ...UNIFIED_DIFF_FLAGS, from, to, "--"],
+      [
+        "-c",
+        "core.quotePath=false",
+        "diff",
+        "--no-color",
+        ...unifiedDiffFlags(options),
+        ...(paths ? ["--find-renames", "--src-prefix=a/", "--dst-prefix=b/"] : []),
+        from,
+        to,
+        "--",
+        ...pathspecs,
+      ],
       {
         cwd: path,
         operation: t("operations.compareRevisions"),
@@ -822,6 +968,73 @@ export class GitService {
     );
 
     return parseOutput(parseUnifiedDiff, stdoutBytes, path, t("operations.compareRevisions"));
+  }
+
+  async filePatch(cwd: string, request: PatchExportRequest): Promise<Buffer> {
+    const operation = t("patch.export");
+    const paths = new Set<string>();
+    if (request.path) paths.add(request.path);
+    if ("oid" in request && request.oldPath) paths.add(request.oldPath);
+    const pathspecs = literalPathspecs([...paths], operation, "exact-file");
+    const flags = [
+      "--binary",
+      "--full-index",
+      "--no-color",
+      "--no-ext-diff",
+      "--no-textconv",
+      "--find-renames",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      "--submodule=short",
+      "--unified=3",
+    ];
+    const options = { cwd, operation, ...DIFF_OUTPUT_LIMITS };
+    let args: string[];
+    if ("oid" in request) {
+      assertFullObjectId(request.oid, operation);
+      args = [
+        "diff-tree",
+        "--root",
+        "--diff-merges=first-parent",
+        "--no-commit-id",
+        "-r",
+        "-p",
+        ...flags,
+        request.oid,
+        "--",
+        ...pathspecs,
+      ];
+    } else {
+      const status = await this.status(cwd);
+      const change = status.changes.find((entry) => entry.path === request.path);
+      if (change?.kind === "unmerged")
+        throw new GitError({
+          kind: "invalid-input",
+          operation,
+          message: errorText("patch.unmerged"),
+        });
+      if (change?.kind === "untracked" && request.area === "unstaged") {
+        const empty = process.platform === "win32" ? "NUL" : "/dev/null";
+        return (
+          await this.exec(["diff", "--no-index", ...flags, "--", empty, request.path], {
+            ...options,
+            allowedExitCodes: [0, 1],
+          })
+        ).stdoutBytes;
+      }
+      const selected =
+        change?.originalPath && request.area === "staged"
+          ? literalPathspecs([request.path, change.originalPath], operation, "exact-file")
+          : pathspecs;
+      args = [
+        "diff",
+        ...flags,
+        ...(request.area === "staged" ? ["--cached"] : []),
+        "--",
+        ...selected,
+      ];
+    }
+    return (await this.exec(args, options)).stdoutBytes;
   }
 
   async stage(path: string, paths: readonly string[]): Promise<void> {
@@ -876,7 +1089,12 @@ export class GitService {
   async commit(
     path: string,
     message: string,
-    options: { amend?: boolean; signOff?: boolean; allowEmpty?: boolean } = {},
+    options: {
+      amend?: boolean;
+      skipCommitHooks?: boolean;
+      signOff?: boolean;
+      allowEmpty?: boolean;
+    } = {},
     identity?: Identity,
   ): Promise<string> {
     if (message.trim().length === 0) {
@@ -892,6 +1110,7 @@ export class GitService {
     const args = ["commit", "--file=-", "--cleanup=strip"];
 
     if (options.amend) args.push("--amend");
+    if (options.skipCommitHooks) args.push("--no-verify");
     if (options.signOff) args.push("--signoff");
     if (options.allowEmpty) args.push("--allow-empty");
 
@@ -947,10 +1166,29 @@ export class GitService {
   async checkoutBranch(path: string, name: string): Promise<void> {
     assertValidRefName(name, t("operations.checkoutBranch"));
 
-    await this.exec(["checkout", "--no-overwrite-ignore", name, "--"], {
-      cwd: path,
-      operation: t("operations.checkoutBranch"),
-    });
+    const automatic = (await this.readConfig("eda.updateSubmodules", { cwd: path })) === "true";
+    if (automatic) {
+      if (this.trust && !(await this.trust.checked(path)).trusted)
+        throw new GitError({
+          kind: "invalid-input",
+          operation: t("operations.checkoutBranch"),
+          message: errorText("submodules.trust"),
+        });
+      await checkChildWorktrees(this, path);
+    }
+    await this.exec(
+      [
+        "checkout",
+        "--no-overwrite-ignore",
+        ...(automatic ? ["--recurse-submodules"] : []),
+        name,
+        "--",
+      ],
+      {
+        cwd: path,
+        operation: t("operations.checkoutBranch"),
+      },
+    );
   }
 
   async deleteBranch(path: string, name: string, options: { force?: boolean } = {}): Promise<void> {
@@ -1067,7 +1305,7 @@ export class GitService {
     if (type.stdout.trim() !== "tag")
       return {
         oid,
-        status: "unsigned",
+        ...UNSIGNED_COMMIT_SIGNATURE,
         diagnostics: t("main.git.gitService.lightweightTagsDoNotContainATagSignature"),
       };
 
@@ -1077,25 +1315,30 @@ export class GitService {
       maxStdoutBytes: 1024 * 1024,
     });
 
-    if (!/^-----BEGIN (?:PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----$/m.test(tag.stdout))
+    const header = /^-----BEGIN (PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----$/m.exec(
+      tag.stdout,
+    );
+    if (!header)
       return {
         oid,
-        status: "unsigned",
+        ...UNSIGNED_COMMIT_SIGNATURE,
         diagnostics: t("main.git.gitService.thisAnnotatedTagHasNoSignature"),
       };
 
-    const result = await this.exec(["verify-tag", "--", oid], {
+    const result = await this.exec(["verify-tag", "--raw", "--", oid], {
       cwd: path,
       operation: t("operations.verifyTag"),
-      allowedExitCodes: [0, 1],
+      allowedExitCodes: [0, 1, 128],
       maxStderrBytes: 64 * 1024,
     });
 
     return {
       oid,
-      status: result.exitCode === 0 ? "verified" : "unverified",
-      diagnostics:
-        result.stderr || result.stdout || t("main.git.gitService.gitCouldNotVerifyThisSignature"),
+      ...parseCommitVerification(
+        header[1] === "SSH SIGNATURE" ? "ssh" : header[1] === "PGP SIGNATURE" ? "openpgp" : "x509",
+        result.exitCode,
+        result.stdout + "\n" + result.stderr,
+      ),
     };
   }
 

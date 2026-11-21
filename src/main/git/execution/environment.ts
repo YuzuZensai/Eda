@@ -99,6 +99,6 @@ export function buildSshCommand(keyPath: string): string {
 }
 
 // GIT_SSH_COMMAND is shell text, so the key path needs shell escaping.
-function quoteForSshCommand(keyPath: string): string {
+export function quoteForSshCommand(keyPath: string): string {
   return `"${keyPath.replace(/(["\\$`])/g, "\\$1")}"`;
 }

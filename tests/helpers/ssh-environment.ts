@@ -1,9 +1,16 @@
 import { access } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 
 export async function sshTestEnvironment(): Promise<Record<string, string>> {
-  if (process.platform !== "win32") return {};
+  if (process.platform !== "win32") {
+    const platform = process.platform === "darwin" ? "mac" : process.platform;
+    const bin = resolve("vendor/git", platform + "-" + process.arch, "openssh/bin");
+    return await access(join(bin, "ssh-keygen")).then(
+      () => ({ PATH: bin + delimiter + (process.env["PATH"] ?? "") }),
+      () => ({}),
+    );
+  }
 
   const gitPaths = execFileSync("where.exe", ["git"], { encoding: "utf8" }).trim().split(/\r?\n/);
   for (const gitPath of gitPaths) {

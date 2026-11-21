@@ -86,7 +86,7 @@ export class RepositoryTrust {
   async authorize(root: string, bare = false, review = false) {
     const record = await metadata(await realpath(root), bare, this.volumes);
     if (!review && this.store.matches(record.root, record.fingerprint)) return;
-    const execution = await this.inspector?.inspect(record.root, record.gitDir);
+    const execution = await this.inspector?.inspect(record.root, record.commonDir);
     const trusted = execution
       ? (review || execution.reasons.length > 0) &&
         (await this.confirm(record.root, execution.reasons))
@@ -119,7 +119,7 @@ export class RepositoryTrust {
       if (!trusted && !this.store.matches(record.root, `untrusted:${record.fingerprint}`))
         throw refused();
       const execution = !trusted
-        ? await this.inspector?.inspect(record.root, record.gitDir, signal, revision)
+        ? await this.inspector?.inspect(record.root, record.commonDir, signal, revision)
         : undefined;
       return { ...record, trusted, execution };
     } catch (error) {

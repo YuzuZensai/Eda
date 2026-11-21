@@ -6,6 +6,7 @@ export interface RepositorySummary {
   favourite: boolean;
   lastOpenedAt?: string;
   available: boolean;
+  unavailableReason?: string;
   trusted?: boolean;
 }
 

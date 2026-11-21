@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
+import { unsupportedRepositoryFormat } from "../execution/error-mapping";
 import { buildGitEnvironment } from "../execution/environment";
 import type { GitEngine } from "../execution/git-engine";
 import type { ProcessRunner } from "../execution/process-runner";
@@ -22,7 +23,7 @@ export class RepositoryExecutionInspector {
 
   async inspect(
     root: string,
-    gitDir: string,
+    commonDir: string,
     signal?: AbortSignal,
     revision = "HEAD",
   ): Promise<RepositoryExecution> {
@@ -44,33 +45,33 @@ export class RepositoryExecutionInspector {
         throw new GitError({
           kind: "invalid-input",
           operation: t("operations.openRepository"),
-          message: errorText("main.repositoryTrust.inspectionFailed"),
+          message: errorText(
+            unsupportedRepositoryFormat.test(result.stderr.toString("utf8"))
+              ? "repositoryFormat.unsupported"
+              : "main.repositoryTrust.inspectionFailed",
+          ),
         });
       return result.stdout.toString("utf8");
     };
-    const config = (await run(["config", "--null", "--list", "--includes"]))
-      .split("\0")
-      .filter(Boolean)
-      .map((entry) => {
-        const split = entry.indexOf("\n");
-        return {
-          key: split < 0 ? entry : entry.slice(0, split),
-          value: split < 0 ? "" : entry.slice(split + 1),
-        };
+    // Git's combined listing includes per-worktree configuration when its optional file exists.
+    const fields = (await run(["config", "--null", "--list", "--includes", "--show-scope"])).split(
+      "\0",
+    );
+    const config: { key: string; value: string; local: boolean }[] = [];
+    for (let i = 0; i + 1 < fields.length; i += 2) {
+      const entry = fields[i + 1]!;
+      const split = entry.indexOf("\n");
+      config.push({
+        key: split < 0 ? entry : entry.slice(0, split),
+        value: split < 0 ? "" : entry.slice(split + 1),
+        local: fields[i] === "local" || fields[i] === "worktree",
       });
-    let local = await run(["config", "--local", "--null", "--list", "--includes"]);
-    if (
-      config.some(
-        ({ key, value }) => key === "extensions.worktreeconfig" && value.toLowerCase() === "true",
-      )
-    )
-      local += await run(["config", "--worktree", "--null", "--list", "--includes"]);
+    }
     const reasons = new Set<string>();
     const executableKey =
       /^(?:core\.(?:sshcommand|gitproxy|alternaterefscommand|fsmonitor)|credential(?:\..+)?\.helper|gpg(?:\..+)?\.program|diff\..+\.(?:command|textconv)|merge\..+\.driver|filter\..+\.(?:clean|smudge|process)|remote\..+\.(?:uploadpack|receivepack|vcs)|uploadpack\.packobjectshook|hook\..+\.command)$/;
-    for (const entry of local.split("\0")) {
-      const key = entry.split("\n", 1)[0]!;
-      if (executableKey.test(key.toLowerCase())) reasons.add(key);
+    for (const { key, local } of config) {
+      if (local && executableKey.test(key.toLowerCase())) reasons.add(key);
     }
     const restrictions = ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"];
     const filters = new Set<string>();
@@ -151,7 +152,7 @@ export class RepositoryExecutionInspector {
           root,
           (await run(["config", "--path", "--get", "core.hooksPath"])).replace(/\r?\n$/, ""),
         )
-      : join(gitDir, "hooks");
+      : join(commonDir, "hooks");
     const hooks = await realpath(selectedHooks).catch((error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT" || error.code === "ENOTDIR") return selectedHooks;
       throw error;
@@ -160,7 +161,7 @@ export class RepositoryExecutionInspector {
     if (
       !configuredHooks ||
       (!isAbsolute(within) && within !== ".." && !within.replaceAll("\\", "/").startsWith("../")) ||
-      local.includes("core.hookspath\n")
+      config.some(({ key, local }) => local && key === "core.hookspath")
     ) {
       const entries = await readdir(hooks, { withFileTypes: true }).catch(
         (error: NodeJS.ErrnoException) => {

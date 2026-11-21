@@ -1,4 +1,6 @@
 {
+  "common.reset": "Reset",
+  "common.save": "Save",
   "common.add": "Add",
   "common.back": "Back",
   "common.browse": "Browse...",

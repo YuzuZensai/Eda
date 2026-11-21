@@ -2,6 +2,9 @@ import { isRecord } from "../validation";
 import type { SessionSnapshot } from "./profile-session";
 import type { AccentColor } from "../preferences/accent";
 
+export const PROFILE_NAME_LIMIT = 64;
+export const GIT_AUTHOR_NAME_LIMIT = 128;
+
 export type SigningFormat = "ssh" | "gpg" | "none";
 
 export interface SigningConfiguration {

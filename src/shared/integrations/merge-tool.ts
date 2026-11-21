@@ -10,7 +10,17 @@ export const defaultMergeTool = (): MergeTool => ({
   args: ["{base}", "{current}", "{incoming}", "{result}"],
 });
 
+export const defaultDiffArgs = ["{before}", "{after}"];
+
 export function isMergeTool(value: unknown): value is MergeTool {
+  return isTool(value, ["base", "current", "incoming", "result"]);
+}
+
+export function isDiffTool(value: unknown): value is MergeTool {
+  return isTool(value, ["before", "after"]);
+}
+
+function isTool(value: unknown, tokens: string[]): value is MergeTool {
   if (!isRecord(value)) return false;
 
   const item = value;
@@ -31,9 +41,9 @@ export function isMergeTool(value: unknown): value is MergeTool {
         typeof arg === "string" &&
         arg.length <= 4096 &&
         !/[\0\r\n]/.test(arg) &&
-        !/\{[^}]*\}/.test(arg.replace(/\{(?:base|current|incoming|result)\}/g, "")),
+        ![...arg.matchAll(/\{([^}]*)\}/g)].some((match) => !tokens.includes(match[1]!)),
     ) &&
-    ["base", "current", "incoming", "result"].every((key) =>
+    tokens.every((key) =>
       args.some((arg: unknown) => typeof arg === "string" && arg.includes(`{${key}}`)),
     )
   );
