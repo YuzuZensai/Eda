@@ -5,6 +5,9 @@ import {
   CherryIcon as Cherry,
   CopyIcon as Copy,
   DiffIcon,
+  FolderGit2Icon,
+  DownloadIcon,
+  PencilIcon,
   BranchIcon as GitBranch,
   GitCommitHorizontalIcon as GitCommitHorizontal,
   GitMergeIcon as GitMerge,
@@ -33,6 +36,8 @@ import { useAppStore } from "../../stores/app-store";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { copyText } from "../../utils/clipboard";
 import { MergeStartDialog } from "../workflows/MergeStartDialog";
+import { WorktreesDialog } from "../repositories/WorktreesDialog";
+import { RebaseDialog } from "../workflows/RebaseDialog";
 import { ReplayDialog } from "../workflows/ReplayDialog";
 import { ResetDialog } from "../workflows/ResetDialog";
 
@@ -52,6 +57,10 @@ export function CommitMenu({
   initialMode?: "menu" | "tag" | "branch";
 }) {
   const repositoryId = useAppStore((state) => state.selectedRepositoryId);
+  const repository = useAppStore((state) =>
+    state.repositories.find((repo) => repo.id === repositoryId),
+  );
+  const status = useRepositoryStore((state) => state.status);
   const commandContext = captureRepositoryCommand(repositoryId ?? "");
   const dispatch = repositoryCommandDispatcher(commandContext);
   const commandUnavailable = repositoryCommandReason(commandContext);
@@ -65,7 +74,16 @@ export function CommitMenu({
   const last = commits.findIndex((c) => c.oid === target.oid);
   const [range, setRange] = useState<typeof commits>([]);
   const [mode, setMode] = useState<
-    "menu" | "tag" | "branch" | "merge" | "cherry-pick" | "revert" | "reset" | "range"
+    | "menu"
+    | "tag"
+    | "branch"
+    | "merge"
+    | "cherry-pick"
+    | "revert"
+    | "reset"
+    | "range"
+    | "reword"
+    | "worktree"
   >(initialMode);
 
   const [name, setName] = useState("");
@@ -76,6 +94,17 @@ export function CommitMenu({
   const [error, setError] = useState<string | null>(null);
 
   if (!repositoryId) return null;
+  if (mode === "reword")
+    return (
+      <RebaseDialog
+        repositoryId={repositoryId}
+        action="reword"
+        onto={target.oid}
+        onClose={onClose}
+      />
+    );
+  if (mode === "worktree" && repository)
+    return <WorktreesDialog repository={repository} startCommit={target.oid} onClose={onClose} />;
   if (mode === "reset")
     return <ResetDialog repositoryId={repositoryId} target={target.oid} onClose={onClose} />;
 
@@ -217,14 +246,11 @@ export function CommitMenu({
       {mode === "menu" && (
         <>
           <MenuItem
-            onClick={() =>
-              void copyText(target.oid)
-                .then(onClose)
-                .catch(() => setError(t("commitMenu.theCommitIdCouldNotBeCopied")))
-            }
+            disabled={!!commandUnavailable || !!status?.workflow || !!status?.branch.detached}
+            onClick={() => setMode("reword")}
           >
-            <Copy size={13} className="shrink-0" aria-hidden="true" />
-            {t("commitMenu.copyCommitSha")}
+            <PencilIcon size={13} aria-hidden="true" />
+            {t("commitMenu.editMessage")}
           </MenuItem>
 
           <MenuItem
@@ -248,14 +274,54 @@ export function CommitMenu({
             </MenuItem>
           )}
 
+          <hr className="my-1 border-border-subtle" />
+
+          <MenuItem
+            disabled={busy || !!commandUnavailable}
+            onClick={() =>
+              void run(() => dispatch("checkoutBranch", { repositoryId, name: target.oid }))
+            }
+          >
+            <GitCommitHorizontal size={13} className="shrink-0" aria-hidden="true" />
+            {t("commitMenu.checkOutThisCommit")}
+          </MenuItem>
+
           <MenuItem onClick={() => setMode("branch")}>
             <GitBranch size={13} className="shrink-0" aria-hidden="true" />
             {t("commitMenu.createBranchHere")}
           </MenuItem>
 
-          <MenuItem disabled={!!commandUnavailable} onClick={() => setMode("merge")}>
-            <GitMerge size={13} className="shrink-0" aria-hidden="true" />
-            {t("commitMenu.mergeIntoCurrentBranch")}
+          <MenuItem onClick={() => setMode("tag")}>
+            <Tag size={13} className="shrink-0" aria-hidden="true" />
+            {t("commitMenu.createTagHere")}
+          </MenuItem>
+
+          {repository && (
+            <MenuItem disabled={!!commandUnavailable} onClick={() => setMode("worktree")}>
+              <FolderGit2Icon size={13} aria-hidden="true" />
+              {t("commitMenu.worktreeHere")}
+            </MenuItem>
+          )}
+
+          <hr className="my-1 border-border-subtle" />
+
+          {status?.branch.oid !== target.oid && (
+            <MenuItem disabled={!!commandUnavailable} onClick={() => setMode("merge")}>
+              <GitMerge size={13} className="shrink-0" aria-hidden="true" />
+              {t("commitMenu.mergeIntoCurrentBranch")}
+            </MenuItem>
+          )}
+
+          {status?.branch.oid !== target.oid && (
+            <MenuItem disabled={!!commandUnavailable} onClick={() => setMode("cherry-pick")}>
+              <Cherry size={13} className="shrink-0" aria-hidden="true" />
+              {t("commitMenu.cherryPick")}
+            </MenuItem>
+          )}
+
+          <MenuItem disabled={!!commandUnavailable} onClick={() => setMode("revert")}>
+            <Undo2 size={13} className="shrink-0" aria-hidden="true" />
+            {t("commitMenu.revert")}
           </MenuItem>
 
           <MenuItem disabled={!!commandUnavailable} onClick={() => setMode("reset")}>
@@ -263,14 +329,42 @@ export function CommitMenu({
             {t("commitMenu.resetCurrentBranchHere")}
           </MenuItem>
 
-          <MenuItem disabled={!!commandUnavailable} onClick={() => setMode("cherry-pick")}>
-            <Cherry size={13} className="shrink-0" aria-hidden="true" />
-            {t("commitMenu.cherryPick")}
+          <hr className="my-1 border-border-subtle" />
+
+          <MenuItem
+            disabled={busy}
+            onClick={async () => {
+              if (submitting.current) return;
+              submitting.current = true;
+              setBusy(true);
+              try {
+                const result = await window.eda.repository.exportPatch({
+                  repositoryId,
+                  oid: target.oid,
+                });
+                if (result.ok) onClose();
+                else setError(errorMessage(result.error));
+              } catch (failure) {
+                setError(errorMessage(failure));
+              } finally {
+                submitting.current = false;
+                setBusy(false);
+              }
+            }}
+          >
+            <DownloadIcon size={13} aria-hidden="true" />
+            {t("patch.commit")}
           </MenuItem>
 
-          <MenuItem disabled={!!commandUnavailable} onClick={() => setMode("revert")}>
-            <Undo2 size={13} className="shrink-0" aria-hidden="true" />
-            {t("commitMenu.revert")}
+          <MenuItem
+            onClick={() =>
+              void copyText(target.oid)
+                .then(onClose)
+                .catch(() => setError(t("commitMenu.theCommitIdCouldNotBeCopied")))
+            }
+          >
+            <Copy size={13} className="shrink-0" aria-hidden="true" />
+            {t("commitMenu.copyCommitSha")}
           </MenuItem>
 
           <MenuItem
@@ -292,21 +386,6 @@ export function CommitMenu({
           >
             <Link size={13} className="shrink-0" aria-hidden="true" />
             {t("commitMenu.copyCommitBrowserUrl")}
-          </MenuItem>
-
-          <MenuItem onClick={() => setMode("tag")}>
-            <Tag size={13} className="shrink-0" aria-hidden="true" />
-            {t("commitMenu.createTagHere")}
-          </MenuItem>
-
-          <MenuItem
-            disabled={busy || !!commandUnavailable}
-            onClick={() =>
-              void run(() => dispatch("checkoutBranch", { repositoryId, name: target.oid }))
-            }
-          >
-            <GitCommitHorizontal size={13} className="shrink-0" aria-hidden="true" />
-            {t("commitMenu.checkOutThisCommit")}
           </MenuItem>
         </>
       )}

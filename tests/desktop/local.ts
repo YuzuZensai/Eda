@@ -349,6 +349,36 @@ try {
   assert.equal(await readFile(join(repository, "scratch.log"), "utf8"), "keep scratch bytes\0\r\n");
 
   await page.screenshot({ path: resolve("screenshots/local-workflow.png") });
+  await page.getByRole("button", { name: "Back to history", exact: true }).click();
+  git("config", "--unset", "core.hooksPath");
+  const graph = page.getByTestId("commit-graph");
+  const subject = git("log", "-1", "--format=%s").trim();
+  const headRow = graph.getByRole("button").filter({ hasText: subject }).first();
+  await headRow.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Create worktree here..." }).click();
+  const worktrees = page.getByRole("dialog", { name: "Worktrees" });
+  assert.equal(
+    await worktrees.getByLabel("Start new branch at").inputValue(),
+    git("rev-parse", "HEAD").trim(),
+  );
+  await page.keyboard.press("Escape");
+
+  await headRow.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Edit commit message" }).click();
+  const edit = page.getByRole("dialog", { name: "Edit commit message" });
+  const message = edit.getByRole("textbox", { name: "Commit message" });
+  await message.waitFor();
+  assert.equal((await message.inputValue()).split("\n")[0], subject);
+  await message.fill("Reword from history\n\nKeep the complete body");
+  await edit.getByRole("button", { name: "Save message" }).click();
+  await edit.waitFor({ state: "hidden" });
+  await graph.getByRole("button", { name: /Reword from history/ }).waitFor();
+  assert.equal(
+    git("log", "-1", "--format=%B").trimEnd(),
+    "Reword from history\n\nKeep the complete body",
+  );
+  assert.equal(git("ls-files", "--stage", "-z"), beforeDiscardIndex);
+
   assert.equal(errors.length, 0, errors.join("\n"));
 
   console.log(

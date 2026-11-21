@@ -95,9 +95,11 @@ function SparseCheckout({ id }: { id: string }) {
 
 export function WorktreesDialog({
   repository,
+  startCommit,
   onClose,
 }: {
   repository: RepositorySummary;
+  startCommit?: string;
   onClose: () => void;
 }) {
   const { value, error, retry } = useRepositoryRead(window.eda.repository.worktrees, repository.id);
@@ -112,8 +114,8 @@ export function WorktreesDialog({
   const [busy, setBusy] = useState(false);
   const [destination, setDestination] = useState("");
   const [branch, setBranch] = useState("");
-  const [newBranch, setNewBranch] = useState(false);
-  const [base, setBase] = useState("HEAD");
+  const [newBranch, setNewBranch] = useState(!!startCommit);
+  const [base, setBase] = useState(startCommit ?? "HEAD");
   const [confirmation, setConfirmation] = useState<WorktreeAction | null>(null);
   const [notice, setNotice] = useState("");
   const change = async (action: WorktreeAction) => {
@@ -191,7 +193,7 @@ export function WorktreesDialog({
           {notice}
         </p>
       )}
-      <Disclosure title={t("worktrees.create")}>
+      <Disclosure title={t("worktrees.create")} open={!!startCommit || undefined}>
         <Field label={t("worktrees.destination")}>
           {(field) => (
             <Input

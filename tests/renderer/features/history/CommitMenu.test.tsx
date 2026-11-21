@@ -131,3 +131,18 @@ it("uses the same signed-tag validation for Enter and clicks and ignores repeate
   await act(async () => finish());
   expect(close).toHaveBeenCalledOnce();
 });
+
+it("exports the right-clicked commit even when a different commit is selected", async () => {
+  const exportPatch = vi.fn(async () => ok(true));
+  vi.stubGlobal("eda", { repository: { exportPatch } });
+  useRepositoryStore.setState({ selection: { kind: "commit", oid: "a".repeat(40) } });
+  const oid = "b".repeat(40);
+  await act(async () => root.render(<CommitMenu target={{ oid, x: 20, y: 20 }} onClose={close} />));
+  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+    (button) => button.textContent === "Export commit patch",
+  );
+  expect(item).toBeDefined();
+  await act(async () => item!.click());
+  expect(exportPatch).toHaveBeenCalledExactlyOnceWith({ repositoryId: "repo", oid });
+  expect(close).toHaveBeenCalledOnce();
+});
