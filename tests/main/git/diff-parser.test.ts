@@ -1,8 +1,50 @@
 import { describe, expect, it } from "vitest";
 import { UNIFIED_DIFF } from "../../fixtures/repository-read-output";
 import { parseUnifiedDiff } from "@main/git/parsers/diff-parser";
+import { MAX_DIFF_FILES, MAX_DIFF_ROWS, MAX_FILE_DIFF_ROWS } from "@shared/repository/diff-limits";
 
 describe("parseUnifiedDiff", () => {
+  it("counts discarded lines, reserves later file headings and respects the shared preview budget", () => {
+    const count = 3000;
+    const patch = Array.from(
+      { length: 7 },
+      (_, index) =>
+        `diff --git a/${index} b/${index}\r\n@@ -0,0 +1,${count} @@\r\n${"+café\r\n".repeat(count)}`,
+    ).join("");
+    const { files } = parseUnifiedDiff(
+      Buffer.from(patch + "diff --git a/last b/last\nold mode 100644\nnew mode 100755"),
+    );
+    expect(files).toHaveLength(8);
+    expect(files[0]?.hunks[0]?.lines).toHaveLength(MAX_FILE_DIFF_ROWS - 1);
+    expect(files[0]?.hunks[0]?.lines.at(-1)).toMatchObject({
+      content: "café",
+      newLineNumber: MAX_FILE_DIFF_ROWS - 1,
+    });
+    expect(
+      files
+        .slice(0, 7)
+        .every(
+          (file) =>
+            file.truncated &&
+            file.stats?.additions === count &&
+            file.stats.characters === 4 * count,
+        ),
+    ).toBe(true);
+    const retainedRows = files.reduce(
+      (total, file) =>
+        total + 1 + file.hunks.reduce((rows, hunk) => rows + 1 + hunk.lines.length, 0),
+      0,
+    );
+    expect(retainedRows).toBe(MAX_DIFF_ROWS);
+    expect(files.at(-1)).toMatchObject({ newPath: "last", newMode: "100755" });
+  });
+
+  it("counts omitted files and still rejects invalid hunk headers beyond the preview", () => {
+    const headers = "diff --git a/f b/f\n".repeat(MAX_DIFF_FILES + 1);
+    expect(parseUnifiedDiff(Buffer.from(headers)).omittedFiles).toBe(1);
+    expect(() => parseUnifiedDiff(Buffer.from(headers + "@@ malformed"))).toThrow();
+  });
+
   it("normalizes renamed text and binary files", () => {
     const diff = parseUnifiedDiff(Buffer.from(UNIFIED_DIFF));
 

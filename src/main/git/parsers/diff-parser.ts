@@ -1,6 +1,12 @@
 import { ERROR_CODE } from "@shared/error-codes";
 import { AppError } from "@shared/errors";
-import { boundDiff } from "@shared/repository/diff-limits";
+import {
+  countDiffLine,
+  DiffPreviewBudget,
+  emptyDiffStats,
+  MAX_DIFF_FILES,
+  MAX_DIFF_ROWS,
+} from "@shared/repository/diff-limits";
 import type { DiffHunk, DiffLine, FileDiff, UnifiedDiff } from "@shared/repository/repository-read";
 
 export function parseUnifiedDiff(output: Buffer): UnifiedDiff {
@@ -8,17 +14,37 @@ export function parseUnifiedDiff(output: Buffer): UnifiedDiff {
 
   if (text.length === 0) return { files: [] };
 
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  // Reserve file headings first so one large patch cannot hide later files.
+  let headings = Number(text.startsWith("diff --git "));
+  let header = text.indexOf("\ndiff --git ");
+  while (header !== -1 && headings < MAX_DIFF_FILES) {
+    headings++;
+    header = text.indexOf("\ndiff --git ", header + 1);
+  }
+  const budget = new DiffPreviewBudget(MAX_DIFF_ROWS - headings);
   const files: FileDiff[] = [];
-  let file: FileDiff | undefined;
+  let omittedFiles = 0;
+  let file: (FileDiff & { stats: NonNullable<FileDiff["stats"]> }) | undefined;
   let hunk: DiffHunk | undefined;
   let oldLine = 0;
   let newLine = 0;
 
-  for (const line of lines) {
+  for (let offset = 0; offset < text.length;) {
+    const newline = text.indexOf("\n", offset);
+    const end = newline < 0 ? text.length : newline;
+    const line = text.slice(offset, newline >= 0 && text[end - 1] === "\r" ? end - 1 : end);
+    offset = end + 1;
     if (line.startsWith("diff --git ")) {
-      file = { ...parseHeaderPaths(line.slice(11)), status: "modified", binary: false, hunks: [] };
-      files.push(file);
+      file = {
+        ...parseHeaderPaths(line.slice(11)),
+        status: "modified",
+        binary: false,
+        hunks: [],
+        stats: emptyDiffStats(),
+      };
+      if (files.length < MAX_DIFF_FILES) files.push(file);
+      else omittedFiles++;
+      budget.startFile();
       hunk = undefined;
       continue;
     }
@@ -28,9 +54,19 @@ export function parseUnifiedDiff(output: Buffer): UnifiedDiff {
     if (hunk && !line.startsWith("@@ ")) {
       const parsed = parseHunkLine(line, oldLine, newLine);
       if (!parsed) continue;
-      hunk.lines.push(parsed.line);
       oldLine = parsed.oldLine;
       newLine = parsed.newLine;
+      if (omittedFiles) continue;
+      countDiffLine(file.stats, parsed.line);
+      const length = file.binary ? undefined : budget.takeRow(parsed.line.content.length);
+      if (length === undefined) file.truncated = true;
+      else {
+        if (length < parsed.line.content.length) {
+          parsed.line.content = parsed.line.content.slice(0, length);
+          file.truncated = true;
+        }
+        hunk.lines.push(parsed.line);
+      }
       continue;
     }
 
@@ -82,11 +118,12 @@ export function parseUnifiedDiff(output: Buffer): UnifiedDiff {
         heading: match[5]!.trimStart(),
         lines: [],
       };
-      file.hunks.push(hunk);
+      if (!omittedFiles && !file.binary && budget.takeRow(0) !== undefined) file.hunks.push(hunk);
+      else file.truncated = true;
     }
   }
 
-  return boundDiff({ files });
+  return { files, ...(omittedFiles ? { omittedFiles } : {}) };
 }
 
 function parseHeaderPaths(value: string): Pick<FileDiff, "oldPath" | "newPath"> {

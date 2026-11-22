@@ -22,6 +22,7 @@ export default defineConfig({
           name: "main",
           environment: "node",
           include: ["tests/main/**/*.test.ts", "tests/shared/**/*.test.ts"],
+          benchmark: { include: ["tests/main/**/*.bench.ts"] },
         },
       },
       {
@@ -30,6 +31,7 @@ export default defineConfig({
           name: "renderer",
           environment: "happy-dom",
           include: ["tests/renderer/**/*.test.{ts,tsx}"],
+          benchmark: { include: ["tests/renderer/**/*.bench.ts"] },
         },
       },
     ],

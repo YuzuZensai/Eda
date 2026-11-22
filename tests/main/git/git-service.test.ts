@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitError } from "@shared/errors";
-import { MAX_DIFF_FILES } from "@shared/repository/diff-limits";
+import { MAX_DIFF_FILES, MAX_DIFF_ROWS } from "@shared/repository/diff-limits";
 import { FakeProcessRunner } from "../../helpers/fake-process-runner";
 import { GitService } from "@main/git/git-service";
 import { listSubmodules } from "@main/git/operations/submodules";
@@ -417,6 +417,54 @@ describe("GitService against real Git", () => {
     expect(workingDiff.files[0]).toMatchObject({ status: "added", newPath: "untracked.txt" });
   });
 
+  it("reads only selected literal paths from Git for a mixed working diff", async () => {
+    repo = await createTempRepo();
+    await repo.writeFile("tracked", "old\n");
+    await repo.commit("base");
+    await repo.writeFile("tracked", "new\n");
+    await repo.writeFile("[abc]", "wanted\n");
+    await repo.writeFile("a", "not a literal match\n");
+    for (let index = 0; index < 100; index++) await repo.writeFile(`other/${index}`, "unrelated\n");
+
+    const reads = vi.spyOn(repo.git, "exec");
+    const diff = await repo.git.workingDiff(repo.path, {
+      area: "unstaged",
+      paths: ["tracked", "[abc]"],
+    });
+    expect(diff.files.map((file) => file.newPath)).toEqual(["tracked", "[abc]"]);
+    const unrelated = reads.mock.settledResults.flatMap((result) =>
+      result.type === "fulfilled"
+        ? result.value.stdout.split("\0").filter((entry) => entry.startsWith("? other/"))
+        : [],
+    );
+    expect(unrelated).toHaveLength(0);
+  });
+
+  it("shares the working preview budget across tracked and untracked files without losing totals", async () => {
+    repo = await createTempRepo();
+    for (let index = 0; index < 5; index++) await repo.writeFile(`tracked-${index}`, "");
+    await repo.commit("base");
+    const paths = [
+      "tracked-0",
+      "tracked-1",
+      "tracked-2",
+      "tracked-3",
+      "tracked-4",
+      "untracked-0",
+      "untracked-1",
+    ];
+    for (const path of paths) await repo.writeFile(path, "new\n".repeat(3000));
+
+    const { files } = await repo.git.workingDiff(repo.path, { area: "unstaged" });
+    expect(files.map((file) => file.newPath)).toEqual(paths);
+    expect(files.every((file) => file.truncated && file.stats?.additions === 3000)).toBe(true);
+    const rows = files.reduce(
+      (total, file) => total + 1 + file.hunks.reduce((sum, hunk) => sum + 1 + hunk.lines.length, 0),
+      0,
+    );
+    expect(rows).toBe(MAX_DIFF_ROWS);
+  });
+
   it.runIf(process.platform !== "win32").each(["\t", "\x07", "\x0b", "\x1b"])(
     "keeps quoted rename paths consistent between status and diffs: %j",
     async (separator) => {
@@ -584,6 +632,28 @@ describe("GitService against real Git", () => {
 
 describe("GitService command construction", () => {
   const service = (runner: FakeProcessRunner) => new GitService(runner, FAKE_ENGINE);
+
+  it("preserves binary stdout without decoding it unless text is requested", async () => {
+    const bytes = Buffer.alloc(1024 * 1024, 0xff);
+    const decode = vi.spyOn(bytes, "toString");
+    const result = await service(new FakeProcessRunner().otherwise({ stdout: bytes })).exec(
+      ["cat-file", "blob", "HEAD:image.png"],
+      { operation: "read image" },
+    );
+    expect(result.stdoutBytes).toBe(bytes);
+    expect(decode).not.toHaveBeenCalled();
+    expect(result.stdout.length).toBe(bytes.length);
+    expect(result.stdout[0]).toBe("\uFFFD");
+    expect(decode).toHaveBeenCalledTimes(1);
+  });
+
+  it("redacts both text and bytes on successful commands", async () => {
+    const result = await service(
+      new FakeProcessRunner().otherwise({ stdout: "secret output" }),
+    ).exec(["version"], { operation: "test", redactValues: ["secret"] });
+    expect(result.stdoutBytes.toString()).toBe("[redacted] output");
+    expect(result.stdout).toBe("[redacted] output");
+  });
 
   it("reports the number of changed files beyond the comparison display limit", async () => {
     const runner = new FakeProcessRunner()

@@ -3,7 +3,6 @@ import { errorText, type ErrorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { diffPaths } from "@shared/repository/diff-paths";
-import { boundDiff } from "@shared/repository/diff-limits";
 import {
   MAX_STASH_ENTRIES,
   MAX_STASH_NAME_LENGTH,
@@ -318,13 +317,7 @@ export class StashService {
       },
     });
 
-    return {
-      entry,
-      token,
-      tracked: boundDiff(tracked),
-      staged: boundDiff(staged),
-      untracked: untracked ? boundDiff(untracked) : null,
-    };
+    return { entry, token, tracked, staged, untracked };
   }
 
   private reviewed(repositoryId: string, token: string) {

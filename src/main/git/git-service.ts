@@ -475,11 +475,18 @@ export class GitService {
       });
     }
 
+    if (options.redactValues?.length) {
+      const stdout = redact(result.stdout.toString("utf8"));
+      return { stdout, stdoutBytes: Buffer.from(stdout), stderr, exitCode: result.exitCode };
+    }
+
+    const stdoutBytes = result.stdout;
+    let text: string | undefined;
     return {
-      stdout: redact(result.stdout.toString("utf8")),
-      stdoutBytes: options.redactValues?.length
-        ? Buffer.from(redact(result.stdout.toString("utf8")))
-        : result.stdout,
+      get stdout() {
+        return (text ??= stdoutBytes.toString("utf8"));
+      },
+      stdoutBytes,
       stderr,
       exitCode: result.exitCode,
     };
@@ -507,7 +514,7 @@ export class GitService {
     }
   }
 
-  async status(path: string): Promise<RepositoryStatus> {
+  async status(path: string, paths?: readonly string[]): Promise<RepositoryStatus> {
     const { stdoutBytes } = await this.exec(
       [
         "--no-optional-locks",
@@ -518,6 +525,7 @@ export class GitService {
         "--untracked-files=all",
         "--ignore-submodules=dirty",
         "--",
+        ...literalPathspecs(paths, t("operations.readStatus")),
       ],
       {
         cwd: path,
@@ -850,13 +858,14 @@ export class GitService {
 
     if (options.area === "staged") return diff;
 
-    const status = await this.status(path);
+    const status = await this.status(path, options.paths);
     const selected = options.paths?.length ? new Set(options.paths) : undefined;
 
     const untracked = status.changes.filter(
       (change) => change.kind === "untracked" && (!selected || selected.has(change.path)),
     );
 
+    if (!untracked.length) return diff;
     if (untracked.length > 256) throw outputTooLarge(path, t("operations.readWorkingDiff"));
 
     let remaining = DIFF_OUTPUT_LIMITS.maxStdoutBytes - stdoutBytes.length;
