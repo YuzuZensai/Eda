@@ -63,6 +63,31 @@ it("focuses the dialog, dismisses on Escape, and restores the opener", async () 
   await vi.waitFor(() => expect(document.activeElement).toBe(opener), { timeout: 500 });
 });
 
+it("keeps keyboard focus in a replacement dialog when the previous dialog finishes closing", async () => {
+  const opener = document.createElement("button");
+  container.before(opener);
+  vi.useFakeTimers();
+  try {
+    opener.focus();
+    const dialog = (title: string) => (
+      <Dialog key={title} title={title} onClose={() => {}}>
+        <input aria-label={title} autoFocus />
+      </Dialog>
+    );
+    await act(async () => root.render(dialog("Keyboard shortcuts")));
+    await act(async () => root.render(null));
+    await act(async () => root.render(dialog("Command palette")));
+    const search = document.querySelector('input[aria-label="Command palette"]');
+    expect(search).toBeInstanceOf(HTMLInputElement);
+    expect(document.activeElement).toBe(search);
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    expect(document.activeElement).toBe(search);
+  } finally {
+    vi.useRealTimers();
+    opener.remove();
+  }
+});
+
 it("dismisses an operation error without closing its form and presents a subsequent failure", async () => {
   function Example() {
     const [error, setError] = useState<string | null>(null);

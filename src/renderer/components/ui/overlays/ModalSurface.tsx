@@ -46,7 +46,10 @@ export function ModalSurface({
           ref={surface}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            opener.current?.focus();
+            const focusedDialog = document.activeElement?.closest(
+              '[role="dialog"], [role="alertdialog"]',
+            );
+            if (!focusedDialog || focusedDialog.contains(opener.current)) opener.current?.focus();
             onAfterClose?.();
           }}
           onInteractOutside={(event) => {
