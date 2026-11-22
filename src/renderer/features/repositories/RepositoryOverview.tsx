@@ -1,6 +1,6 @@
 import { useRepositoryRead } from "../../repository/hooks/useRepositoryRead";
 import { usePreferencesStore } from "../../stores/preferences-store";
-import { lazy, Suspense, useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { WorktreesDialog } from "./WorktreesDialog";
 import { t } from "@shared/i18n";
 import type { RepositorySummary } from "@shared/repository/repository";
@@ -21,9 +21,6 @@ import { RepositoryWorkflowActions } from "../workflows/RepositoryWorkflowAction
 
 import { RepositoryTrustButton } from "./RepositoryTrustButton";
 
-const TerminalDialog = lazy(() =>
-  import("./TerminalDialog").then((m) => ({ default: m.TerminalDialog })),
-);
 export function RepositoryOverview({
   repository,
   onOpenCommit,
@@ -33,7 +30,6 @@ export function RepositoryOverview({
   onOpenCommit?: () => void;
   pending?: boolean;
 }) {
-  const [terminal, setTerminal] = useState(false);
   const [worktrees, setWorktrees] = useState(false);
   const selection = useRepositoryStore((state) => state.selection);
   const editingConflict =
@@ -162,9 +158,6 @@ export function RepositoryOverview({
           aria-label={t("repositoryOverview.repositoryActions")}
           className="flex min-w-0 flex-1 items-center justify-end gap-4 text-xs"
         >
-          <TextButton disabled={pending} onClick={() => setTerminal(true)}>
-            {t("terminal.title")}
-          </TextButton>
           {onOpenCommit && (
             <TextButton className="text-accent-text" onClick={onOpenCommit}>
               {t("repositoryOverview.commitDraft")}
@@ -226,16 +219,6 @@ export function RepositoryOverview({
         </details>
       )}
 
-      {terminal && (
-        <Suspense fallback={<Skeleton className="h-8 w-20" />}>
-          <TerminalDialog
-            key={repository.id}
-            id={repository.id}
-            profileId={repository.identityId}
-            onClose={() => setTerminal(false)}
-          />
-        </Suspense>
-      )}
       {worktrees && (
         <WorktreesDialog
           key={repository.id}

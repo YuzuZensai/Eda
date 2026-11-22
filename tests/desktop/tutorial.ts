@@ -72,7 +72,7 @@ try {
   assert.equal(presentation.canvas, "rgba(0, 0, 0, 0)");
   assert.ok(presentation.profile?.includes("Explorer"));
   assert.ok(!presentation.profile?.includes("Tour test"));
-  await frame.getByRole("button", { name: "Activity", exact: true }).waitFor();
+  await frame.getByRole("tab", { name: "Activity", exact: true }).waitFor();
   await page.evaluate(() =>
     document.documentElement.style.setProperty("--background-strength", "0.55"),
   );

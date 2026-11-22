@@ -25,6 +25,7 @@ export type SettingsSection =
   | "application"
   | "about"
   | "workspace-application"
+  | "terminal"
   | "git"
   | "repository-sync"
   | "repository-fetch"
@@ -98,6 +99,14 @@ export const SETTINGS_SECTIONS: {
     keywords: t("settings.app.profileKeywords"),
     title: t("settings.application"),
     description: t("settings.app.profileHint"),
+    icon: Monitor,
+    group: "profile",
+  },
+  {
+    id: "terminal",
+    keywords: `${t("terminal.font")} ${t("terminal.cursor")} ${t("terminal.scrollback")}`,
+    title: t("terminal.title"),
+    description: t("terminal.settingsDescription"),
     icon: Monitor,
     group: "profile",
   },

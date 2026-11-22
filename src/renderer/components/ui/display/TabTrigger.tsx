@@ -1,5 +1,5 @@
 import { ButtonBase } from "../actions/ButtonBase";
-import type { ComponentPropsWithRef, ReactNode } from "react";
+import type { ComponentPropsWithRef, KeyboardEvent, ReactNode } from "react";
 import { cx } from "../cx";
 
 export function TabTrigger({
@@ -31,4 +31,27 @@ export function TabTrigger({
       {children}
     </ButtonBase>
   );
+}
+
+export function navigateTabList(event: KeyboardEvent<HTMLDivElement>) {
+  const vertical = event.currentTarget.getAttribute("aria-orientation") === "vertical";
+  const previous = vertical ? "ArrowUp" : "ArrowLeft";
+  const following = vertical ? "ArrowDown" : "ArrowRight";
+  if (![previous, following, "Home", "End"].includes(event.key)) return;
+
+  const tabs = Array.from(
+    event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="tab"]:enabled'),
+  );
+  const index = tabs.findIndex((tab) => tab === event.target);
+  if (index < 0) return;
+
+  event.preventDefault();
+  const step = event.key === previous ? -1 : 1;
+  let next = tabs[(index + step + tabs.length) % tabs.length];
+  if (event.key === "Home") next = tabs[0];
+  if (event.key === "End") next = tabs.at(-1);
+  if (next) {
+    next.click();
+    next.focus();
+  }
 }

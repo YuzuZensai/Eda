@@ -134,12 +134,11 @@ try {
   assert.ok(avatarSizes.every(({ width, height }) => width > 0 && width === height));
 
   await page.getByRole("textbox", { name: "Example input", exact: true }).fill("Gallery draft");
-  await page.getByRole("tab", { name: "Activity", exact: true }).click();
-
-  assert.equal(
-    await page.getByRole("tab", { name: "Activity", exact: true }).getAttribute("aria-selected"),
-    "true",
-  );
+  const exampleActivity = page
+    .getByRole("tablist", { name: "Example tabs" })
+    .getByRole("tab", { name: "Activity", exact: true });
+  await exampleActivity.click();
+  assert.equal(await exampleActivity.getAttribute("aria-selected"), "true");
 
   for (const [trigger, title] of [
     ["Open Dialog", "Dialog example"],

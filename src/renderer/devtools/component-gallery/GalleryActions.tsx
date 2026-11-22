@@ -1,6 +1,7 @@
 import { t } from "@shared/i18n";
 import type { AccentColor } from "@shared/preferences/accent";
-import { useRef, useState, type MouseEvent } from "react";
+import { useState, type MouseEvent } from "react";
+import { navigateTabList } from "../../components/ui/display/TabTrigger";
 import { ProfileAvatar } from "../../components/ui/display/ProfileAvatar";
 import { StarIcon } from "../../components/ui/icons";
 import {
@@ -33,7 +34,6 @@ export function GalleryActions({
   feedback: string;
   setFeedback: (message: string) => void;
 }) {
-  const exampleTabs = useRef(new Map<string, HTMLButtonElement>());
   const [tab, setTab] = useState("first");
   const [list, setList] = useState("changes");
   const previewExternalLink = (event: MouseEvent<HTMLButtonElement>) => {
@@ -192,32 +192,11 @@ export function GalleryActions({
                 role="tablist"
                 aria-label={t("settings.componentGallery.exampleTabs")}
                 className="flex gap-1 border-b border-border-subtle"
-                onKeyDown={(event) => {
-                  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-
-                  event.preventDefault();
-
-                  const next =
-                    event.key === "Home"
-                      ? "first"
-                      : event.key === "End"
-                        ? "second"
-                        : tab === "first"
-                          ? "second"
-                          : "first";
-
-                  setTab(next);
-
-                  exampleTabs.current.get(next)?.focus();
-                }}
+                onKeyDown={navigateTabList}
               >
                 {["first", "second"].map((value, index) => (
                   <TabTrigger
                     key={value}
-                    ref={(element) => {
-                      if (element) exampleTabs.current.set(value, element);
-                      else exampleTabs.current.delete(value);
-                    }}
                     id={`gallery-tab-${value}`}
                     aria-controls={`gallery-panel-${value}`}
                     selected={tab === value}

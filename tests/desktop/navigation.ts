@@ -311,15 +311,13 @@ try {
     await settled("layout");
   }
 
+  const drawer = page.getByRole("region", { name: "Workspace drawer" });
+  const activityTab = drawer.getByRole("tab", { name: "Activity" });
+  const drawerToggle = drawer.getByRole("button", { name: "Workspace drawer" });
   for (const expanded of [true, false]) {
-    await page.getByRole("button", { name: "Activity", exact: true }).click();
-    assert.equal(
-      await page
-        .getByRole("button", { name: "Activity", exact: true })
-        .getAttribute("aria-expanded"),
-      String(expanded),
-    );
-    await page.locator(".activity-content").evaluate(async (element) => {
+    await (expanded ? activityTab : drawerToggle).click();
+    await expect(drawerToggle).toHaveAttribute("aria-expanded", String(expanded));
+    await drawer.locator(".workspace-drawer-content").evaluate(async (element) => {
       await Promise.allSettled(element.getAnimations().map((animation) => animation.finished));
     });
   }
@@ -334,8 +332,8 @@ try {
 
   await page.getByRole("button", { name: "Collapse working tree", exact: true }).click();
   await page.getByRole("button", { name: "Expand Working tree", exact: true }).click();
-  await page.getByRole("button", { name: "Activity", exact: true }).click();
-  await page.getByRole("button", { name: "Activity", exact: true }).click();
+  await activityTab.click();
+  await drawerToggle.click();
   assert.equal(await page.evaluate(() => window.__navigationProbes.length), beforeReduced);
   await page.getByRole("button", { name: "Unstaged file.txt, status M", exact: true }).click();
   await page.getByRole("button", { name: "Back to history", exact: true }).click();

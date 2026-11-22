@@ -245,7 +245,7 @@ try {
   assert.doesNotMatch(JSON.stringify(records), /private-test-secret/);
   assert.match(JSON.stringify(records), /redacted/);
 
-  await page.getByRole("button", { name: /^Activity/ }).click();
+  await page.getByRole("tab", { name: "Activity", exact: true }).click();
   await page.getByText("failed", { exact: true }).first().click();
   await page.getByText(/token=\[redacted\]/).waitFor();
 
@@ -257,10 +257,10 @@ try {
     `#!/bin/sh\necho "Waiting in fixture hook" >&2\n"${process.execPath.replaceAll("\\", "/")}" -e 'setTimeout(() => {}, 60000)'\n`,
     { mode: 0o755 },
   );
-  await page.getByRole("button", { name: /^Activity/ }).click();
+  await page.getByRole("button", { name: "Workspace drawer", exact: true }).click();
   await page.getByRole("button", { name: "Commit", exact: true }).click();
   await waitForOperation(page, "Commit", "running");
-  await page.getByRole("button", { name: /^Activity/ }).click();
+  await page.getByRole("tab", { name: "Activity", exact: true }).click();
   await page.getByText("running", { exact: true }).first().click();
   await page.getByText(/Waiting in fixture hook/).waitFor();
   await page.getByRole("button", { name: "Cancel operation", exact: true }).click();
@@ -274,7 +274,7 @@ try {
   assert.equal(await draft.inputValue(), "Keep failed draft");
 
   await mkdir("screenshots", { recursive: true });
-  await page.getByRole("button", { name: /^Activity/ }).click();
+  await page.getByRole("button", { name: "Workspace drawer", exact: true }).click();
   await page.getByRole("button", { name: "Unstage file.txt", exact: true }).click();
   await writeFile(join(repository, "scratch.log"), "keep scratch bytes\0\r\n");
   await page.keyboard.press(`${process.platform === "darwin" ? "Meta" : "Control"}+r`);

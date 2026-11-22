@@ -870,6 +870,211 @@ html[data-custom-background="true"] .onboarding-shell {
   vector-effect: non-scaling-stroke;
 }
 
-.activity-content {
-  --collapse-size: min(16rem, 40vh);
+.workspace-drawer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-inset);
+}
+
+.workspace-drawer > header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-inline: var(--space-2);
+}
+
+.workspace-drawer > header > [role="tablist"] {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.workspace-drawer > header > [role="status"] {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.workspace-drawer > header > [role="status"] > :first-child {
+  flex-shrink: 0;
+  color: var(--accent-text);
+}
+
+.workspace-drawer > header > [role="status"] > :last-child {
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-drawer > header > button {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
+.workspace-drawer-content > [role="tabpanel"],
+.activity-log {
+  height: 100%;
+}
+
+.activity-log {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.activity-records {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.activity-records > details {
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+}
+
+.activity-records > details > summary {
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.workspace-drawer-content {
+  --collapse-size: min(24rem, 45vh);
+}
+
+.terminal-sessions {
+  display: grid;
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr) clamp(7rem, 22%, 13rem);
+  background: var(--bg-base);
+}
+
+.terminal-main,
+.terminal-sidebar {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.terminal-sidebar {
+  border-inline-start: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.terminal-tools,
+.terminal-session-tools {
+  display: flex;
+  min-height: 2.125rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  padding: 0.125rem var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+}
+
+.terminal-tools > input {
+  width: min(20rem, 100%);
+  min-width: 0;
+  margin-inline-end: auto;
+}
+
+.terminal-session-tools > span {
+  margin-inline-end: auto;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.terminal-session-list {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+
+.terminal-session-list > button {
+  width: 100%;
+  border: 0;
+}
+
+.terminal-session-list > button[aria-selected="true"],
+.terminal-tools button[aria-pressed="true"] {
+  background: var(--accent-muted);
+  color: var(--accent-text);
+}
+
+.terminal-session-list svg {
+  flex-shrink: 0;
+}
+
+.terminal-session-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-session-list + .terminal-session-tools {
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 0;
+}
+
+.terminal-suggestions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-inline: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.terminal-exit,
+.terminal-error {
+  overflow: auto;
+  max-height: 3rem;
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.terminal-error {
+  color: var(--git-deleted);
+}
+
+.terminal-output {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  margin: var(--space-2);
+  line-height: 1.35;
+  white-space: pre;
+}
+
+.terminal-output > div {
+  height: 1.35em;
+}
+
+.terminal-cursor {
+  position: absolute;
+  pointer-events: none;
+  inline-size: 1ch;
+  block-size: 1.35em;
+  background: currentColor;
+  opacity: 0.5;
+}
+
+.terminal-cursor[data-shape="bar"] {
+  inline-size: 2px;
+}
+
+.terminal-cursor[data-shape="underline"] {
+  block-size: 2px;
+  transform: translateY(1.242em);
 }

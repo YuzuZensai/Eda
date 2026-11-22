@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ok } from "@shared/errors";
 import type { OperationRecord } from "@shared/operations";
-import { ActivityPanel } from "@renderer/app/ActivityPanel";
+import { WorkspaceDrawer } from "@renderer/app/WorkspaceDrawer";
 import { useAppStore } from "@renderer/stores/app-store";
 
 let root: Root;
@@ -55,7 +55,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const bar = () => container.querySelector("button[aria-expanded]")!;
+const progress = () => container.querySelector('[role="status"]');
 
 const update = async () =>
   act(async () => {
@@ -64,17 +64,19 @@ const update = async () =>
   });
 
 it("shows current progress while collapsed, updates it, and clears it when finished", async () => {
-  await act(async () => root.render(<ActivityPanel />));
-  expect(bar().getAttribute("aria-expanded")).toBe("false");
-  expect(bar().textContent).toContain("Eda, save local changes for pull");
+  await act(async () => root.render(<WorkspaceDrawer />));
+  expect(container.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded")).toBe(
+    "false",
+  );
+  expect(progress()?.textContent).toContain("Eda, save local changes for pull");
   list.mockResolvedValue(ok([{ ...record, message: "apply stash" }]));
   await update();
-  expect(bar().textContent).toContain("Eda, apply stash");
+  expect(progress()?.textContent).toContain("Eda, apply stash");
 
   for (const state of ["succeeded", "failed", "interrupted"] as const) {
     list.mockResolvedValue(ok([{ ...record, state, cancellable: false }]));
     await update();
-    expect(bar().textContent).toBe("Activity");
+    expect(progress()).toBeNull();
     expect(container.textContent).toContain(state);
   }
 });
@@ -84,11 +86,11 @@ it("prioritizes progress for the selected repository when multiple operations ar
     ok([{ ...record, id: "other", repositoryId: "other", repositoryName: "Other" }, record]),
   );
 
-  await act(async () => root.render(<ActivityPanel />));
-  expect(bar().textContent).toContain("2 running");
-  expect(bar().textContent).toContain("Eda, save local changes for pull");
+  await act(async () => root.render(<WorkspaceDrawer />));
+  expect(progress()?.textContent).toContain("2 running");
+  expect(progress()?.textContent).toContain("Eda, save local changes for pull");
   await act(async () => useAppStore.setState({ selectedRepositoryId: "other" }));
-  expect(bar().textContent).toContain("Other, save local changes for pull");
+  expect(progress()?.textContent).toContain("Other, save local changes for pull");
 });
 
 it("does not overwrite fresh progress with a slower previous request", async () => {
@@ -100,11 +102,11 @@ it("does not overwrite fresh progress with a slower previous request", async () 
     }),
   );
 
-  await act(async () => root.render(<ActivityPanel />));
+  await act(async () => root.render(<WorkspaceDrawer />));
   list.mockResolvedValue(ok([{ ...record, message: "apply stash" }]));
   await update();
   await act(async () => finish(ok([record])));
-  expect(bar().textContent).toContain("Eda, apply stash");
+  expect(progress()?.textContent).toContain("Eda, apply stash");
 });
 
 it("shares progress loading with transfer dialogs and releases the last subscription", async () => {
@@ -114,7 +116,7 @@ it("shares progress loading with transfer dialogs and releases the last subscrip
   await act(async () =>
     root.render(
       <>
-        <ActivityPanel />
+        <WorkspaceDrawer />
         <TransferProgress repositoryId="repo" kindKey="operationTitles.pushBranch" />
       </>,
     ),
@@ -123,13 +125,13 @@ it("shares progress loading with transfer dialogs and releases the last subscrip
   expect(list).toHaveBeenCalledTimes(1);
   expect(subscribe).toHaveBeenCalledTimes(1);
 
-  await act(async () => root.render(<ActivityPanel />));
+  await act(async () => root.render(<WorkspaceDrawer />));
   expect(unsubscribe).not.toHaveBeenCalled();
 
   await act(async () => root.render(null));
   expect(unsubscribe).toHaveBeenCalledTimes(1);
 
-  await act(async () => root.render(<ActivityPanel />));
+  await act(async () => root.render(<WorkspaceDrawer />));
   expect(list).toHaveBeenCalledTimes(2);
   expect(subscribe).toHaveBeenCalledTimes(2);
 });

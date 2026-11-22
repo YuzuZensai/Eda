@@ -1,5 +1,5 @@
 import type { ReactNode, Ref } from "react";
-import { ActivityPanel } from "./ActivityPanel";
+import { WorkspaceDrawer } from "./WorkspaceDrawer";
 import { LayoutTransition, ViewTransition } from "../components/layout/ViewTransition";
 
 export function WorkspaceFrame({
@@ -25,7 +25,7 @@ export function WorkspaceFrame({
       >
         {children}
       </ViewTransition>
-      <ActivityPanel key={profileId} />
+      <WorkspaceDrawer key={profileId} profileId={profileId} settings={settings} />
     </LayoutTransition>
   );
 }

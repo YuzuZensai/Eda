@@ -108,7 +108,10 @@ export default defineConfig(async ({ command }) => {
       rolldownOptions: {
         output: {
           codeSplitting: {
-            groups: [{ name: "messages", test: /[\\/]shared[\\/]locales[\\/]/ }],
+            groups: [
+              { name: "messages", test: /[\\/]shared[\\/]locales[\\/]/ },
+              { name: "icons", test: /[\\/]lucide-react[\\/]/ },
+            ],
           },
         },
       },

@@ -169,7 +169,6 @@ export const COMPONENT_GROUPS: {
     group: "Application",
     directory: "app/",
     files: [
-      "ActivityPanel",
       "App",
       "AppErrorDialog",
       "AppNotices",
@@ -180,6 +179,7 @@ export const COMPONENT_GROUPS: {
       ["WindowControls", ["WindowControls", "WindowTitlebar"]],
       "Workspace",
       "WorkspaceDialogs",
+      "WorkspaceDrawer",
       "WorkspaceFrame",
     ],
   },
@@ -375,7 +375,7 @@ export const COMPONENT_GROUPS: {
       "RepositoryTrustButton",
       ["RepositoryTrustDialog", ["RepositoryTrustDialog", "RepositoryTrustPrompt"]],
       "SubmoduleTools",
-      "TerminalDialog",
+      "TerminalSessions",
       "WorktreesDialog",
     ],
   },
@@ -401,7 +401,13 @@ export const COMPONENT_GROUPS: {
   {
     group: "Settings/application",
     directory: "features/settings/application/",
-    files: ["AboutSettings", "ApplicationPreferences", "GraphicsSettings", "LanguageSettings"],
+    files: [
+      "AboutSettings",
+      "ApplicationPreferences",
+      "GraphicsSettings",
+      "LanguageSettings",
+      "TerminalSettings",
+    ],
   },
   {
     group: "Settings/debug",

@@ -15,6 +15,7 @@ import { VigilantModeSettings } from "./appearance/VigilantModeSettings";
 import { HistoryColumnsSettings } from "./appearance/HistoryColumnsSettings";
 import { AboutSettings } from "./application/AboutSettings";
 import { ApplicationPreferences } from "./application/ApplicationPreferences";
+import { TerminalSettings } from "./application/TerminalSettings";
 import { FailureSimulations } from "./debug/FailureSimulations";
 import { AppDataSettings } from "./debug/AppDataSettings";
 import { StateSimulations } from "./debug/StateSimulations";
@@ -86,6 +87,14 @@ export function SettingsContent({
       ) : (
         <p className="text-sm text-text-secondary">
           {t("settings.chooseAProfileToEditItsApplicationPreferences")}
+        </p>
+      );
+    case "terminal":
+      return profile ? (
+        <TerminalSettings key={profile.id} />
+      ) : (
+        <p className="text-sm text-text-secondary">
+          {t("settings.chooseAProfileToEditItsPreferences")}
         </p>
       );
     case "git":

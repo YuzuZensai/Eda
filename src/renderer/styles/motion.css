@@ -314,12 +314,12 @@ html[data-navigation-motion="back"] {
     visibility: visible;
   }
 
-  .activity-chevron,
+  .bottom-panel-chevron,
   .disclosure-chevron {
     transition: transform var(--duration-collapse) var(--ease-out);
   }
 
-  .activity-chevron[data-open="true"] {
+  .bottom-panel-chevron[data-open="true"] {
     transform: rotate(180deg);
   }
 

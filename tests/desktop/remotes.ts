@@ -527,7 +527,7 @@ try {
     clearTimeout(requestTimeout);
   }
 
-  await page.getByRole("button", { name: /^Activity/ }).click();
+  await page.getByRole("tab", { name: "Activity", exact: true }).click();
   const runningFetch = page
     .locator("details")
     .filter({ has: page.locator("summary", { hasText: /running.*Fetch remotes/ }) });
@@ -543,7 +543,7 @@ try {
     .filter({ hasText: /cancelled/ })
     .waitFor();
   await page.getByRole("button", { name: "Dismiss", exact: true }).click();
-  await page.getByRole("button", { name: /^Activity/ }).click();
+  await page.getByRole("button", { name: "Workspace drawer", exact: true }).click();
   hold = false;
 
   const records = await page.evaluate(() => window.eda.operations.list());
