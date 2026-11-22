@@ -267,7 +267,8 @@ try {
   await expect(terminalBackground).not.toHaveCSS("background-color", transparent);
   await expect(sessionSidebar).not.toHaveCSS("background-color", transparent);
 
-  await page.keyboard.type("echo desktop-terminal > terminal-proof.txt");
+  const proofCommand = "echo desktop-terminal > terminal-proof.txt";
+  await page.keyboard.type(proofCommand);
   await page.keyboard.press("Enter");
   await expect.poll(() => existsSync(join(repository, "terminal-proof.txt"))).toBe(true);
   assert.equal(
@@ -282,13 +283,17 @@ try {
   await expect(completion).toBeFocused();
   await completion.fill("git sta");
   await button(terminal, "git status").click();
-  await surface.press("Enter");
-  await expect(surface).toContainText("On branch develop");
   await expect(completion).toBeHidden();
+  await expect(surface).toBeFocused();
+  await expect(surface).toContainText("git status");
+  await surface.press("Enter");
+
   await button(terminal, "Find in scrollback").click();
   await expect(search).toBeFocused();
+  await search.fill("On branch develop");
+  await expect(surface).toContainText("On branch develop");
   await search.fill("desktop-terminal");
-  await expect(surface).toContainText("terminal-proof.txt");
+  await expect(surface).toContainText(proofCommand);
   await search.press("Escape");
   await expect(search).toBeHidden();
   await expect(surface).toBeFocused();
