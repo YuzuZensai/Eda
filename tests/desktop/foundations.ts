@@ -43,7 +43,9 @@ const git = (...args: string[]) =>
 git("init", "-b", "main");
 await writeFile(join(repository, "file.txt"), "initial\n");
 git("add", ".");
-git("commit", "-m", "Initial");
+const initialMessage =
+  "Initial\n\nSet up the repository.\n\nSigned-off-by: Eda <test@eda.invalid>\n";
+git("commit", "-m", initialMessage);
 
 const head = git("rev-parse", "HEAD").trim();
 
@@ -116,6 +118,49 @@ try {
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await finishOnboarding(page);
   await page.getByRole("button", { name: "Inspect branch feature/work", exact: true }).waitFor();
+
+  const initialCommit = page
+    .getByTestId("commit-graph")
+    .getByRole("button", { name: /^Initial\./ });
+  await initialCommit.click({ button: "right" });
+  const commitMenu = page.getByRole("menu", { name: "Commit actions", exact: true });
+  const copyTrigger = commitMenu.getByRole("menuitem", { name: "Copy", exact: true });
+  const copyMenu = page.getByRole("menu", { name: "Copy", exact: true });
+  const copySha = copyMenu.getByRole("menuitem", { name: "Commit SHA", exact: true });
+  await expect(copyMenu).toHaveCount(0);
+  await copyTrigger.hover();
+  await expect(copyMenu).toBeVisible();
+  await copySha.hover();
+  await expect(commitMenu).toBeVisible();
+  await expect(copySha).toBeVisible();
+
+  await copyTrigger.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(copySha).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(copyMenu.getByRole("menuitem", { name: "Commit browser URL" })).toBeFocused();
+  await page.keyboard.press("ArrowLeft");
+  await expect(copyMenu).toHaveCount(0);
+  await expect(copyTrigger).toBeFocused();
+
+  const previousClipboard = await app.evaluate(({ clipboard }) => clipboard.readText());
+  try {
+    await copyTrigger.hover();
+    await copySha.click();
+    await expect(commitMenu).toHaveCount(0);
+    await expect(copyMenu).toHaveCount(0);
+    assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), head);
+
+    await initialCommit.click({ button: "right" });
+    await copyTrigger.press("ArrowRight");
+    await copyMenu.getByRole("menuitem", { name: "Commit message", exact: true }).click();
+    await expect(commitMenu).toHaveCount(0);
+    await expect(copyMenu).toHaveCount(0);
+    assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), initialMessage);
+  } finally {
+    await app.evaluate(({ clipboard }, value) => clipboard.writeText(value), previousClipboard);
+  }
+
   const checkpointRow = page
     .getByTestId("commit-graph")
     .getByText("Internal checkpoint", { exact: true });
@@ -203,7 +248,11 @@ try {
   await page
     .getByRole("button", { name: "Inspect tag v1", exact: true })
     .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Verify tag signature...", exact: true }).click();
+  const tagActions = page.getByRole("menu", { name: "Tag actions", exact: true });
+  await tagActions.getByRole("menuitem", { name: "Copy", exact: true }).hover();
+  await expect(copyMenu.getByRole("menuitem")).toHaveText(["Name", "SHA", "Browser URL"]);
+  await tagActions.getByRole("menuitem", { name: "Verify tag signature...", exact: true }).click();
+  await expect(copyMenu).toHaveCount(0);
   await page
     .getByRole("dialog", { name: "Verify tag" })
     .getByText("Release annotation", { exact: true })
@@ -796,6 +845,16 @@ try {
   await squashPage
     .getByRole("button", { name: "Unstaged file.txt, status M", exact: true })
     .click({ button: "right" });
+  const fileActions = squashPage.getByRole("menu", { name: "Working file actions", exact: true });
+  const copyFile = fileActions.getByRole("menuitem", { name: "Copy", exact: true });
+  await copyFile.press("ArrowRight");
+  const fileCopyMenu = squashPage.getByRole("menu", { name: "Copy", exact: true });
+  await expect(
+    fileCopyMenu.getByRole("menuitem", { name: "File path", exact: true }),
+  ).toBeFocused();
+  await squashPage.keyboard.press("Escape");
+  await expect(fileCopyMenu).toHaveCount(0);
+  await expect(copyFile).toBeFocused();
   await expect(
     squashPage.getByRole("menuitem", { name: "Discard selected changes...", exact: true }),
   ).toHaveCSS("color", dangerColor);

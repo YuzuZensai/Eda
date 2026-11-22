@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ComponentPropsWithRef, ReactNode } from "react";
+import type { ComponentPropsWithRef, ReactNode } from "react";
 import { cx } from "../cx";
 import { ButtonBase } from "./ButtonBase";
 
@@ -41,7 +41,7 @@ export function ListItemButton({
 export function MenuItem({
   danger,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
+}: ComponentPropsWithRef<"button"> & {
   children: ReactNode;
   danger?: boolean | undefined;
 }) {

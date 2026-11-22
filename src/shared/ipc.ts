@@ -452,6 +452,7 @@ export interface EdaApi {
     respondTrust(id: string, trust: boolean): Promise<Result<void>>;
     referenceUrl(id: string, kind: ReferenceLinkKind, name: string): Promise<Result<string | null>>;
     previewCommit(id: string): Promise<Result<CommitPreview>>;
+    commitMessage(id: string, oid: string): Promise<Result<string>>;
     inspectCommit(
       id: string,
       oid: string,
@@ -799,6 +800,7 @@ export const IPC_CHANNELS = {
   repositoryReferenceUrl: "repository:referenceUrl",
   repositoryPreviewCommit: "repository:previewCommit",
   repositoryForgetRecovery: "repository:forgetRecovery",
+  repositoryCommitMessage: "repository:commitMessage",
   repositoryInspectCommit: "repository:inspectCommit",
   repositoryDiscoverSigningKey: "repository:discoverSigningKey",
   repositoryForgetSigningKey: "repository:forgetSigningKey",

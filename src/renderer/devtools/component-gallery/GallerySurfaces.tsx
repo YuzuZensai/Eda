@@ -7,10 +7,11 @@ import {
   NoticeBanner,
   FolderIcon,
   MenuItem,
+  MenuSubmenu,
   AnchoredPopover,
   RefreshIcon,
 } from "../../components/ui/index";
-import { Trash2Icon } from "../../components/ui/icons";
+import { CopyIcon, LinkIcon, Trash2Icon } from "../../components/ui/icons";
 import {
   ModalDescription,
   ModalSurface,
@@ -72,6 +73,13 @@ export function GallerySurfaces({ setFeedback }: { setFeedback: (message: string
                   <FolderIcon size={14} />
                   {t("settings.componentGallery.unavailableAction")}
                 </MenuItem>
+
+                <MenuSubmenu label={t("common.copy")} icon={<CopyIcon size={14} aria-hidden />}>
+                  <MenuItem onClick={selectMenuItem}>
+                    <LinkIcon size={14} aria-hidden />
+                    {t("commitMenu.commitBrowserUrl")}
+                  </MenuItem>
+                </MenuSubmenu>
 
                 <MenuItem danger onClick={selectMenuItem}>
                   <Trash2Icon size={14} />

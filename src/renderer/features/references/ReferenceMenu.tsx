@@ -14,11 +14,13 @@ import {
   CopyIcon as Copy,
   DownloadIcon as Download,
   BranchIcon as GitBranch,
+  GitCommitHorizontalIcon,
   GitMergeIcon as GitMerge,
   GitPullRequestArrowIcon as GitPullRequestArrow,
   LinkIcon as Link,
   PencilIcon as Pencil,
   ShieldCheckIcon as ShieldCheck,
+  TagIcon,
   Trash2Icon as Trash2,
   UploadIcon as Upload,
 } from "../../components/ui/icons";
@@ -36,6 +38,7 @@ import {
   Field,
   Input,
   MenuItem,
+  MenuSubmenu,
 } from "../../components/ui/index";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { copyText } from "../../utils/clipboard";
@@ -106,6 +109,7 @@ export function ReferenceMenu({
   }, [mode]);
 
   const blocked = target.kind === "branch" && !!target.ref.worktreePath && !target.ref.isHead;
+  const ReferenceIcon = target.kind === "branch" ? GitBranch : TagIcon;
   const close = () => {
     if (!running.current && !deleteRunning.current && !tagFetch.busy) onClose();
   };
@@ -293,60 +297,62 @@ export function ReferenceMenu({
             </>
           )}
 
-          <MenuItem onClick={() => void run(() => copyText(target.ref.name), { write: false })}>
-            <Copy size={13} />
-            {t("referenceMenu.copyName")}
-          </MenuItem>
+          <MenuSubmenu label={t("common.copy")} icon={<Copy size={13} aria-hidden="true" />}>
+            <MenuItem onClick={() => void run(() => copyText(target.ref.name), { write: false })}>
+              <ReferenceIcon size={13} aria-hidden="true" />
+              {t("common.name")}
+            </MenuItem>
 
-          <MenuItem
-            onClick={() =>
-              void run(
-                () =>
-                  copyText(
-                    target.kind === "tag" ? (target.remoteOid ?? target.ref.oid) : target.ref.oid,
-                  ),
-                { write: false },
-              )
-            }
-          >
-            <Copy size={13} />
-            {t("referenceMenu.copySha")}
-          </MenuItem>
+            <MenuItem
+              onClick={() =>
+                void run(
+                  () =>
+                    copyText(
+                      target.kind === "tag" ? (target.remoteOid ?? target.ref.oid) : target.ref.oid,
+                    ),
+                  { write: false },
+                )
+              }
+            >
+              <GitCommitHorizontalIcon size={13} aria-hidden="true" />
+              {t("referenceMenu.sha")}
+            </MenuItem>
 
-          <MenuItem
-            onClick={() =>
-              void run(
-                async () => {
-                  const url =
-                    target.kind === "tag" && target.remoteName
-                      ? referenceLink(
-                          requireResult(
-                            await window.eda.remotes.inspect(repositoryId),
-                          ).remotes.find((remote) => remote.name === target.remoteName)
-                            ?.pushUrls[0] ?? "",
-                          "tag",
-                          target.ref.name,
-                        )
-                      : requireResult(
-                          await window.eda.repository.referenceUrl(
-                            repositoryId,
-                            target.kind === "branch" && target.ref.remote
-                              ? "remote-branch"
-                              : target.kind,
+            <MenuItem
+              onClick={() =>
+                void run(
+                  async () => {
+                    const url =
+                      target.kind === "tag" && target.remoteName
+                        ? referenceLink(
+                            requireResult(
+                              await window.eda.remotes.inspect(repositoryId),
+                            ).remotes.find((remote) => remote.name === target.remoteName)
+                              ?.pushUrls[0] ?? "",
+                            "tag",
                             target.ref.name,
-                          ),
-                        );
+                          )
+                        : requireResult(
+                            await window.eda.repository.referenceUrl(
+                              repositoryId,
+                              target.kind === "branch" && target.ref.remote
+                                ? "remote-branch"
+                                : target.kind,
+                              target.ref.name,
+                            ),
+                          );
 
-                  if (!url) throw new AppError(ERROR_CODE.REMOTE_BROWSER_URL_UNAVAILABLE);
-                  await copyText(url);
-                },
-                { write: false },
-              )
-            }
-          >
-            <Link size={13} />
-            {t("referenceMenu.copyBrowserUrl")}
-          </MenuItem>
+                    if (!url) throw new AppError(ERROR_CODE.REMOTE_BROWSER_URL_UNAVAILABLE);
+                    await copyText(url);
+                  },
+                  { write: false },
+                )
+              }
+            >
+              <Link size={13} aria-hidden="true" />
+              {t("referenceMenu.browserUrl")}
+            </MenuItem>
+          </MenuSubmenu>
 
           {target.kind === "tag" && (
             <>

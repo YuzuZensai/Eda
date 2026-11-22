@@ -175,6 +175,7 @@
   "operations.pushSource": "push source",
   "operations.readBranchConfiguration": "read branch configuration",
   "operations.readCommitDiff": "read commit diff",
+  "operations.readCommitMessage": "read commit message",
   "operations.readConflictVersion": "read conflict version",
   "operations.readCredentialVault": "read credential vault",
   "operations.readGitConfiguration": "read Git configuration",

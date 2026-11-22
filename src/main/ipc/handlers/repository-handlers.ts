@@ -480,6 +480,15 @@ export function registerRepositoryHandlers(services: Services): void {
     );
   });
 
+  handle(IPC_CHANNELS.repositoryCommitMessage, async (_e, id, oid) =>
+    ok(
+      await services.repositoryReader.commitMessage(
+        requireId(id),
+        requireString(oid, t("fields.commitObjectId"), 64),
+      ),
+    ),
+  );
+
   handle(IPC_CHANNELS.repositoryInspectCommit, async (_e, id, oid, refreshSignature) => {
     if (refreshSignature !== undefined && typeof refreshSignature !== "boolean")
       throw invalidRequest(

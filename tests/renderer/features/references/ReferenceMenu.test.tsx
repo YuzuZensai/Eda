@@ -655,11 +655,13 @@ it("retries HTTPS remote deletion with supplied credentials without deleting loc
 });
 
 it.each([
-  ["Copy name", local.name],
-  ["Copy SHA", local.oid],
-  ["Copy browser URL", "https://github.com/example/repo/tree/feature/topic"],
-])("copies %s through the native clipboard and closes the menu", async (label, value) => {
+  ["Name", local.name],
+  ["SHA", local.oid],
+  ["Browser URL", "https://github.com/example/repo/tree/feature/topic"],
+])("copies the branch %s from the Copy submenu and closes the menu", async (label, value) => {
   await render();
+  expect(button(label)).toBeUndefined();
+  await click("Copy");
   await click(label);
   expect(copyText).toHaveBeenCalledExactlyOnceWith(value);
   expect(close).toHaveBeenCalledOnce();
@@ -669,7 +671,8 @@ it.each([
 it("shows a dismissible dialog instead of raw clipboard diagnostics in the menu", async () => {
   copyText.mockRejectedValueOnce(new Error("Write permission denied"));
   await render();
-  await click("Copy name");
+  await click("Copy");
+  await click("Name");
   expect(close).not.toHaveBeenCalled();
 
   expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toBe(
@@ -679,7 +682,7 @@ it("shows a dismissible dialog instead of raw clipboard diagnostics in the menu"
   expect(document.body.textContent).not.toContain("Write permission denied");
   await click("Dismiss");
   expect(document.querySelector('[role="dialog"]')).toBeNull();
-  await click("Copy name");
+  await click("Name");
   expect(close).toHaveBeenCalledOnce();
 });
 
@@ -1033,7 +1036,9 @@ it("disables actions requiring a local copy for remote-only tags and deletes rem
 
 it("copies the actual remote tag object ID when its local copy differs", async () => {
   await renderTag({ remoteName: "upstream", remoteOid: "b".repeat(40) });
-  await click("Copy SHA");
+  expect(button("SHA")).toBeUndefined();
+  await click("Copy");
+  await click("SHA");
   expect(copyText).toHaveBeenCalledWith("b".repeat(40));
 });
 

@@ -278,6 +278,7 @@ const api: EdaApi = {
     previewCommit: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositoryPreviewCommit, id),
     forgetRecovery: (id, snapshot) =>
       ipcRenderer.invoke(IPC_CHANNELS.repositoryForgetRecovery, id, snapshot),
+    commitMessage: (id, oid) => ipcRenderer.invoke(IPC_CHANNELS.repositoryCommitMessage, id, oid),
     inspectCommit: (id, oid, refreshSignature) =>
       ipcRenderer.invoke(IPC_CHANNELS.repositoryInspectCommit, id, oid, refreshSignature),
     discoverSigningKey: (id, oid, request) =>

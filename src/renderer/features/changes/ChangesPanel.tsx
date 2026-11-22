@@ -8,6 +8,7 @@ import {
   CopyIcon as Copy,
   DiffIcon as FileDiff,
   EyeOffIcon as EyeOff,
+  FileIcon,
   HistoryIcon as History,
   MinusIcon as Minus,
   PackageCheckIcon as PackageCheck,
@@ -26,6 +27,7 @@ import {
   ErrorDialog,
   IconButton,
   MenuItem,
+  MenuSubmenu,
   TreeIcon,
 } from "../../components/ui/index";
 import { WorkingFileDialog } from "./WorkingFileDialog";
@@ -603,18 +605,20 @@ export function ChangesPanel({
             </MenuItem>
           )}
 
-          <MenuItem
-            onClick={() => {
-              void copyText(menu.change.path).catch(() =>
-                setCopyError(t("copyButton.clipboardCopyFailed")),
-              );
+          <MenuSubmenu label={t("common.copy")} icon={<Copy size={14} aria-hidden="true" />}>
+            <MenuItem
+              onClick={() => {
+                void copyText(menu.change.path).catch(() =>
+                  setCopyError(t("copyButton.clipboardCopyFailed")),
+                );
 
-              setMenu(null);
-            }}
-          >
-            <Copy size={14} />
-            {t("changesPanel.copyFilePath")}
-          </MenuItem>
+                setMenu(null);
+              }}
+            >
+              <FileIcon size={14} aria-hidden="true" />
+              {t("changesPanel.filePath")}
+            </MenuItem>
+          </MenuSubmenu>
         </ContextPopover>
       )}
 

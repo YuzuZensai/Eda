@@ -31,6 +31,7 @@ export interface PopoverSurfaceProps extends Omit<HTMLAttributes<HTMLDivElement>
   surfaceRef?: RefObject<HTMLDivElement | null>;
   returnFocusRef?: RefObject<HTMLElement | null>;
   triggerRef?: RefObject<HTMLElement | null>;
+  autoFocus?: boolean;
   children: ReactNode;
 }
 
@@ -41,6 +42,7 @@ export function PopoverSurface({
   surfaceRef,
   returnFocusRef,
   triggerRef,
+  autoFocus,
   className,
   children,
   ...props
@@ -50,7 +52,7 @@ export function PopoverSurface({
   const scope = interactionRef ?? root;
 
   useOverlayPresence();
-  useMenuKeyboard(scope, role === "menu", onClose, returnFocusRef, triggerRef);
+  useMenuKeyboard(scope, role === "menu", onClose, returnFocusRef, triggerRef, autoFocus);
   useDismiss(scope, role === "dialog", onClose, returnFocusRef, triggerRef);
 
   return (

@@ -110,6 +110,10 @@ export function createDemo() {
     commitSignature: async () => ok(UNSIGNED_COMMIT_SIGNATURE),
     workingDiff: async () => ok(demoDiff),
     commitDiff: async () => ok(demoDiff),
+    commitMessage: async (_id, oid) => {
+      const { subject, body } = commits.find((commit) => commit.oid === oid) ?? commits[0]!;
+      return ok(body ? `${subject}\n\n${body}` : subject);
+    },
     inspectCommit: async (_id, oid) =>
       ok({
         commit: commits.find((c) => c.oid === oid) ?? commits[0]!,

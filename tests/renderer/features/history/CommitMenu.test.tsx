@@ -146,3 +146,43 @@ it("exports the right-clicked commit even when a different commit is selected", 
   expect(exportPatch).toHaveBeenCalledExactlyOnceWith({ repositoryId: "repo", oid });
   expect(close).toHaveBeenCalledOnce();
 });
+
+it.each(["Commit SHA", "Commit browser URL", "Commit message"] as const)(
+  "copies the right-clicked commit's %s from the Copy submenu",
+  async (label) => {
+    const oid = "b".repeat(40);
+    const url = `https://github.com/owner/repo/commit/${oid}`;
+    const message = "Subject line\nContinued subject\n\nBody paragraph.\n";
+    const values = { "Commit SHA": oid, "Commit browser URL": url, "Commit message": message };
+    const copyText = vi.fn(async () => ok(undefined));
+    const referenceUrl = vi.fn(async () => ok(url));
+    const commitMessage = vi.fn(async () => ok(message));
+    vi.stubGlobal("eda", { app: { copyText }, repository: { referenceUrl, commitMessage } });
+    useRepositoryStore.setState({ selection: { kind: "commit", oid: "a".repeat(40) } });
+
+    await act(async () =>
+      root.render(<CommitMenu target={{ oid, x: 20, y: 20 }} onClose={close} />),
+    );
+
+    const item = (name: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (button) => button.textContent === name,
+      );
+    expect(item("Commit SHA")).toBeUndefined();
+    expect(item("Commit browser URL")).toBeUndefined();
+    expect(item("Commit message")).toBeUndefined();
+    expect(commitMessage).not.toHaveBeenCalled();
+
+    await act(async () => item("Copy")!.click());
+    await act(async () => item(label)!.click());
+
+    expect(copyText).toHaveBeenCalledExactlyOnceWith(values[label]);
+    if (label === "Commit browser URL") {
+      expect(referenceUrl).toHaveBeenCalledExactlyOnceWith("repo", "commit", oid);
+    }
+    if (label === "Commit message") {
+      expect(commitMessage).toHaveBeenCalledExactlyOnceWith("repo", oid);
+    }
+    expect(close).toHaveBeenCalledOnce();
+  },
+);

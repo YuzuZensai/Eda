@@ -6,7 +6,7 @@ import { ChangesPanel } from "@renderer/features/changes/ChangesPanel";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
 import { useSessionStore } from "@renderer/stores/session-store";
 
-it("targets the right-clicked file, confirms discard, and dismisses menus on repository switches", async () => {
+it("copies and stages the right-clicked file, confirms discard, and dismisses menus on repository switches", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
   const previewDiscard = vi.fn(async () => ({
@@ -21,8 +21,9 @@ it("targets the right-clicked file, confirms discard, and dismisses menus on rep
   }));
 
   const applyDiscard = vi.fn();
+  const copyText = vi.fn(async () => ({ ok: true, value: undefined }));
 
-  vi.stubGlobal("eda", { repository: { previewDiscard, applyDiscard } });
+  vi.stubGlobal("eda", { app: { copyText }, repository: { previewDiscard, applyDiscard } });
 
   const previous = useRepositoryStore.getState();
   const session = useSessionStore.getState();
@@ -69,6 +70,13 @@ it("targets the right-clicked file, confirms discard, and dismisses menus on rep
     });
     await act(async () => root.render(<ChangesPanel />));
     await open();
+    expect(action("File path")).toBeUndefined();
+    await act(async () => action("Copy").click());
+    await act(async () => action("File path").click());
+    expect(copyText).toHaveBeenCalledExactlyOnceWith("file.txt");
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+
+    await open();
     await act(async () => action("Stage").click());
     expect(stage).toHaveBeenCalledWith(["file.txt"]);
 
@@ -94,6 +102,7 @@ it("targets the right-clicked file, confirms discard, and dismisses menus on rep
 
     await act(async () => close.click());
     await open();
+    await act(async () => action("Copy").click());
     await act(async () => useRepositoryStore.setState({ repositoryId: "other" }));
     expect(document.querySelector('[role="menu"]')).toBeNull();
 

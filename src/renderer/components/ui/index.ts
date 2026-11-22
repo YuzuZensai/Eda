@@ -47,6 +47,7 @@ export { TextButton } from "./actions/TextButton";
 export { ExternalLinkButton } from "./actions/ExternalLinkButton";
 export { RadioCard } from "./forms/RadioCard";
 export { ListItemButton, MenuItem } from "./actions/ListItemButton";
+export { MenuSubmenu } from "./actions/MenuSubmenu";
 export { TabTrigger } from "./display/TabTrigger";
 export { WindowControlButton } from "./actions/WindowControlButton";
 export { ProfileButton } from "./actions/ProfileButton";

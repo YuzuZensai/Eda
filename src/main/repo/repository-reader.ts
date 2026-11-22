@@ -35,6 +35,7 @@ export class RepositoryReader {
       | "readConfig"
       | "ignoredFiles"
       | "commitTemplate"
+      | "commitMessage"
       | "exec"
       | "compareDiff"
       | "filePatch"
@@ -96,6 +97,14 @@ export class RepositoryReader {
     const repository = this.repositories.resolveActiveRepository(repositoryId);
 
     return this.git.commitTemplate(repository.path);
+  }
+
+  commitMessage(repositoryId: string, oid: string) {
+    return this.readRepository(
+      repositoryId,
+      (root) => this.git.commitMessage(root, oid),
+      t("operations.readCommitMessage"),
+    );
   }
 
   mailboxPatch(id: string, oid: string, after?: string) {
@@ -232,7 +241,11 @@ export class RepositoryReader {
     );
   }
 
-  private async readRepository<T>(repositoryId: string, read: (root: string) => Promise<T>) {
+  private async readRepository<T>(
+    repositoryId: string,
+    read: (root: string) => Promise<T>,
+    operation = t("operations.compareRevisions"),
+  ) {
     const repository = this.repositories.resolveActiveRepository(repositoryId);
     const result = await read(repository.path);
     const current = this.repositories.resolveActiveRepository(repositoryId);
@@ -240,7 +253,7 @@ export class RepositoryReader {
     if (current.identityId !== repository.identityId || current.path !== repository.path)
       throw new GitError({
         kind: "invalid-input",
-        operation: t("operations.compareRevisions"),
+        operation,
         message: errorText("main.repositoryManager.theRepositoryChangedRefreshAndTryAgain"),
       });
     return result;

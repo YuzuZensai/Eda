@@ -16,6 +16,7 @@ export const COMPONENT_GROUPS: {
       ["actions/DialogActions", ["DialogActions", "ReviewActions"]],
       "actions/ExternalLinkButton",
       ["actions/ListItemButton", ["ListItemButton", "MenuItem"]],
+      "actions/MenuSubmenu",
       "actions/ProfileButton",
       "actions/TextButton",
       "actions/WindowControlButton",

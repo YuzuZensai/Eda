@@ -28,6 +28,7 @@ function setup() {
     readConfig: vi.fn(async (): Promise<string | undefined> => "https://github.com/owner/repo.git"),
     ignoredFiles: vi.fn(async (): Promise<string[]> => []),
     commitTemplate: vi.fn(async (): Promise<string | null> => "Subject\n\n# Details\n"),
+    commitMessage: vi.fn<GitService["commitMessage"]>(),
   };
   const instances = vi.fn((_profileId: string): readonly string[] => []);
 

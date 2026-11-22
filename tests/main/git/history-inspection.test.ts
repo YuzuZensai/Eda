@@ -5,6 +5,25 @@ import { SshService } from "@main/ssh/ssh-service";
 import { NodeProcessRunner } from "@main/git/execution/node-process-runner";
 
 describe("history visibility and inspection", () => {
+  it("reads the original commit message with line breaks and trailers intact", async () => {
+    const repo = await createTempRepo();
+
+    try {
+      const message =
+        "Subject line\nContinued subject\n\nBody paragraph.\n\nSigned-off-by: Eda <test@eda.invalid>\n";
+      await repo.writeFile("file.txt", "base\n");
+      await repo.commit(message);
+      const oid = (await repo.run(["rev-parse", "HEAD"])).trim();
+      const tree = (await repo.run(["rev-parse", "HEAD^{tree}"])).trim();
+      await repo.run(["notes", "add", "-m", "Separate Git note", oid]);
+
+      expect(await repo.git.commitMessage(repo.path, oid)).toBe(message);
+      await expect(repo.git.commitMessage(repo.path, tree)).rejects.toThrow();
+    } finally {
+      await repo.cleanup();
+    }
+  });
+
   it("filters by a reference even when a working-tree path has the same name", async () => {
     const repo = await createTempRepo();
 

@@ -669,6 +669,26 @@ export class GitService {
     return { commits, nextOffset: hasMore ? offset + limit : null };
   }
 
+  async commitMessage(path: string, oid: string): Promise<string> {
+    const operation = t("operations.readCommitMessage");
+    assertFullObjectId(oid, operation);
+
+    const { stdoutBytes } = await this.exec(
+      [
+        "show",
+        "-s",
+        "--no-notes",
+        "--no-show-signature",
+        "--encoding=UTF-8",
+        "--format=format:%B",
+        `${oid}^{commit}`,
+        "--",
+      ],
+      { cwd: path, operation, maxStdoutBytes: 1024 * 1024 },
+    );
+    return stdoutBytes.toString("utf8");
+  }
+
   async inspectCommit(
     path: string,
     oid: string,

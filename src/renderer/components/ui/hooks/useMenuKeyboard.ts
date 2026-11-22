@@ -1,11 +1,31 @@
 import { useEffect, useRef, type RefObject } from "react";
 
+const MENU = '[role="menu"]';
+
+function parentMenu(menu: Element): Element | null {
+  const id = menu.getAttribute("aria-labelledby");
+  const trigger = id && document.getElementById(id);
+
+  return trigger && trigger.getAttribute("aria-controls") === menu.id
+    ? trigger.closest(MENU)
+    : null;
+}
+
+function isInMenuTree(menu: HTMLElement, target: Element): boolean {
+  for (let current = target.closest(MENU); current; current = parentMenu(current)) {
+    if (current === menu) return true;
+  }
+
+  return menu.contains(target);
+}
+
 export function useMenuKeyboard(
   ref: RefObject<HTMLElement | null>,
   active: boolean,
   onDismiss: () => void,
   returnFocusRef?: RefObject<HTMLElement | null>,
   triggerRef?: RefObject<HTMLElement | null>,
+  autoFocus = true,
 ): void {
   const dismiss = useRef(onDismiss);
 
@@ -23,29 +43,38 @@ export function useMenuKeyboard(
         (item) => !item.matches(":disabled, [aria-disabled='true']"),
       );
 
-    items()[0]?.focus();
+    if (autoFocus) items()[0]?.focus();
 
     const onPointerDown = (event: PointerEvent) => {
+      const menu = ref.current;
+      const target = event.target;
+
       if (
-        !ref.current?.contains(event.target as Node) &&
-        !(triggerRef ?? returnFocusRef)?.current?.contains(event.target as Node)
+        menu &&
+        target instanceof Element &&
+        !isInMenuTree(menu, target) &&
+        !(triggerRef ?? returnFocusRef)?.current?.contains(target)
       )
         dismiss.current();
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!ref.current?.contains(event.target as Node)) return;
+      const menu = ref.current;
+      const target = event.target;
+      if (!menu || !(target instanceof Element)) return;
 
-      if (event.key === "Escape") {
+      if (event.key === "Tab") {
+        if (isInMenuTree(menu, target)) dismiss.current();
+        return;
+      }
+
+      if (!menu.contains(target) || target.closest(MENU) !== menu) return;
+
+      if (event.key === "Escape" || (event.key === "ArrowLeft" && parentMenu(menu))) {
         event.preventDefault();
         event.stopPropagation();
         dismiss.current();
         opener?.focus();
-        return;
-      }
-
-      if (event.key === "Tab") {
-        dismiss.current();
         return;
       }
 
@@ -80,5 +109,5 @@ export function useMenuKeyboard(
       document.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown, { capture: true });
     };
-  }, [active, ref, returnFocusRef, triggerRef]);
+  }, [active, ref, returnFocusRef, triggerRef, autoFocus]);
 }

@@ -1,10 +1,11 @@
 import { errorText } from "@shared/error-codes";
-import { errorMessage, type Result } from "@shared/errors";
+import { AppError, errorMessage, type Result } from "@shared/errors";
 import { t } from "@shared/i18n";
 import {
   CherryIcon as Cherry,
   CopyIcon as Copy,
   DiffIcon,
+  FileIcon,
   FolderGit2Icon,
   DownloadIcon,
   PencilIcon,
@@ -30,6 +31,7 @@ import {
   ErrorDialog,
   Input,
   MenuItem,
+  MenuSubmenu,
   ContextPopover,
   Textarea,
 } from "../../components/ui/index";
@@ -178,10 +180,10 @@ export function CommitMenu({
   if (mode === "merge")
     return <MergeStartDialog repositoryId={repositoryId} source={target.oid} onClose={onClose} />;
 
-  const run = async (work: () => Promise<Result<unknown>>) => {
+  const run = async (work: () => Promise<Result<unknown>>, { write = true } = {}) => {
     if (submitting.current) return;
 
-    if (commandUnavailable) {
+    if (write && commandUnavailable) {
       setError(commandUnavailable);
       return;
     }
@@ -194,12 +196,16 @@ export function CommitMenu({
       const result = await work();
 
       if (!result.ok) {
-        setError(errorMessage(result.error, errorText("commitMenu.thatDidNotWork")));
+        setError(
+          errorMessage(result.error, write ? errorText("commitMenu.thatDidNotWork") : undefined),
+        );
         return;
       }
 
-      await refresh();
+      if (write) await refresh();
       onClose();
+    } catch (failure) {
+      setError(errorMessage(failure));
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -335,60 +341,77 @@ export function CommitMenu({
 
           <MenuItem
             disabled={busy}
-            onClick={async () => {
-              if (submitting.current) return;
-              submitting.current = true;
-              setBusy(true);
-              try {
-                const result = await window.eda.repository.exportPatch({
-                  repositoryId,
-                  oid: target.oid,
-                });
-                if (result.ok) onClose();
-                else setError(errorMessage(result.error));
-              } catch (failure) {
-                setError(errorMessage(failure));
-              } finally {
-                submitting.current = false;
-                setBusy(false);
-              }
-            }}
+            onClick={() =>
+              void run(() => window.eda.repository.exportPatch({ repositoryId, oid: target.oid }), {
+                write: false,
+              })
+            }
           >
             <DownloadIcon size={13} aria-hidden="true" />
             {t("patch.commit")}
           </MenuItem>
 
-          <MenuItem
-            onClick={() =>
-              void copyText(target.oid)
-                .then(onClose)
-                .catch(() => setError(t("commitMenu.theCommitIdCouldNotBeCopied")))
-            }
-          >
-            <Copy size={13} className="shrink-0" aria-hidden="true" />
-            {t("commitMenu.copyCommitSha")}
-          </MenuItem>
-
-          <MenuItem
-            onClick={async () => {
-              const result = await window.eda.repository.referenceUrl(
-                repositoryId,
-                "commit",
-                target.oid,
-              );
-
-              if (!result.ok) setError(errorMessage(result.error));
-              else if (!result.value)
-                setError(t("commitMenu.noSupportedBrowserUrlIsAvailableForTheDefaultRemote"));
-              else
-                await copyText(result.value)
+          <MenuSubmenu label={t("common.copy")} icon={<Copy size={13} aria-hidden="true" />}>
+            <MenuItem
+              disabled={busy}
+              onClick={() =>
+                void copyText(target.oid)
                   .then(onClose)
-                  .catch(() => setError(t("commitMenu.theUrlCouldNotBeCopied")));
-            }}
-          >
-            <Link size={13} className="shrink-0" aria-hidden="true" />
-            {t("commitMenu.copyCommitBrowserUrl")}
-          </MenuItem>
+                  .catch(() => setError(t("commitMenu.theCommitIdCouldNotBeCopied")))
+              }
+            >
+              <GitCommitHorizontal size={13} className="shrink-0" aria-hidden="true" />
+              {t("commitMenu.commitSha")}
+            </MenuItem>
+
+            <MenuItem
+              disabled={busy}
+              onClick={async () => {
+                const result = await window.eda.repository.referenceUrl(
+                  repositoryId,
+                  "commit",
+                  target.oid,
+                );
+
+                if (!result.ok) setError(errorMessage(result.error));
+                else if (!result.value)
+                  setError(t("commitMenu.noSupportedBrowserUrlIsAvailableForTheDefaultRemote"));
+                else
+                  await copyText(result.value)
+                    .then(onClose)
+                    .catch(() => setError(t("commitMenu.theUrlCouldNotBeCopied")));
+              }}
+            >
+              <Link size={13} className="shrink-0" aria-hidden="true" />
+              {t("commitMenu.commitBrowserUrl")}
+            </MenuItem>
+
+            <MenuItem
+              disabled={busy}
+              onClick={() =>
+                void run(
+                  async () => {
+                    const result = await window.eda.repository.commitMessage(
+                      repositoryId,
+                      target.oid,
+                    );
+
+                    if (result.ok) {
+                      if (!result.value)
+                        throw new AppError(errorText("commitMenu.theCommitHasNoMessage"));
+                      await copyText(result.value);
+                    }
+
+                    return result;
+                  },
+                  { write: false },
+                )
+              }
+            >
+              <FileIcon size={13} className="shrink-0" aria-hidden="true" />
+              {t("commitMenu.commitMessage")}
+            </MenuItem>
+          </MenuSubmenu>
         </>
       )}
 
