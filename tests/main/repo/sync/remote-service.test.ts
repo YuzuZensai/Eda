@@ -1,6 +1,7 @@
 import { lfsLockServer } from "../../../helpers/lfs-lock-server";
 import { RepositoryMemberships } from "@main/persistence/repository-memberships";
 import { errorFixture } from "../../../helpers/error";
+import { deferred } from "../../../helpers/deferred";
 import { GitError } from "@shared/errors";
 import { FetchHistoryRepository } from "@main/persistence/fetch-history-repository";
 import { afterEach, expect, it, vi } from "vitest";
@@ -398,8 +399,17 @@ it("schedules only open repositories, pauses when offline or suspended, backs of
   await scheduler.tick();
   expect(inspections).not.toHaveBeenCalled();
   scheduler.configure(client.id, 1);
+  const prepares = vi.spyOn(db.raw, "prepare");
   conditions = { online: false, suspended: false };
   await scheduler.tick();
+  conditions = { online: true, suspended: true };
+  await scheduler.tick();
+  const pausedStatements = prepares.mock.calls.length;
+  prepares.mockRestore();
+  expect(pausedStatements).toBe(0);
+  await expect(scheduler.retry(client.id, "origin")).rejects.toMatchObject({
+    kind: "invalid-input",
+  });
   expect(inspections).not.toHaveBeenCalled();
   expect((await scheduler.inspect(client.id)).remotes[0]!.history).toBeNull();
 
@@ -610,6 +620,53 @@ it("rejects pulling a deleted upstream instead of merging its stale tracking ref
     pull.prepare({ repositoryId: client.id, strategy: "ff-only" }),
   ).rejects.toMatchObject({ rawStderr: expect.stringContaining("couldn't find remote ref") });
   expect(await run(["rev-parse", "HEAD"])).toBe(head);
+});
+
+it("cancels a scheduled fetch outside the activity page, without cancelling unrelated live work", async () => {
+  const { service, client, profile, identities, operations, db } = await setup();
+  const other = identities.create({
+    name: "Personal",
+    gitName: "Other",
+    gitEmail: "other@example.com",
+    hue: 42,
+    signing: { format: "none", signCommits: false },
+  });
+  const store = new OperationRepository(db);
+  const [completed] = store.list(profile.id);
+  const gate = deferred<void>();
+  const pending = (profileId: string, repositoryId: string, scheduled: boolean, started = false) =>
+    operations.run(
+      { profileId, repositoryId, repositoryName: "fixture" },
+      "Fetch",
+      async () => {
+        if (started) operations.started("fetch");
+        await gate.promise;
+        operations.started("next command");
+      },
+      undefined,
+      scheduled ? "main.backgroundFetchService.backgroundFetch" : "main.remoteService.fetchRemotes",
+    );
+  const outcomes = Promise.allSettled([
+    pending(profile.id, client.id, true),
+    pending(profile.id, client.id, true, true),
+    pending(profile.id, client.id, false),
+    pending(profile.id, "another", true),
+    pending(other.id, client.id, true),
+  ]);
+  try {
+    for (let index = 0; index < 200; index++)
+      store.save({ ...completed!, id: `recent-${index}`, updatedAt: "2099-01-01T00:00:00.000Z" });
+    service.cancelScheduled(profile.id, client.id);
+  } finally {
+    gate.resolve();
+  }
+  expect(await outcomes).toMatchObject([
+    { status: "rejected", reason: { kind: "cancelled" } },
+    { status: "rejected", reason: { kind: "cancelled" } },
+    { status: "fulfilled" },
+    { status: "fulfilled" },
+    { status: "fulfilled" },
+  ]);
 });
 
 it.each(["scheduled", "retry"] as const)(

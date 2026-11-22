@@ -202,6 +202,17 @@ export class OperationManager {
     this.publish(context.record);
   }
 
+  cancelMatching(profileId: string, repositoryId: string, kindKey: MessageKey): void {
+    for (const { record } of this.running.values())
+      if (
+        record.profileId === profileId &&
+        record.repositoryId === repositoryId &&
+        record.kindKey === kindKey &&
+        record.cancellable
+      )
+        this.cancel(profileId, record.id);
+  }
+
   async retry(profileId: string, id: string): Promise<void> {
     const retry = this.retries.get(id);
 

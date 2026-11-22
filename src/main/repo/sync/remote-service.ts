@@ -245,13 +245,11 @@ export class RemoteService {
   }
 
   cancelScheduled(profileId: string, repositoryId: string): void {
-    for (const operation of this.operations.list(profileId))
-      if (
-        operation.repositoryId === repositoryId &&
-        operation.kindKey === "main.backgroundFetchService.backgroundFetch" &&
-        (operation.state === "queued" || operation.state === "running")
-      )
-        this.operations.cancel(profileId, operation.id);
+    this.operations.cancelMatching(
+      profileId,
+      repositoryId,
+      "main.backgroundFetchService.backgroundFetch",
+    );
   }
 
   fetch(

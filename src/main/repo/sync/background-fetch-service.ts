@@ -16,9 +16,8 @@ export interface FetchConditions {
 export class BackgroundFetchService {
   private timer: ReturnType<typeof setInterval> | undefined;
   private pending: Promise<void> | null = null;
-  private fetchingProfile: string | null = null;
   private stopping = false;
-  private fetchingRepository: string | null = null;
+  private fetching: { profileId: string; repositoryId: string } | null = null;
 
   constructor(
     private readonly identity: IdentityManager,
@@ -44,8 +43,8 @@ export class BackgroundFetchService {
     this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    if (this.fetchingProfile && this.fetchingRepository)
-      this.remotes.cancelScheduled(this.fetchingProfile, this.fetchingRepository);
+    if (this.fetching)
+      this.remotes.cancelScheduled(this.fetching.profileId, this.fetching.repositoryId);
     return this.pending ?? Promise.resolve();
   }
 
@@ -77,7 +76,7 @@ export class BackgroundFetchService {
     return {
       intervalMinutes,
       ...this.conditions(),
-      fetching: this.fetchingRepository === repositoryId,
+      fetching: this.fetching?.repositoryId === repositoryId,
       remotes: await this.remoteStates(repositoryId, intervalMinutes),
     };
   }
@@ -90,9 +89,7 @@ export class BackgroundFetchService {
   }
 
   async retry(repositoryId: string, remote: string): Promise<void> {
-    const state = await this.inspect(repositoryId);
-
-    if (!state.online || state.suspended)
+    if (this.paused())
       throw new GitError({
         kind: "invalid-input",
         operation: t("operations.retryBackgroundFetch"),
@@ -101,19 +98,24 @@ export class BackgroundFetchService {
         ),
       });
 
-    await this.remotes.fetch({
+    const profileId = this.repositories.resolveActiveRepository(repositoryId).identityId;
+    await this.remotes.fetch(this.fetchRequest(profileId, repositoryId, remote));
+    this.changed(repositoryId);
+  }
+
+  private fetchRequest(profileId: string, repositoryId: string, remote: string) {
+    const scope = { profileId, repositoryId };
+    return {
       repositoryId,
       remote,
-      prune: this.settings.resolve("fetchPrune", {
-        profileId: this.repositories.resolveActiveRepository(repositoryId).identityId,
-        repositoryId,
-      }).value,
-      tags: this.settings.resolve("fetchTags", {
-        profileId: this.repositories.resolveActiveRepository(repositoryId).identityId,
-        repositoryId,
-      }).value,
-    });
-    this.changed(repositoryId);
+      prune: this.settings.resolve("fetchPrune", scope).value,
+      tags: this.settings.resolve("fetchTags", scope).value,
+    };
+  }
+
+  private paused(): boolean {
+    const { online, suspended } = this.conditions();
+    return !online || suspended;
   }
 
   tick(): Promise<void> {
@@ -128,65 +130,45 @@ export class BackgroundFetchService {
   }
 
   private async run(): Promise<void> {
-    try {
-      const profile = this.identity.getActive();
+    if (this.paused()) return;
+    const profile = this.identity.getActive();
 
-      if (!profile) return;
+    if (!profile) return;
 
-      for (const repositoryId of this.sessions.openRepositoryIds(profile.id)) {
-        if (this.stopping || this.identity.getActive()?.id !== profile.id) return;
+    for (const repositoryId of this.sessions.openRepositoryIds(profile.id)) {
+      if (this.stopping || this.identity.getActive()?.id !== profile.id) return;
 
-        try {
-          const { online, suspended } = this.conditions();
-          if (!online || suspended) return;
-          const interval = this.interval(repositoryId);
-          if (!interval) continue;
+      try {
+        if (this.paused()) return;
+        const interval = this.interval(repositoryId);
+        if (!interval) continue;
 
-          for (const remote of await this.remoteStates(repositoryId, interval)) {
-            if (this.stopping || this.identity.getActive()?.id !== profile.id) return;
+        for (const remote of await this.remoteStates(repositoryId, interval)) {
+          if (this.stopping || this.identity.getActive()?.id !== profile.id) return;
 
-            const currentConditions = this.conditions();
+          if (this.paused()) return;
 
-            if (!currentConditions.online || currentConditions.suspended) return;
+          if (!remote.supported || remote.nextFetch === null || remote.nextFetch > this.now())
+            continue;
 
-            if (!remote.supported || remote.nextFetch === null || remote.nextFetch > this.now())
-              continue;
+          this.fetching = { profileId: profile.id, repositoryId };
 
-            this.fetchingRepository = repositoryId;
-            this.fetchingProfile = profile.id;
-
-            try {
-              await this.remotes.fetch(
-                {
-                  repositoryId,
-                  remote: remote.name,
-                  prune: this.settings.resolve("fetchPrune", {
-                    profileId: profile.id,
-                    repositoryId,
-                  }).value,
-                  tags: this.settings.resolve("fetchTags", {
-                    profileId: profile.id,
-                    repositoryId,
-                  }).value,
-                },
-                t("main.backgroundFetchService.backgroundFetch"),
-                "main.backgroundFetchService.backgroundFetch",
-              );
-            } catch (error) {
-              reportUnexpectedFailure(error);
-            } finally {
-              this.fetchingRepository = null;
-              this.fetchingProfile = null;
-              this.changed(repositoryId);
-            }
+          try {
+            await this.remotes.fetch(
+              this.fetchRequest(profile.id, repositoryId, remote.name),
+              t("main.backgroundFetchService.backgroundFetch"),
+              "main.backgroundFetchService.backgroundFetch",
+            );
+          } catch (error) {
+            reportUnexpectedFailure(error);
+          } finally {
+            this.fetching = null;
+            this.changed(repositoryId);
           }
-        } catch (error) {
-          reportUnexpectedFailure(error);
         }
+      } catch (error) {
+        reportUnexpectedFailure(error);
       }
-    } finally {
-      this.fetchingRepository = null;
-      this.fetchingProfile = null;
     }
   }
 }
