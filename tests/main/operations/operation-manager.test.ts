@@ -1,5 +1,5 @@
 import { errorFixture } from "../../helpers/error";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitError } from "@shared/errors";
 import { openInMemoryDatabase } from "@main/persistence/database";
 import { IdentityRepository } from "@main/persistence/identity-repository";
@@ -29,6 +29,16 @@ beforeEach(() => {
 });
 
 afterEach(() => db.close());
+
+function retainedLogDecodes(action: () => void): number {
+  const parse = vi.spyOn(JSON, "parse");
+  try {
+    action();
+    return parse.mock.calls.filter(([text]) => text.includes("retained journal fixture")).length;
+  } finally {
+    parse.mockRestore();
+  }
+}
 
 describe("operation journal", () => {
   it("persists a stable operation key independently of translated display text", async () => {
@@ -163,5 +173,59 @@ describe("operation journal", () => {
       retryable: false,
       cancellable: false,
     });
+  });
+
+  it("recovers unfinished work and stale actions without decoding completed logs", async () => {
+    await manager.run(owner, "Stage", async () => {});
+    const record = store.list(owner.profileId)[0]!;
+    for (let index = 0; index < 200; index++)
+      store.save({
+        ...record,
+        id: `done-${index}`,
+        updatedAt: "2000-01-01T00:00:00.000Z",
+        output: "retained journal fixture",
+      });
+    store.save({ ...record, id: "queued", state: "queued" });
+    store.save({ ...record, id: "failure", state: "failed", retryable: true });
+    store.save({ ...record, id: "stale", cancellable: true });
+
+    const completedReads = retainedLogDecodes(() => store.recover());
+    const records = store.list(owner.profileId);
+    expect(records.find(({ id }) => id === "queued")).toMatchObject({ state: "interrupted" });
+    expect(records.find(({ id }) => id === "failure")).toMatchObject({
+      state: "failed",
+      retryable: false,
+    });
+    expect(records.find(({ id }) => id === "stale")).toMatchObject({ cancellable: false });
+    expect(completedReads).toBe(0);
+  });
+
+  it("prunes expired and overflow logs without decoding retained recent entries", async () => {
+    await manager.run(owner, "Stage", async () => {});
+    const record = store.list(owner.profileId)[0]!;
+    const old = "2000-01-01T00:00:00.000Z";
+    store.save({ ...record, id: "expired", updatedAt: old });
+    store.save({ ...record, id: "active", updatedAt: old, state: "running" });
+    const ids = () =>
+      db
+        .select({ id: operations.id })
+        .from(operations)
+        .all()
+        .map(({ id }) => id);
+    store.prune(owner.profileId);
+    expect(ids().sort()).toEqual(["active", record.id].sort());
+
+    for (let index = 0; index < 200; index++)
+      store.save({
+        ...record,
+        id: `keep-${index}`,
+        updatedAt: new Date(Date.parse(record.updatedAt) + index + 1).toISOString(),
+        output: "retained journal fixture",
+      });
+    const retainedReads = retainedLogDecodes(() => store.prune(owner.profileId));
+    expect(ids()).toHaveLength(201);
+    expect(ids()).toContain("active");
+    expect(ids()).not.toContain(record.id);
+    expect(retainedReads).toBe(0);
   });
 });

@@ -1,9 +1,11 @@
 import { english, t } from "@shared/i18n";
 import { isOneOf, isRecord } from "@shared/validation";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { OperationRecord } from "@shared/operations";
 import type { Database } from "./types";
 import { identities, operations } from "./schema";
+
+const RECENT_OPERATIONS = 200;
 
 function isOperationRecord(value: unknown): value is OperationRecord {
   return (
@@ -97,13 +99,27 @@ export class OperationRepository {
       .from(operations)
       .where(eq(operations.profileId, profileId))
       .orderBy(desc(operations.updatedAt))
-      .limit(200)
+      .limit(RECENT_OPERATIONS)
       .all()
       .map(decode);
   }
 
   recover(): void {
-    for (const row of this.db.select().from(operations).all()) {
+    const candidates = this.db
+      .select()
+      .from(operations)
+      .where(
+        and(
+          eq(operations.version, 1),
+          sql`CASE WHEN json_valid(${operations.record}) THEN
+            json_extract(${operations.record}, '$.state') IN ('queued', 'running') OR
+            json_extract(${operations.record}, '$.retryable') = 1 OR
+            json_extract(${operations.record}, '$.cancellable') = 1 END`,
+        ),
+      )
+      .all();
+
+    for (const row of candidates) {
       const record = decode(row);
 
       if (record.state === "queued" || record.state === "running")
@@ -124,11 +140,21 @@ export class OperationRepository {
   }
 
   prune(profileId: string): void {
+    const profile = eq(operations.profileId, profileId);
+    const cutoff = Date.now() - 30 * 86400_000;
+    const recentCount = this.db
+      .select({ value: count() })
+      .from(operations)
+      .where(and(profile, gte(operations.updatedAt, new Date(cutoff).toISOString())))
+      .get()!.value;
+    const retained = Math.min(recentCount, RECENT_OPERATIONS);
     const rows = this.db
       .select()
       .from(operations)
-      .where(eq(operations.profileId, profileId))
+      .where(profile)
       .orderBy(desc(operations.updatedAt))
+      .limit(-1)
+      .offset(retained)
       .all();
 
     const expired = rows
@@ -138,7 +164,7 @@ export class OperationRepository {
         return (
           record.state !== "queued" &&
           record.state !== "running" &&
-          (index >= 200 || Date.parse(record.updatedAt) < Date.now() - 30 * 86400_000)
+          (index + retained >= RECENT_OPERATIONS || Date.parse(record.updatedAt) < cutoff)
         );
       })
       .map((row) => row.id);
