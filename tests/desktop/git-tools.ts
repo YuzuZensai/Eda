@@ -397,7 +397,7 @@ try {
   assert.ok(existsSync(join(repository, "created-in-eda.txt")));
   await button(file, "Confirm moving created-in-eda.txt to trash").click();
   await expect.poll(() => existsSync(join(repository, "created-in-eda.txt"))).toBe(false);
-  await page.keyboard.press("Escape");
+  await button(file, "Close dialog").click();
 
   await page
     .getByTestId("commit-graph")
