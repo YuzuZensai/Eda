@@ -23,6 +23,7 @@ const env = Object.fromEntries(
 
 const fixtureEnv = {
   ...env,
+  ...(process.platform !== "win32" && { SHELL: join(root, "login-shell") }),
   PATH:
     process.platform === "win32"
       ? join(process.env["SystemRoot"] ?? "C:/Windows", "System32")
@@ -55,10 +56,12 @@ async function launchPackaged() {
       `--user-data-dir=${root}`,
       "--remote-debugging-address=127.0.0.1",
       "--remote-debugging-port=0",
+      ...(process.platform === "darwin" ? ["--use-mock-keychain"] : []),
       "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1",
     ],
-    { env: fixtureEnv, stdio: "ignore" },
+    { env: fixtureEnv, stdio: ["ignore", "ignore", "inherit"] },
   );
+  await once(child, "spawn");
   const exited = once(child, "exit");
   const running = {
     close: async () => {
@@ -73,7 +76,11 @@ async function launchPackaged() {
   };
   app = running;
   let endpoint = "";
-  for (let attempt = 0; attempt < 200 && child.exitCode === null; attempt++) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (child.exitCode !== null || child.signalCode)
+      throw new Error(
+        `Packaged Eda exited before opening DevTools (${child.signalCode ?? child.exitCode})`,
+      );
     const [port, path] = (await readFile(portFile, "utf8").catch(() => "")).trim().split(/\r?\n/);
     if (port && /^\d+$/.test(port) && path?.startsWith("/devtools/browser/")) {
       endpoint = `ws://127.0.0.1:${port}${path}`;
@@ -117,6 +124,12 @@ const launch = async () => {
 
 try {
   await writeFile(fixtureEnv.GIT_CONFIG_GLOBAL, "");
+  if (fixtureEnv.SHELL) {
+    // A host login profile can put system Git back on the fixture's restricted PATH.
+    await writeFile(fixtureEnv.SHELL, '#!/bin/sh\nexec /bin/bash --noprofile --norc "$@"\n', {
+      mode: 0o700,
+    });
+  }
 
   let launched = await launch();
   const page = launched.page;
