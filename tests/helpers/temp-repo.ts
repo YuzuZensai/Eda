@@ -37,9 +37,9 @@ export const resolveTestGitEngine = () =>
   ));
 
 export async function createTempRepo(
-  options: { bare?: boolean; init?: boolean } = {},
+  options: { bare?: boolean; init?: boolean; tempDir?: string } = {},
 ): Promise<TempRepo> {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "eda-test-")));
+  const root = await realpath(await mkdtemp(join(options.tempDir ?? tmpdir(), "eda-test-")));
   const home = join(root, "home");
   const path = join(root, "repo");
 

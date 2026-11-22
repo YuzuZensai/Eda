@@ -207,7 +207,8 @@ it("verifies real SSH signatures, rejects tampering and reports missing trust or
 });
 
 it("verifies real GPG signatures and distinguishes missing and untrusted public keys from bad signatures", async () => {
-  const repo = await createTempRepo();
+  // macOS runner temp paths can exceed the Unix socket path limit for gpg-agent.
+  const repo = await createTempRepo(process.platform === "darwin" ? { tempDir: "/tmp" } : {});
   const trusted = join(repo.home, "gpg-trusted");
   const other = join(repo.home, "gpg-other");
   const homes = [trusted, other];
