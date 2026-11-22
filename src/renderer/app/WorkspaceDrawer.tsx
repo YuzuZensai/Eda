@@ -4,6 +4,7 @@ import { stateLabel } from "@shared/i18n/labels";
 import type { OperationRecord } from "@shared/operations";
 import { lazy, Suspense, useId, useState } from "react";
 import { RetainedView } from "../components/layout/ViewTransition";
+import { useLayoutTransition } from "../components/layout/hooks/useLayoutTransition";
 import {
   CodeBlock,
   Collapse,
@@ -38,6 +39,7 @@ export function WorkspaceDrawer({
   settings?: boolean;
 }) {
   const id = useId();
+  const transition = useLayoutTransition();
   const label = t("workspace.drawer");
   const [drawer, setDrawer] = useState<{ tab: DrawerTab; open: boolean }>({
     tab: "activity",
@@ -65,7 +67,12 @@ export function WorkspaceDrawer({
   const current = running.find((record) => record.repositoryId === selectedId) ?? running[0];
   const summary = current && `${current.repositoryName}, ${current.message}`;
 
-  const toggleDrawer = () => setDrawer({ tab, open: !open });
+  const selectDrawer = (value: DrawerTab, nextOpen: boolean) => {
+    const update = () => setDrawer({ tab: value, open: nextOpen });
+    if (nextOpen === open) update();
+    else transition(update, "drawer");
+  };
+  const toggleDrawer = () => selectDrawer(tab, !open);
 
   return (
     <section
@@ -82,7 +89,7 @@ export function WorkspaceDrawer({
               aria-controls={`${id}-${value}`}
               selected={value === tab}
               tabIndex={value === tab ? 0 : -1}
-              onClick={() => setDrawer({ tab: value, open: true })}
+              onClick={() => selectDrawer(value, true)}
             >
               <Icon size={13} aria-hidden="true" />
               {t(label)}

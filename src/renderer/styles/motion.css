@@ -61,6 +61,18 @@
   view-transition-name: none;
 }
 
+[data-layout-region] {
+  view-transition-class: layout-pane;
+}
+
+.app-workspace-backdrop > main {
+  view-transition-class: layout-pane drawer-workspace;
+}
+
+.workspace-drawer {
+  view-transition-class: layout-pane drawer-panel;
+}
+
 ::view-transition {
   pointer-events: none;
 }
@@ -92,6 +104,37 @@
   width: 100%;
   height: 100%;
   object-fit: fill;
+}
+
+html[data-navigation-motion="drawer"] {
+  --duration-layout: var(--duration-base);
+}
+
+/* Clip the taller capture as the boundary moves so text keeps its original size. */
+html[data-navigation-motion="drawer"]::view-transition-old(.layout-pane),
+html[data-navigation-motion="drawer"]::view-transition-new(.layout-pane) {
+  width: 100%;
+  height: 100%;
+  object-fit: none;
+  object-position: top left;
+}
+
+html[data-navigation-motion="drawer"]:has(
+    .workspace-drawer-content[data-open="true"]
+  )::view-transition-old(.drawer-workspace),
+html[data-navigation-motion="drawer"]:has(
+    .workspace-drawer-content[data-open="false"]
+  )::view-transition-old(.drawer-panel) {
+  display: block;
+}
+
+html[data-navigation-motion="drawer"]:has(
+    .workspace-drawer-content[data-open="true"]
+  )::view-transition-new(.drawer-workspace),
+html[data-navigation-motion="drawer"]:has(
+    .workspace-drawer-content[data-open="false"]
+  )::view-transition-new(.drawer-panel) {
+  display: none;
 }
 
 html[data-navigation-motion] {
@@ -314,7 +357,10 @@ html[data-navigation-motion="back"] {
     visibility: visible;
   }
 
-  .bottom-panel-chevron,
+  .bottom-panel-chevron {
+    transition: transform var(--duration-base) var(--ease-out);
+  }
+
   .disclosure-chevron {
     transition: transform var(--duration-collapse) var(--ease-out);
   }

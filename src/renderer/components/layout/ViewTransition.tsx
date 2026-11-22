@@ -14,7 +14,8 @@ import {
   hasActiveViewTransition,
   animateViewEntry,
   useViewTransition,
-  type ViewMotion,
+  type EntryMotion,
+  type LayoutMotionKind,
 } from "./hooks/useViewTransition";
 import { prefersReducedMotion } from "../../motion";
 
@@ -28,7 +29,7 @@ export function ViewTransition({
   as?: "div" | "main" | "section";
   ref?: Ref<HTMLElement>;
   viewKey?: string;
-  motion?: Exclude<ViewMotion, "layout">;
+  motion?: EntryMotion;
 }) {
   const element = useRef<HTMLElement | null>(null);
   const previous = useRef(viewKey);
@@ -52,7 +53,10 @@ export function ViewTransition({
 
 export function LayoutTransition({ children, ...props }: HTMLAttributes<HTMLElement>) {
   const { ref, transition } = useViewTransition();
-  const update = useCallback((work: () => void) => transition(work, "layout"), [transition]);
+  const update = useCallback(
+    (work: () => void, motion: LayoutMotionKind = "layout") => transition(work, motion),
+    [transition],
+  );
 
   return (
     <LayoutMotion value={update}>

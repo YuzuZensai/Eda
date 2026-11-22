@@ -946,6 +946,7 @@ html[data-custom-background="true"] .onboarding-shell {
 
 .workspace-drawer-content {
   --collapse-size: min(24rem, 45vh);
+  transition: none;
 }
 
 .terminal-sessions {

@@ -3,7 +3,9 @@ import { useCallback, useRef } from "react";
 import { flushSync } from "react-dom";
 import { prefersReducedMotion } from "../../../motion";
 
-export type ViewMotion = "forward" | "back" | "section" | "layout";
+export type LayoutMotionKind = "layout" | "drawer";
+export type EntryMotion = "forward" | "back" | "section";
+type ViewMotion = EntryMotion | LayoutMotionKind;
 
 const traceNavigation = import.meta.env.DEV && import.meta.env["VITE_EDA_TRACE_NAVIGATION"] === "1";
 
@@ -32,7 +34,7 @@ export function afterViewTransition(effect: () => void): void {
     });
 }
 
-export function animateViewEntry(element: HTMLElement, motion: Exclude<ViewMotion, "layout">) {
+export function animateViewEntry(element: HTMLElement, motion: EntryMotion) {
   if (prefersReducedMotion()) return;
 
   element.dataset["navigationFallback"] = motion;
@@ -118,40 +120,35 @@ export function useViewTransition() {
     let newKeyframe: string | undefined;
     const transforms = new Set<string>();
 
-    const regions =
-      motion === "layout"
-        ? Array.from(element.querySelectorAll<HTMLElement>("[data-layout-region]"))
-        : [element];
+    const layout = motion === "layout" || motion === "drawer";
+    const regions = layout
+      ? Array.from(
+          element.querySelectorAll<HTMLElement>(
+            motion === "drawer" ? ":scope > [data-layout-region]" : "[data-layout-region]",
+          ),
+        )
+      : [element];
 
     const previousStyles = regions.map((region, index) => {
       const name = region.style.viewTransitionName;
-      const classes = region.style.getPropertyValue("view-transition-class");
 
-      region.style.viewTransitionName =
-        motion === "layout" ? `layout-pane-${index}` : "navigation-content";
-      if (motion === "layout") region.style.setProperty("view-transition-class", "layout-pane");
+      region.style.viewTransitionName = layout ? `layout-pane-${index}` : "navigation-content";
 
-      return { region, name, classes };
+      return { region, name };
     });
 
-    const oldSnapshot =
-      motion === "layout"
-        ? "::view-transition-old(layout-pane-0)"
-        : "::view-transition-old(navigation-content)";
+    const oldSnapshot = layout
+      ? "::view-transition-old(layout-pane-0)"
+      : "::view-transition-old(navigation-content)";
 
-    const newSnapshot =
-      motion === "layout"
-        ? "::view-transition-new(layout-pane-0)"
-        : "::view-transition-new(navigation-content)";
+    const newSnapshot = layout
+      ? "::view-transition-new(layout-pane-0)"
+      : "::view-transition-new(navigation-content)";
 
     document.documentElement.dataset["navigationMotion"] = motion;
 
     const cleanup = () => {
-      for (const { region, name, classes } of previousStyles) {
-        region.style.viewTransitionName = name;
-        if (classes) region.style.setProperty("view-transition-class", classes);
-        else region.style.removeProperty("view-transition-class");
-      }
+      for (const { region, name } of previousStyles) region.style.viewTransitionName = name;
 
       delete document.documentElement.dataset["navigationMotion"];
     };
@@ -203,7 +200,7 @@ export function useViewTransition() {
       .catch((error: unknown) => {
         captureError = errorMessage(error);
 
-        if (running !== job || prefersReducedMotion() || motion === "layout") return;
+        if (running !== job || prefersReducedMotion() || layout) return;
 
         const destination = target.current;
 

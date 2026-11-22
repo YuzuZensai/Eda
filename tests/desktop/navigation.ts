@@ -242,17 +242,18 @@ try {
 
       void transition.ready
         .then(() => {
+          const layout = probe.motion === "layout" || probe.motion === "drawer";
           probe.ready = performance.now();
           probe.duration =
             parseFloat(
               getComputedStyle(
                 document.documentElement,
-                probe.motion === "layout"
+                layout
                   ? "::view-transition-group(layout-pane-0)"
                   : "::view-transition-new(navigation-content)",
               ).animationDuration,
             ) * 1000;
-          if (probe.motion === "layout") {
+          if (layout) {
             probe.paneOpacity = getComputedStyle(
               document.documentElement,
               "::view-transition-new(layout-pane-0)",
@@ -313,13 +314,36 @@ try {
 
   const drawer = page.getByRole("region", { name: "Workspace drawer" });
   const activityTab = drawer.getByRole("tab", { name: "Activity" });
+  const terminalTab = drawer.getByRole("tab", { name: "Embedded terminal" });
   const drawerToggle = drawer.getByRole("button", { name: "Workspace drawer" });
-  for (const expanded of [true, false]) {
-    await (expanded ? activityTab : drawerToggle).click();
-    await expect(drawerToggle).toHaveAttribute("aria-expanded", String(expanded));
-    await drawer.locator(".workspace-drawer-content").evaluate(async (element) => {
-      await Promise.allSettled(element.getAnimations().map((animation) => animation.finished));
+  for (const [button, expanded] of [
+    [activityTab, true],
+    [drawerToggle, false],
+    [terminalTab, true],
+    [drawerToggle, false],
+  ] as const) {
+    const layout = await drawer.evaluateHandle((element) => {
+      const workspace = element.parentElement?.querySelector("main");
+      if (!workspace) throw new Error("Missing workspace above the drawer");
+      const heights = new Set([workspace.clientHeight]);
+      const observer = new ResizeObserver(() => heights.add(workspace.clientHeight));
+      observer.observe(workspace);
+
+      return {
+        stop() {
+          observer.disconnect();
+          return [...heights];
+        },
+      };
     });
+    const before = await page.evaluate(() => window.__navigationProbes.length);
+    await button.click();
+    await expect(drawerToggle).toHaveAttribute("aria-expanded", String(expanded));
+    await page.waitForFunction((index) => window.__navigationProbes.length > index, before);
+    await settled("drawer");
+    const heights = await layout.evaluate((probe) => probe.stop());
+    await layout.dispose();
+    assert.equal(heights.length, 2, `The workspace should resize once: ${heights.join(", ")}`);
   }
 
   assert.equal(await draft.inputValue(), "Keep this draft through layout changes");
@@ -333,7 +357,9 @@ try {
   await page.getByRole("button", { name: "Collapse working tree", exact: true }).click();
   await page.getByRole("button", { name: "Expand Working tree", exact: true }).click();
   await activityTab.click();
+  await expect(drawerToggle).toHaveAttribute("aria-expanded", "true");
   await drawerToggle.click();
+  await expect(drawerToggle).toHaveAttribute("aria-expanded", "false");
   assert.equal(await page.evaluate(() => window.__navigationProbes.length), beforeReduced);
   await page.getByRole("button", { name: "Unstaged file.txt, status M", exact: true }).click();
   await page.getByRole("button", { name: "Back to history", exact: true }).click();
@@ -376,6 +402,7 @@ try {
 
   const probes = await page.evaluate(() => window.__navigationProbes);
   const layouts = probes.filter((probe) => probe.motion === "layout");
+  const drawerTransitions = probes.filter((probe) => probe.motion === "drawer");
   const section = probes.find((probe) => probe.motion === "section");
 
   assert.equal(layouts.length, 6);
@@ -384,6 +411,11 @@ try {
     assert.equal(layout.duration, section.duration, "Pane resizing reuses the shared motion pace.");
     assert.equal(layout.paneOpacity, "1", "Pane resizing keeps content solid.");
     assert.ok(layout.paneAnimation && layout.paneAnimation !== "none", "Pane bounds must animate.");
+  }
+  assert.equal(drawerTransitions.length, 4);
+  for (const transition of drawerTransitions) {
+    assert.ok(transition.duration && transition.duration < section.duration);
+    assert.ok(transition.paneAnimation && transition.paneAnimation !== "none");
   }
 
   for (const probe of probes) {
