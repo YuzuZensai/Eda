@@ -85,6 +85,8 @@ it("shares cached lookups and rejects late avatar results after an author change
       ),
     );
     expect(get).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toBe("FF");
+    expect(container.querySelector(".ui-skeleton")).toBeNull();
 
     await act(async () =>
       root.render(<ProfileAvatar name="Second" hue={210} email="second@avatar.test" />),

@@ -1,39 +1,38 @@
 import { useEffect, useState } from "react";
 import type { AvatarImage } from "@shared/identity/avatar";
 
-const requests = new Map<string, { expiresAt: number; result: Promise<AvatarImage> }>();
+const requests = new Map<
+  string,
+  { expiresAt: number; result: Promise<AvatarImage>; url: string | null }
+>();
 
 function request(key: string, email: string, repositoryId?: string): Promise<AvatarImage> {
   const existing = requests.get(key);
 
   if (existing && existing.expiresAt > Date.now()) return existing.result;
 
-  const entry = {
-    expiresAt: Infinity,
-    result: Promise.resolve<AvatarImage>({ dataUrl: null, expiresAt: 0 }),
-  };
-
-  entry.result = Promise.resolve()
-    .then(async () => {
-      try {
-        const result = repositoryId
-          ? await window.eda.avatars.getCommit(repositoryId, email)
-          : await window.eda.avatars.get(email);
-        if (result.ok) return result.value;
-      } catch {}
-
-      return { dataUrl: null, expiresAt: Date.now() + 5 * 60_000 };
+  const result = Promise.resolve()
+    .then(() => {
+      const avatars = window.eda.avatars;
+      return repositoryId ? avatars.getCommit(repositoryId, email) : avatars.get(email);
     })
-    .then((image) => {
+    .catch(() => null)
+    .then((response) => {
+      const image = response?.ok
+        ? response.value
+        : { dataUrl: null, expiresAt: Date.now() + 5 * 60_000 };
       entry.expiresAt = image.expiresAt;
+      entry.url = image.dataUrl;
       return image;
     });
+  const entry = { expiresAt: Infinity, result, url: existing?.url ?? null };
+
   requests.delete(key);
   requests.set(key, entry);
 
   while (requests.size > 128) requests.delete(requests.keys().next().value!);
 
-  return entry.result;
+  return result;
 }
 
 export function useAvatar(email?: string, repositoryId?: string): string | undefined {
@@ -61,5 +60,5 @@ export function useAvatar(email?: string, repositoryId?: string): string | undef
     };
   }, [key, normalized, repositoryId]);
 
-  return image?.key === key ? (image.url ?? undefined) : undefined;
+  return (image?.key === key ? image.url : requests.get(key)?.url) ?? undefined;
 }

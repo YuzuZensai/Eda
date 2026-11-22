@@ -26,7 +26,8 @@ export function ProfileAvatar({
   const imageUrl = email ? cachedUrl : providedUrl;
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const showSkeleton = loading || (!!imageUrl && loadedUrl !== imageUrl && failedUrl !== imageUrl);
+  const pendingImage = !email && imageUrl && loadedUrl !== imageUrl;
+  const showSkeleton = loading || (pendingImage && failedUrl !== imageUrl);
   const initials = name
     .trim()
     .split(/\s+/)
@@ -61,9 +62,9 @@ export function ProfileAvatar({
           referrerPolicy="no-referrer"
           className={cx(
             "absolute inset-0 size-full object-cover",
-            (loading || loadedUrl !== imageUrl) && "invisible",
+            (loading || pendingImage) && "invisible",
           )}
-          onLoad={() => setLoadedUrl(imageUrl)}
+          onLoad={pendingImage ? () => setLoadedUrl(imageUrl) : undefined}
           onError={() => setFailedUrl(imageUrl)}
         />
       )}
