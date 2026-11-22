@@ -126,10 +126,8 @@ export function ReferenceRow({
         }
       }}
       selected={selected}
-      className={cx("py-1.5 text-xs", showSignature ? "pl-[29px]" : "pl-[51px]")}
+      className="py-1.5 pl-[51px] text-xs"
     >
-      {showSignature && <TagSignature tag={tag} id={signatureId} context={signatureContext} />}
-
       <span className={cx("min-w-0 flex-1 truncate", head && "font-medium text-accent-text")}>
         {displayName}
       </span>
@@ -142,6 +140,8 @@ export function ReferenceRow({
           {t("referenceSidebar.localLocation")}
         </span>
       )}
+
+      {showSignature && <TagSignature tag={tag} id={signatureId} context={signatureContext} />}
     </ListItemButton>
   );
 }
