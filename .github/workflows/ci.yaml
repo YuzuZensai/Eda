@@ -65,7 +65,7 @@ jobs:
         with:
           cache-desktop: "false"
       - name: Cache test transforms and Node bytecode
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             node_modules/.vite/vitest
@@ -100,19 +100,19 @@ jobs:
           target-arch: ${{ matrix.arch }}
 
       - name: Cache bundled Git archives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .cache/bundled-git
           key: bundled-git-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-${{ hashFiles('scripts/bundled-*.json') }}
           restore-keys: |
             bundled-git-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.arch }}-
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
       - name: Cache Velopack NuGet packages
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ env.NUGET_PACKAGES }}
           key: velopack-nuget-v1-${{ runner.os }}-${{ runner.arch }}-dotnet10-${{ hashFiles('.config/dotnet-tools.json') }}
@@ -197,7 +197,7 @@ jobs:
       - uses: ./.github/actions/setup
 
       - name: Cache bundled Git archives
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .cache/bundled-git
           key: bundled-git-v1-${{ runner.os }}-${{ runner.arch }}-x64-${{ hashFiles('scripts/bundled-*.json') }}
