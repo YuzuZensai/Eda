@@ -171,9 +171,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  node-pty@1.1.0: ec7b5ef884c6beb40254d84516b7aae8b697e29d2377fbfcb42e934cd9bc4284
-
 importers:
 
   .:
@@ -182,8 +179,8 @@ importers:
         specifier: ^6.0.0
         version: 6.0.0
       node-pty:
-        specifier: 1.1.0
-        version: 1.1.0(patch_hash=ec7b5ef884c6beb40254d84516b7aae8b697e29d2377fbfcb42e934cd9bc4284)
+        specifier: 1.2.0-beta.18
+        version: 1.2.0-beta.18
       velopack:
         specifier: 1.2.161
         version: 1.2.161
@@ -2363,8 +2360,8 @@ packages:
   node-int64@0.4.0:
     resolution: {integrity: sha512-O5lz91xSOeoXP6DulyHfllpq+Eg00MWitZIbtPfoSEvqIHdl5gfcY6hYzDWnj0qD5tz52PI08u9qUvSVeUBeHw==}
 
-  node-pty@1.1.0:
-    resolution: {integrity: sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==}
+  node-pty@1.2.0-beta.18:
+    resolution: {integrity: sha512-3Rej3788OnasAwoSmTZhlCeUraJ9CQldtL5b571b9+3Nv47+PaxA5VPIGOOs+16OYQePTrC1Lrs8a9/df5WPRg==}
 
   nopt@9.0.0:
     resolution: {integrity: sha512-Zhq3a+yFKrYwSBluL4H9XP3m3y5uvQkB/09CwDruCiRmR/UJYnn9W4R48ry0uGC70aeTPKLynBtscP9efFFcPw==}
@@ -4969,7 +4966,7 @@ snapshots:
 
   node-int64@0.4.0: {}
 
-  node-pty@1.1.0(patch_hash=ec7b5ef884c6beb40254d84516b7aae8b697e29d2377fbfcb42e934cd9bc4284):
+  node-pty@1.2.0-beta.18:
     dependencies:
       node-addon-api: 7.1.1
 
