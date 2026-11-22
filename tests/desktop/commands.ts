@@ -204,7 +204,8 @@ try {
   await page.getByRole("button", { name: "Open a repository", exact: true }).click();
   await page.getByRole("heading", { name: "Repositories", exact: true }).waitFor();
   await expect(page.getByRole("tab", { name: "commands-repo", exact: true })).toHaveCount(1);
-  await expect(page.getByRole("tab", { selected: true })).toHaveCount(0);
+  const repositoryTabs = page.getByRole("tablist", { name: "Open repositories" });
+  await expect(repositoryTabs.getByRole("tab", { selected: true })).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "Open a repository", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Inspect status of commands-repo" }).click();
   await expect(page.getByText("Changed paths: 1", { exact: true })).toBeVisible();
@@ -260,7 +261,7 @@ try {
 
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /Active profile: Home/ }).waitFor();
-  assert.equal(await page.getByRole("tab").count(), 0);
+  await expect(repositoryTabs.getByRole("tab")).toHaveCount(0);
   assert.equal(errors.length, 0, errors.join("\n"));
 
   await page.keyboard.press(`${modifier}+Shift+p`);

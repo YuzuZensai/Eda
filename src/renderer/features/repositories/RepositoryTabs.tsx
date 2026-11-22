@@ -9,7 +9,7 @@ import {
   Button,
   cx,
 } from "../../components/ui/index";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 
 export function RepositoryTabs() {
   const repositories = useAppStore((s) => s.repositories);
@@ -21,12 +21,13 @@ export function RepositoryTabs() {
   const moveTab = useAppStore((s) => s.moveTab);
   const tabButtons = useRef(new Map<string, HTMLButtonElement>());
   const dragged = useRef<string | null>(null);
+  const byId = useMemo(() => new Map(repositories.map((repo) => [repo.id, repo])), [repositories]);
 
   if (!activeIdentity) return null;
 
   const openIds = tabsByIdentity[activeIdentity.id] ?? [];
   const tabs = openIds
-    .map((id) => repositories.find((repository) => repository.id === id))
+    .map((id) => byId.get(id))
     .filter((repository): repository is NonNullable<typeof repository> => repository !== undefined);
 
   return (

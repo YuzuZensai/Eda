@@ -110,6 +110,27 @@ async function setup() {
 }
 
 describe("durable profile sessions", () => {
+  it("checks ownership when saving many tabs without a database lookup per tab", async () => {
+    const { db, work, store } = await setup();
+    const tabs = Array.from({ length: 100 }, (_, index) => `repo-${index}`);
+    db.insert(repositories)
+      .values(
+        tabs.map((id) => ({ id, identityId: work.id, path: `/${id}`, name: id, createdAt: "now" })),
+      )
+      .run();
+
+    const prepare = vi.spyOn(db.raw, "prepare");
+    const saveTabs = (ids: string[]) =>
+      store.change(work.id, "primary", { kind: "tabs", tabs: ids, selectedRepositoryId: ids[0] });
+    saveTabs(tabs.slice(0, 1));
+    const oneTab = prepare.mock.calls.length;
+    prepare.mockClear();
+    saveTabs(tabs);
+    expect(prepare.mock.calls.length).toBeLessThanOrEqual(oneTab);
+    expect(() => saveTabs([...tabs, "home-repo"])).toThrow(/does not belong/i);
+    expect(store.read(work.id, "primary").session.tabs).toEqual(tabs);
+  });
+
   it("requires an explicit profile choice when the saved active pointer is missing", async () => {
     const { identities, sessions, work, home, values, repo } = await setup();
 

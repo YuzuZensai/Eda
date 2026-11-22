@@ -119,6 +119,8 @@ try {
   app = launched.running;
 
   let page = launched.page;
+  const repositoryTabNames = () =>
+    page.getByRole("tablist", { name: "Open repositories" }).getByRole("tab").allTextContents();
   const view = async (settings: boolean) => {
     const button = page.getByRole("button", { name: "Settings", exact: true });
 
@@ -449,11 +451,11 @@ try {
   await page.getByRole("tab", { name: "alpha", exact: true }).click();
   await draftIs("Work alpha draft\n\nprivate details");
   assert.equal(await page.getByRole("button", { name: "Expand History", exact: true }).count(), 1);
-  assert.deepEqual(await page.getByRole("tab").allTextContents(), ["alpha", "beta"]);
+  assert.deepEqual(await repositoryTabNames(), ["alpha", "beta"]);
 
   await page.getByRole("tab", { name: "beta", exact: true }).focus();
   await page.keyboard.press("Alt+Shift+ArrowLeft");
-  assert.deepEqual(await page.getByRole("tab").allTextContents(), ["beta", "alpha"]);
+  assert.deepEqual(await repositoryTabNames(), ["beta", "alpha"]);
 
   await page.keyboard.press(`${modifier}+1`);
   await draftIs("Work beta draft");
@@ -461,12 +463,12 @@ try {
   await draftIs("Work alpha draft\n\nprivate details");
   await page.keyboard.press(`${modifier}+Shift+t`);
   await draftIs("Work beta draft");
-  assert.deepEqual(await page.getByRole("tab").allTextContents(), ["beta", "alpha"]);
+  assert.deepEqual(await repositoryTabNames(), ["beta", "alpha"]);
 
   await page
     .getByRole("tab", { name: "beta", exact: true })
     .dragTo(page.getByRole("tab", { name: "alpha", exact: true }));
-  assert.deepEqual(await page.getByRole("tab").allTextContents(), ["alpha", "beta"]);
+  assert.deepEqual(await repositoryTabNames(), ["alpha", "beta"]);
 
   await page.keyboard.press(`${modifier}+1`);
   await draftIs("Work alpha draft\n\nprivate details");
@@ -597,7 +599,7 @@ try {
 
   await draftIs("");
   await page.getByRole("textbox", { name: "Commit title" }).fill("Home gamma draft");
-  assert.deepEqual(await page.getByRole("tab").allTextContents(), ["gamma"]);
+  assert.deepEqual(await repositoryTabNames(), ["gamma"]);
 
   await view(true);
   await writeFile(`${config}.lock`, "fixture lock");
@@ -688,7 +690,7 @@ try {
 
   await view(false);
   await draftIs("Work alpha draft\n\nprivate details");
-  assert.deepEqual(await page.getByRole("tab").allTextContents(), ["alpha", "beta"]);
+  assert.deepEqual(await repositoryTabNames(), ["alpha", "beta"]);
 
   await page.getByRole("tab", { name: "beta", exact: true }).click();
   await draftIs("Work beta draft");
@@ -700,7 +702,7 @@ try {
   await draftIs("Work beta draft");
   await page.getByRole("tab", { name: "beta", exact: true }).focus();
   await page.keyboard.press("Alt+Shift+ArrowLeft");
-  assert.deepEqual(await page.getByRole("tab").allTextContents(), ["beta", "alpha"]);
+  assert.deepEqual(await repositoryTabNames(), ["beta", "alpha"]);
 
   await view(true);
 
@@ -778,7 +780,7 @@ try {
   assert.equal((await inspect(home)).motion.value, true);
 
   await draftIs("Saved at close without a delay");
-  assert.deepEqual(await page.getByRole("tab").allTextContents(), ["gamma"]);
+  assert.deepEqual(await repositoryTabNames(), ["gamma"]);
   assert.equal(
     await page.getByRole("tab", { name: "gamma", exact: true }).getAttribute("aria-selected"),
     "true",
@@ -798,7 +800,7 @@ try {
   await page.getByRole("button", { name: /Active profile: Work/ }).waitFor();
   await view(false);
   await draftIs("Work beta draft");
-  assert.deepEqual(await page.getByRole("tab").allTextContents(), ["beta", "alpha"]);
+  assert.deepEqual(await repositoryTabNames(), ["beta", "alpha"]);
 
   await page.keyboard.press(`${modifier}+9`);
   await draftIs("Work alpha draft\n\nprivate details");

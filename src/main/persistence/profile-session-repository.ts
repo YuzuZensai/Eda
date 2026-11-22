@@ -40,6 +40,10 @@ export class ProfileSessionRepository {
   }
 
   read(profileId: string, windowId: string): Omit<SessionSnapshot, "context"> {
+    return this.readOwnedSession(profileId, windowId).snapshot;
+  }
+
+  private readOwnedSession(profileId: string, windowId: string) {
     this.requireProfile(profileId);
 
     const row = this.db
@@ -48,11 +52,12 @@ export class ProfileSessionRepository {
       .where(sessionOwner(profileId, windowId))
       .get();
     const parsed = row ? parse(row.value) : emptySession();
+    const valid = isSession(parsed);
     let recovery =
-      row && !isSession(parsed)
+      row && !valid
         ? t("main.persistence.profileSessionRepository.savedTabsLayoutUseAnUnsupportedOrDamaged")
         : null;
-    const session = isSession(parsed) ? structuredClone(parsed) : emptySession();
+    const session = valid ? parsed : emptySession();
     const live = new Set(
       this.db
         .select({ id: repositories.id })
@@ -86,25 +91,29 @@ export class ProfileSessionRepository {
         );
     }
 
-    return { session, drafts, recovery };
+    return { snapshot: { session, drafts, recovery }, live };
   }
 
   change(profileId: string, windowId: string, change: unknown): void {
     if (!isSessionChange(change))
       throw invalid(errorText("main.persistence.profileSessionRepository.invalidSavedStateUpdate"));
 
-    const current = this.read(profileId, windowId);
+    const { snapshot: current, live } = this.readOwnedSession(profileId, windowId);
 
     if (current.recovery)
       throw invalid(errorText("errors.operationBlocked", { reason: current.recovery }));
 
+    if ((change.kind === "tabs" ? change.tabs : [change.repositoryId]).some((id) => !live.has(id)))
+      throw invalid(
+        errorText(
+          "main.persistence.profileSessionRepository.theRepositoryDoesNotBelongToThisProfile",
+        ),
+      );
+
     if (change.kind === "tabs") {
-      for (const repositoryId of change.tabs) this.requireRepository(profileId, repositoryId);
       current.session.tabs = change.tabs;
       current.session.selectedRepositoryId = change.selectedRepositoryId;
     } else {
-      this.requireRepository(profileId, change.repositoryId);
-
       if (change.kind === "draft") {
         if (change.draft.message === "" && !change.draft.amend && !change.draft.signOff) {
           this.db.delete(profileDrafts).where(draftOwner(profileId, change.repositoryId)).run();
@@ -190,21 +199,6 @@ export class ProfileSessionRepository {
     )
       throw invalid(
         errorText("main.persistence.profileSessionRepository.thatProfileNoLongerExists"),
-      );
-  }
-
-  private requireRepository(profileId: string, repositoryId: string): void {
-    if (
-      !this.db
-        .select({ id: repositories.id })
-        .from(repositories)
-        .where(and(eq(repositories.id, repositoryId), eq(repositories.identityId, profileId)))
-        .get()
-    )
-      throw invalid(
-        errorText(
-          "main.persistence.profileSessionRepository.theRepositoryDoesNotBelongToThisProfile",
-        ),
       );
   }
 }
