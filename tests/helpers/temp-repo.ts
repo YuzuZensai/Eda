@@ -1,6 +1,6 @@
 import { fixtureEnvironment } from "./fixture-environment";
 import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,7 +39,7 @@ export const resolveTestGitEngine = () =>
 export async function createTempRepo(
   options: { bare?: boolean; init?: boolean } = {},
 ): Promise<TempRepo> {
-  const root = await mkdtemp(join(tmpdir(), "eda-test-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "eda-test-")));
   const home = join(root, "home");
   const path = join(root, "repo");
 
@@ -87,7 +87,7 @@ export async function createTempRepo(
       await run(["commit", "--no-gpg-sign", "-m", message]);
     },
     async cleanup() {
-      await rm(root, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
 

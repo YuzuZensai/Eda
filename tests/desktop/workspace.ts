@@ -7,12 +7,13 @@ import assert from "node:assert/strict";
 import { expect } from "playwright/test";
 import { type ElectronApplication, type Page } from "playwright";
 import { execFileSync } from "node:child_process";
-import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { tinyPng, pngVersion } from "../fixtures/images.ts";
 
-const root = await mkdtemp(join(tmpdir(), "eda-workspace-gate-"));
+const workspacePrefix = join(await realpath(tmpdir()), "eda-workspace-gate-");
+const root = await mkdtemp(workspacePrefix);
 const repository = join(root, "workspace-repo");
 const config = join(root, "gitconfig");
 
@@ -908,7 +909,7 @@ try {
   throw error;
 } finally {
   if (app) await app.close().catch(() => app?.process().kill());
-  assert.ok(resolve(root).startsWith(resolve(tmpdir(), "eda-workspace-gate-")));
+  assert.ok(root.startsWith(workspacePrefix));
   await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }
 
