@@ -603,7 +603,7 @@ describe("GitService command construction", () => {
     expect(result.omittedFiles).toBe(3);
   });
 
-  it("uses porcelain stdout to distinguish a server hook rejection from generic push stderr", async () => {
+  it("retains the rejected ref and server reason for Activity when Git reports them on stdout", async () => {
     const runner = new FakeProcessRunner().otherwise({
       exitCode: 1,
       ...pushErrorFixtures.hookRejected,
@@ -613,7 +613,10 @@ describe("GitService command construction", () => {
       service(runner).exec(["push", "--porcelain", "--", "origin", "main:main"], {
         operation: "push",
       }),
-    ).rejects.toMatchObject({ kind: "remote-rejected" });
+    ).rejects.toMatchObject({
+      kind: "remote-rejected",
+      rawStderr: expect.stringContaining(pushErrorFixtures.hookRejected.stdout),
+    });
   });
 
   it("passes argv, never a shell string", async () => {

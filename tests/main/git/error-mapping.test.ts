@@ -19,6 +19,17 @@ describe("mapGitError", () => {
     expect(error.toData()).not.toHaveProperty("rawStderr");
   });
 
+  it("explains the GitHub workflow scope rejection for an OAuth push", () => {
+    const error = map("error: failed to push some refs", {
+      stdout:
+        "!\trefs/heads/main:refs/heads/main\t[remote rejected] (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yaml` without `workflow` scope)",
+    });
+
+    expect(error.kind).toBe("remote-rejected");
+    expect(error.message).toContain("GitHub Actions workflow");
+    expect(error.suggestedAction).toContain("authorize workflow access");
+  });
+
   it.each(["protectedBranch", "hookRejected", "policyMentionsHistory"] as const)(
     "maps %s to an actionable server rejection before history patterns",
     (fixture) => {

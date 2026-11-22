@@ -117,7 +117,7 @@ export class GitHubAuth {
     try {
       response = await this.request(
         DEVICE_URL,
-        { client_id: this.clientId, scope: "repo offline_access" },
+        { client_id: this.clientId, scope: "repo workflow offline_access" },
         controller.signal,
       );
     } finally {

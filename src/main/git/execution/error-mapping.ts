@@ -53,6 +53,12 @@ const PATTERNS: readonly Pattern[] = [
   },
   {
     kind: "remote-rejected",
+    test: /refusing to allow [^\r\n]+ to create or update workflow [^\r\n]+ without [`'"]?workflow[`'"]? scope/i,
+    message: () => errorText("main.git.errorMapping.workflowScopeRequired"),
+    suggestedAction: () => errorText("main.git.errorMapping.authorizeWorkflowScope"),
+  },
+  {
+    kind: "remote-rejected",
     test: /\[remote rejected\]|protected branch|(?:pre-receive|update) hook declined|GH006:|GH013:|repository rule violations/i,
     message: () => errorText("main.git.errorMapping.remoteRejectedPush"),
     suggestedAction: () => errorText("main.git.errorMapping.reviewServerPushRequirements"),

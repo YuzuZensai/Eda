@@ -463,13 +463,15 @@ export class GitService {
     const allowed = options.allowedExitCodes ?? [0];
 
     if (!allowed.includes(result.exitCode)) {
+      const stdout = redact(result.stdout.toString("utf8"));
+      const rejectedRefs = command === "push" ? stdout.match(/^!\t[^\t\r\n]+\t[^\r\n]+/gm) : null;
       throw mapGitError({
         operation: options.operation,
         ...(options.cwd !== undefined && { repositoryPath: options.cwd }),
         ...(options.identityName !== undefined && { identityName: options.identityName }),
         exitCode: result.exitCode,
-        stderr,
-        stdout: redact(result.stdout.toString("utf8")),
+        stderr: rejectedRefs ? [stderr, ...rejectedRefs].join("\n") : stderr,
+        stdout,
       });
     }
 

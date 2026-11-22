@@ -166,6 +166,8 @@
   "main.git.errorMapping.itMayHaveBeenMovedOrDeletedRemoveItFromEdaOrOpenADifferentFolder": "It may have been moved or deleted. Remove it from Eda, or open a different folder.",
   "main.git.errorMapping.mergeTheBranchOrReviewItsCommitsBeforeDeletingIt": "Merge the branch or review its commits before deleting it.",
   "main.git.errorMapping.resolveTheConflictingFilesThenCommitTheResult": "Resolve the conflicting files, then commit the result.",
+  "main.git.errorMapping.workflowScopeRequired": "GitHub rejected a change to a GitHub Actions workflow because the credential lacks workflow access.",
+  "main.git.errorMapping.authorizeWorkflowScope": "Sign in to GitHub again in your Eda profile and authorize workflow access. If you use a personal access token, grant it permission to write workflows.",
   "main.git.errorMapping.remoteRejectedPush": "The remote server rejected this push.",
   "main.git.errorMapping.reviewServerPushRequirements": "Check the branch protection rules and server hook requirements. Push to an allowed branch and open a pull or merge request, or ask a repository administrator for help.",
   "main.git.errorMapping.runGitFsckToInspectTheDamageAFreshCloneMayBeTheFastestFix": "Run `git fsck` to inspect the damage. A fresh clone may be the fastest fix.",
