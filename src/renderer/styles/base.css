@@ -649,7 +649,9 @@ html[data-custom-background="true"] .app-surface-chrome {
   background-color: var(--app-chrome-tint);
 }
 
-html[data-custom-background="true"] .app-surface-content {
+html[data-custom-background="true"] .app-surface-content,
+html[data-custom-background="true"] .terminal-sessions,
+html[data-custom-background="true"] .terminal-sidebar {
   background-color: var(--app-content-tint);
 }
 

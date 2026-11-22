@@ -233,10 +233,40 @@ try {
   await expect(drawerToggle).toHaveAttribute("aria-expanded", "true");
   await expect(terminalTab).toHaveAttribute("aria-selected", "true");
   await expect(activity).toBeHidden();
+
+  const terminalBackground = terminal.locator(".terminal-sessions");
+  const sessionSidebar = terminal.getByRole("complementary");
+  const transparent = "rgba(0, 0, 0, 0)";
+  await expect(terminalBackground).not.toHaveCSS("background-color", transparent);
+  await expect(sessionSidebar).not.toHaveCSS("background-color", transparent);
+  const wallpaper = await readFile(new URL("../fixtures/backgrounds/sakura.jpg", import.meta.url));
+  const backgroundSaved = await page.evaluate(
+    (image) =>
+      window.eda.settings.set(
+        "background",
+        { kind: "application" },
+        { image, strength: 20, blur: 4 },
+      ),
+    `data:image/jpeg;base64,${wallpaper.toString("base64")}`,
+  );
+  assert.ok(backgroundSaved.ok, JSON.stringify(backgroundSaved));
+  await expect(terminalBackground).toHaveCSS("background-color", transparent);
+  await expect(sessionSidebar).toHaveCSS("background-color", transparent);
+
   const sessions = terminal.getByRole("tablist", { name: "Sessions" });
   await button(terminal, "New shell").click();
   const surface = terminal.getByRole("textbox", { name: "Shell input and output" });
   await expect(surface).toBeFocused();
+  await expect(surface).toHaveCSS("background-color", transparent);
+  await expect(terminalBackground).toHaveCSS("background-color", transparent);
+  await expect(sessionSidebar).toHaveCSS("background-color", transparent);
+  const backgroundReset = await page.evaluate(() =>
+    window.eda.settings.reset("background", { kind: "application" }),
+  );
+  assert.ok(backgroundReset.ok, JSON.stringify(backgroundReset));
+  await expect(terminalBackground).not.toHaveCSS("background-color", transparent);
+  await expect(sessionSidebar).not.toHaveCSS("background-color", transparent);
+
   await page.keyboard.type("echo desktop-terminal > terminal-proof.txt");
   await page.keyboard.press("Enter");
   await expect.poll(() => existsSync(join(repository, "terminal-proof.txt"))).toBe(true);
