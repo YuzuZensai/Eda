@@ -535,7 +535,18 @@ try {
 
   await mkdir("screenshots", { recursive: true });
   await page.screenshot({ path: resolve("screenshots/diff-collapsed.png") });
-  await largeDiff.click();
+
+  const findInDiff = page.getByRole("searchbox", { name: "Find in diff" });
+  await findInDiff.fill("PREVIEW LINE 1500");
+  await page.getByRole("button", { name: "Next match" }).click();
+  const match = page
+    .locator("[data-diff-text]")
+    .filter({ has: page.locator("mark[data-active-search-match]") });
+  await expect(match).toHaveText("preview line 1500");
+  await findInDiff.fill("");
+  await page.getByLabel("Unified diff", { exact: true }).evaluate((list) => {
+    list.scrollTop = 0;
+  });
 
   await page
     .getByText("Preview truncated to keep the viewer responsive. Some lines or text are omitted.", {

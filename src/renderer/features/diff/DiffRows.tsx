@@ -8,7 +8,14 @@ import {
   PlusIcon as Plus,
   MinusIcon as Minus,
 } from "../../components/ui/icons";
-import type { TextToken, UnifiedRow } from "../../repository/diff-model";
+import { useMemo } from "react";
+import {
+  emphasizeWords,
+  highlightLine,
+  type SideBySideRow,
+  type TextToken,
+  type UnifiedRow,
+} from "../../repository/diff-model";
 import { diffSearchMatches } from "../../repository/diff-search";
 import { PartialLineControl } from "../changes/PartialStageControls";
 
@@ -114,6 +121,11 @@ export function UnifiedDiffRow({
   wrap?: boolean;
 }) {
   const lineNumber = row.newLineNumber ?? row.oldLineNumber;
+  const tokens = useMemo(
+    (): TextToken[] =>
+      row.kind === "hunk" ? [{ kind: "plain", text: row.text }] : highlightLine(row.text),
+    [row],
+  );
 
   return (
     <div
@@ -145,20 +157,59 @@ export function UnifiedDiffRow({
         }
         aria-label={`${stateLabel(row.kind)}${lineNumber ? t("diff.diffRows.line", { lineNumber: lineNumber }) : ""}: ${row.text}`}
       >
-        <Tokens tokens={row.tokens} query={query} active={active} />
+        <Tokens tokens={tokens} query={query} active={active} />
       </span>
     </div>
   );
 }
 
-export function DiffCell({
+export function SplitDiffRow({
   row,
+  query,
+  active,
+  wrap,
+}: {
+  row: SideBySideRow;
+  query: string;
+  active: boolean;
+  wrap: boolean;
+}) {
+  const [left, right] = useMemo(() => {
+    if (row.left?.kind === "deletion" && row.right?.kind === "addition")
+      return emphasizeWords(row.left.text, row.right.text);
+    const left = row.left ? highlightLine(row.left.text) : [];
+    if (row.left === row.right) return [left, left] as const;
+    return [left, row.right ? highlightLine(row.right.text) : []] as const;
+  }, [row]);
+
+  return (
+    <div
+      className="grid w-full grid-cols-2"
+      style={wrap ? { minHeight: DIFF_ROW_HEIGHT } : { height: DIFF_ROW_HEIGHT }}
+    >
+      <DiffCell wrap={wrap} row={row.left} tokens={left} side="old" query={query} active={active} />
+      <DiffCell
+        wrap={wrap}
+        row={row.right}
+        tokens={right}
+        side="new"
+        query={query}
+        active={active}
+      />
+    </div>
+  );
+}
+
+function DiffCell({
+  row,
+  tokens,
   side,
   query = "",
   active = false,
   wrap = false,
 }: {
   row: UnifiedRow | undefined;
+  tokens: TextToken[];
   side: "old" | "new";
   query?: string;
   active?: boolean;
@@ -186,7 +237,7 @@ export function DiffCell({
         }
         aria-label={`${stateLabel(row.kind)}${lineNumber ? t("diff.diffRows.line", { lineNumber: lineNumber }) : ""}: ${row.text}`}
       >
-        <Tokens tokens={row.tokens} query={query} active={active} />
+        <Tokens tokens={tokens} query={query} active={active} />
       </span>
     </div>
   ) : (
@@ -217,7 +268,7 @@ function Tokens({
   query: string;
   active: boolean;
 }) {
-  const matches = diffSearchMatches(tokens.map((token) => token.text).join(""), query);
+  const matches = query ? diffSearchMatches(tokens.map((token) => token.text).join(""), query) : [];
   let offset = 0;
   let matchIndex = 0;
 

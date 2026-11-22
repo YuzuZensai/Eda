@@ -277,7 +277,7 @@ export const COMPONENT_GROUPS: {
       "CommitDetails",
       "DiffContent",
       ["DiffLayout", ["DiffLayoutControls", "DiffDisplayControls"]],
-      ["DiffRows", ["DiffSummaryRow", "UnifiedDiffRow", "DiffCell"]],
+      ["DiffRows", ["DiffSummaryRow", "UnifiedDiffRow", "SplitDiffRow"]],
       "DiffViewer",
       "ExportPatchButton",
       "ImageDiff",

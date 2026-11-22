@@ -1,14 +1,38 @@
 import { errorFixture } from "../../../helpers/error";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { ok, type Result } from "@shared/errors";
 import type { DiscardPreview } from "@shared/workflows/recovery";
 import type { UnifiedDiff } from "@shared/repository/repository-read";
 import { useAppStore } from "@renderer/stores/app-store";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
 import { DiffViewer } from "@renderer/features/diff/DiffViewer";
+import { SplitDiffRow } from "@renderer/features/diff/DiffRows";
 import { ImageDiff } from "@renderer/features/diff/ImageDiff";
 import type { ImagePreview } from "@shared/repository/image-preview";
+
+it("emphasizes changed words and highlights literal search matches on the visible split row", () => {
+  const row = {
+    key: "pair",
+    left: { key: "before", kind: "deletion", text: "const old = 1" },
+    right: { key: "after", kind: "addition", text: "const next = 1" },
+  } as const;
+  const container = document.createElement("div");
+  container.innerHTML = renderToStaticMarkup(
+    <SplitDiffRow row={row} active wrap={false} query="NEXT =" />,
+  );
+  expect(
+    [...container.querySelectorAll("[data-diff-text] .bg-accent-muted")].map(
+      (part) => part.textContent,
+    ),
+  ).toEqual(["old", "next"]);
+  expect(
+    [...container.querySelectorAll("mark[data-active-search-match]")]
+      .map((part) => part.textContent)
+      .join(""),
+  ).toBe("next =");
+});
 
 it("keeps a partial-discard review through a diff refresh and closes it when the selected file changes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

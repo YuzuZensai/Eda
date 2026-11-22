@@ -5,16 +5,17 @@ import { ArrowDownIcon as ArrowDown, ArrowUpIcon as ArrowUp } from "../../compon
 
 import {
   type UnifiedRow,
+  type SideBySideRow,
   groupUnchangedRows,
   toSideBySideRows,
   toUnifiedRows,
 } from "../../repository/diff-model";
-import { diffSearchMatches } from "../../repository/diff-search";
+import { diffSearchPattern } from "../../repository/diff-search";
 
 import { useRepositoryStore } from "../../stores/repository-store";
 import { VirtualRows } from "../../components/ui/display/VirtualRows";
 import { PartialStageProvider } from "../changes/PartialStageControls";
-import { DIFF_ROW_HEIGHT, DiffCell, DiffSummaryRow, UnifiedDiffRow } from "./DiffRows";
+import { DIFF_ROW_HEIGHT, SplitDiffRow, DiffSummaryRow, UnifiedDiffRow } from "./DiffRows";
 import { IconButton, SearchField } from "../../components/ui/index";
 
 export function DiffContent({
@@ -55,43 +56,33 @@ export function DiffContent({
 
     const rows = toUnifiedRows(diff, new Map(diff.files.map((_, index) => [index, true])));
     let fileIndex = 0;
-    const owners = new Map<string, number>();
-
-    for (const row of rows) {
+    const entry = (row: UnifiedRow, other?: UnifiedRow) => {
       if (row.file) fileIndex = row.file.index;
-      owners.set(row.key, fileIndex);
-    }
+      return { key: row.key, fileIndex, text: row.text, other: other?.text };
+    };
 
-    const entries =
-      mode === "unified"
-        ? rows.map((row) => ({ key: row.key, rows: [row] }))
-        : toSideBySideRows(rows).map((row) => ({
-            key: row.key,
-            rows: [row.left, row.right].filter((item): item is UnifiedRow => !!item),
-          }));
-
-    return entries.map((entry) => ({ ...entry, fileIndex: owners.get(entry.key)! }));
+    return mode === "unified"
+      ? rows.map((row) => entry(row))
+      : toSideBySideRows(rows).map(({ left, right }) =>
+          entry(left ?? right!, left && left !== right ? right : undefined),
+        );
   }, [diff, mode, searching]);
 
-  const searchable = useMemo(
-    () =>
-      query
-        ? searchEntries.filter((entry) =>
-            entry.rows.some((row) => diffSearchMatches(row.text, query).length > 0),
-          )
-        : [],
-    [searchEntries, query],
-  );
+  const targets = useMemo(() => {
+    if (!query)
+      return unified
+        .filter((row) => row.kind === "hunk")
+        .map((row) => ({ key: row.key, fileIndex: undefined }));
+    const pattern = diffSearchPattern(query);
+    return searchEntries.filter(
+      ({ text, other }) => pattern.test(text) || (other && pattern.test(other)),
+    );
+  }, [unified, searchEntries, query]);
 
-  const visible =
-    mode === "unified"
-      ? unified.map((row) => ({ key: row.key, hunk: row.kind === "hunk" }))
-      : split.map((row) => ({ key: row.key, hunk: row.left?.kind === "hunk" }));
-  const targets = query
-    ? searchable
-    : visible.filter((row) => row.hunk).map((row) => ({ key: row.key, fileIndex: undefined }));
-  const position = visible.findIndex((row) => row.key === selectedKey);
-  const activeTarget = targets.findIndex((target) => target.key === selectedKey);
+  const visible = mode === "unified" ? unified : split;
+  const position = selectedKey === null ? -1 : visible.findIndex((row) => row.key === selectedKey);
+  const activeTarget =
+    selectedKey === null ? -1 : targets.findIndex((target) => target.key === selectedKey);
   const move = (direction: number) => {
     if (!targets.length) return;
 
@@ -105,7 +96,10 @@ export function DiffContent({
     const next = targets[nextIndex]!;
 
     if (query && next.fileIndex !== undefined) {
-      setExpanded((current) => new Map(current).set(next.fileIndex!, true));
+      const fileIndex = next.fileIndex;
+      setExpanded((current) =>
+        current.get(fileIndex) ? current : new Map(current).set(fileIndex, true),
+      );
     }
 
     setSelectedKey(next.key);
@@ -117,6 +111,19 @@ export function DiffContent({
     setExpanded((current) => new Map(current).set(index, value));
     setSelectedKey(null);
   };
+  const renderUnified = (row: UnifiedRow, active: boolean) =>
+    row.kind === "file" || row.kind === "notice" ? (
+      <DiffSummaryRow
+        key={row.key}
+        row={row}
+        onToggle={toggle}
+        onToggleRegion={toggleRegion}
+        query={query}
+        active={active}
+      />
+    ) : (
+      <UnifiedDiffRow key={row.key} row={row} wrap={wrap} query={query} active={active} />
+    );
   const content = (
     <>
       <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle px-3 py-1 text-xs text-text-tertiary">
@@ -185,90 +192,25 @@ export function DiffContent({
           })}
         </p>
       )}
-      {mode === "unified" ? (
-        <VirtualRows
-          ariaLabel={t("diff.diffContent.unifiedDiff")}
-          scrollKey={readOnly ? undefined : selectionKey}
-          items={unified}
-          revealIndex={position >= 0 ? position : undefined}
-          rowHeight={DIFF_ROW_HEIGHT}
-          measureRows={wrap}
-          horizontalScroll={!wrap}
-          className="min-h-0 flex-1 selectable mono text-xs"
-          renderRow={(row, index) =>
-            row.kind === "file" || row.kind === "notice" ? (
-              <DiffSummaryRow
-                key={row.key}
-                row={row}
-                onToggle={toggle}
-                onToggleRegion={toggleRegion}
-                query={query}
-                active={index === position}
-              />
-            ) : (
-              <UnifiedDiffRow
-                wrap={wrap}
-                key={row.key}
-                row={row}
-                query={query}
-                active={index === position}
-              />
-            )
-          }
-        />
-      ) : (
-        <VirtualRows
-          ariaLabel={t("diff.diffContent.sideBySideDiff")}
-          scrollKey={readOnly ? undefined : selectionKey}
-          items={split}
-          revealIndex={position >= 0 ? position : undefined}
-          rowHeight={DIFF_ROW_HEIGHT}
-          measureRows={wrap}
-          horizontalScroll={!wrap}
-          className="min-h-0 flex-1 selectable mono text-xs"
-          renderRow={(row, index) =>
-            row.left?.kind === "file" || row.left?.kind === "notice" ? (
-              <DiffSummaryRow
-                key={row.key}
-                row={row.left}
-                onToggle={toggle}
-                onToggleRegion={toggleRegion}
-                query={query}
-                active={index === position}
-              />
-            ) : row.left?.kind === "hunk" ? (
-              <UnifiedDiffRow
-                wrap={wrap}
-                key={row.key}
-                row={row.left}
-                query={query}
-                active={index === position}
-              />
-            ) : (
-              <div
-                key={row.key}
-                className="grid w-full grid-cols-2"
-                style={wrap ? { minHeight: DIFF_ROW_HEIGHT } : { height: DIFF_ROW_HEIGHT }}
-              >
-                <DiffCell
-                  wrap={wrap}
-                  row={row.left}
-                  side="old"
-                  query={query}
-                  active={index === position}
-                />
-                <DiffCell
-                  wrap={wrap}
-                  row={row.right}
-                  side="new"
-                  query={query}
-                  active={index === position}
-                />
-              </div>
-            )
-          }
-        />
-      )}
+      <VirtualRows<UnifiedRow | SideBySideRow>
+        ariaLabel={t(
+          mode === "unified" ? "diff.diffContent.unifiedDiff" : "diff.diffContent.sideBySideDiff",
+        )}
+        scrollKey={readOnly ? undefined : selectionKey}
+        items={visible}
+        revealIndex={position >= 0 ? position : undefined}
+        rowHeight={DIFF_ROW_HEIGHT}
+        measureRows={wrap}
+        horizontalScroll={!wrap}
+        className="min-h-0 flex-1 selectable mono text-xs"
+        renderRow={(row, index) => {
+          const active = index === position;
+          if ("kind" in row) return renderUnified(row, active);
+          if (row.left?.kind === "file" || row.left?.kind === "notice" || row.left?.kind === "hunk")
+            return renderUnified(row.left, active);
+          return <SplitDiffRow key={row.key} wrap={wrap} row={row} query={query} active={active} />;
+        }}
+      />
     </>
   );
 

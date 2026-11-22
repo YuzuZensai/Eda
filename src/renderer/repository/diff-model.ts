@@ -25,7 +25,6 @@ export interface UnifiedRow {
   oldLineNumber?: number;
   newLineNumber?: number;
   text: string;
-  tokens: TextToken[];
 }
 
 export interface SideBySideRow {
@@ -89,10 +88,8 @@ export function highlightLine(text: string): TextToken[] {
   }));
 }
 
-function collapseReason(file: FileDiff): string | undefined {
+function collapseReason(file: FileDiff, stats: ReturnType<typeof diffStats>): string | undefined {
   if (file.binary) return t("diffModel.binaryFile");
-
-  const stats = diffStats(file);
 
   if (
     file.truncated ||
@@ -123,7 +120,7 @@ export function toUnifiedRows(
   for (const [fileIndex, file] of diff.files.entries()) {
     const path = file.newPath ?? file.oldPath ?? "unknown";
     const stats = diffStats(file);
-    const reason = collapseReason(file);
+    const reason = collapseReason(file, stats);
     const expandable = !file.binary && file.hunks.some((hunk) => hunk.lines.length > 0);
     const expanded = expandable && (expandedFiles.get(fileIndex) ?? !reason);
     const summary = [
@@ -149,7 +146,6 @@ export function toUnifiedRows(
       key: `f-${fileIndex}`,
       kind: "file",
       text: path,
-      tokens: [{ kind: "plain", text: path }],
       file: { index: fileIndex, expanded, expandable, summary },
     });
 
@@ -180,7 +176,6 @@ export function toUnifiedRows(
         key: `n-${fileIndex}`,
         kind: "notice",
         text: notice,
-        tokens: [{ kind: "plain", text: notice }],
       });
 
     if (!expanded) continue;
@@ -193,7 +188,6 @@ export function toUnifiedRows(
         kind: "hunk",
         hunkIndex,
         text: heading,
-        tokens: [{ kind: "plain", text: heading }],
       });
 
       for (const [lineIndex, line] of hunk.lines.entries()) {
@@ -205,7 +199,6 @@ export function toUnifiedRows(
           ...(line.oldLineNumber !== undefined && { oldLineNumber: line.oldLineNumber }),
           ...(line.newLineNumber !== undefined && { newLineNumber: line.newLineNumber }),
           text: line.content,
-          tokens: highlightLine(line.content),
         });
       }
     }
@@ -234,7 +227,6 @@ export function groupUnchangedRows(
         key,
         kind: "notice",
         text: "",
-        tokens: [],
         contextRegion: { count, collapsed: collapsed.has(key) },
       });
       if (collapsed.has(key)) continue;
@@ -264,14 +256,8 @@ export function toSideBySideRows(rows: readonly UnifiedRow[]): SideBySideRow[] {
         const left = deletions[pair];
         const right = additions[pair];
 
-        if (left && right) {
-          const [leftTokens, rightTokens] = emphasizeWords(left.text, right.text);
-          result.push({
-            key: left.key,
-            left: { ...left, tokens: leftTokens },
-            right: { ...right, tokens: rightTokens },
-          });
-        } else if (left) result.push({ key: left.key, left });
+        if (left && right) result.push({ key: left.key, left, right });
+        else if (left) result.push({ key: left.key, left });
         else if (right) result.push({ key: right.key, right });
       }
     } else if (row.kind === "addition") result.push({ key: row.key, right: row });

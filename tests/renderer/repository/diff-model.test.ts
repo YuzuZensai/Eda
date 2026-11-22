@@ -38,8 +38,7 @@ describe("diff presentation model", () => {
     const paired = toSideBySideRows(unified);
     expect(unified.map((row) => row.kind)).toEqual(["file", "hunk", "deletion", "addition"]);
     expect(paired).toHaveLength(3);
-    expect(paired[2]?.left?.tokens.some((token) => token.emphasized)).toBe(true);
-    expect(paired[2]?.right?.tokens.some((token) => token.emphasized)).toBe(true);
+    expect(paired[2]).toMatchObject({ left: unified[2], right: unified[3] });
   });
 
   it("creates inert token data and bounds expensive word comparison", () => {
