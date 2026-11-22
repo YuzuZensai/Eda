@@ -2,7 +2,7 @@ import {
   UNVERIFIED_COMMIT_SIGNATURE,
   type CommitSignatureVerification,
 } from "@shared/repository/repository-read";
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { useAppStore } from "../../stores/app-store";
 
@@ -12,16 +12,16 @@ interface Entry {
   identityId: string | null;
   oid: string;
   tagName?: string | undefined;
-  signature: CommitSignatureVerification | null;
+  // null: manual recheck. undefined: no cached result.
+  signature: CommitSignatureVerification | null | undefined;
   listeners: Set<() => void>;
   running: boolean;
   revision: number;
-  failed: boolean;
-  discarded: boolean;
+  needsRefresh: boolean;
 }
 
 const entries = new Map<string, Entry>();
-const queue: Entry[] = [];
+const queue = new Set<Entry>();
 let running = 0;
 let subscriptions = 0;
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -46,22 +46,19 @@ function entryFor(repositoryId: string, identityId: string | null, oid: string, 
       identityId,
       oid,
       tagName,
-      signature: null,
+      signature: undefined,
       listeners: new Set(),
       running: false,
       revision: 0,
-      failed: false,
-      discarded: false,
+      needsRefresh: true,
     };
-    entries.set(key, entry);
   }
 
-  // Retain recently viewed signatures without growing with the entire repository history.
   entries.delete(key);
   entries.set(key, entry);
 
   for (const [candidateKey, candidate] of entries) {
-    if (entries.size <= 256) break;
+    if (entries.size <= 512) break;
     if (!candidate.listeners.size && !candidate.running && candidate !== entry)
       entries.delete(candidateKey);
   }
@@ -84,19 +81,19 @@ async function load(entry: Entry) {
         })
       : await window.eda.repository.commitSignature(entry.repositoryId, entry.oid);
 
-    if (entry.discarded || entry.revision !== revision) return;
+    if (entry.revision !== revision) return;
 
     const signature =
       result.ok && (!("oid" in result.value) || result.value.oid === entry.oid)
         ? result.value
         : null;
     entry.signature = signature ?? UNVERIFIED_COMMIT_SIGNATURE;
-    entry.failed = signature === null;
+    entry.needsRefresh = signature === null;
   } catch {
-    if (entry.discarded || entry.revision !== revision) return;
+    if (entry.revision !== revision) return;
 
     entry.signature = UNVERIFIED_COMMIT_SIGNATURE;
-    entry.failed = true;
+    entry.needsRefresh = true;
   } finally {
     entry.running = false;
     running--;
@@ -106,13 +103,12 @@ async function load(entry: Entry) {
 }
 
 function drain() {
-  while (running < 2 && queue.length) {
-    const entry = queue.shift()!;
-    if (entry.discarded || !entry.listeners.size || entry.signature) continue;
-    if (entry.running) {
-      queue.push(entry);
-      break;
-    }
+  for (const entry of queue) {
+    if (running >= 2) break;
+    if (entry.running) continue;
+
+    queue.delete(entry);
+    if (!entry.needsRefresh) continue;
 
     entry.running = true;
     running++;
@@ -138,18 +134,21 @@ export function cacheCommitSignature(
 
   entry.revision++;
   entry.signature = signature;
-  entry.failed = failed;
+  entry.needsRefresh = failed;
   notify(entry);
   return entry.revision;
 }
 
-export function invalidateRepositorySignatures() {
+export function invalidateRepositorySignatures(clear = true) {
   for (const entry of entries.values()) {
-    entry.revision++;
-    entry.signature = null;
-    entry.failed = false;
-    notify(entry);
-    if (entry.listeners.size && !queue.includes(entry)) queue.push(entry);
+    if (clear) {
+      entry.revision++;
+      entry.signature = undefined;
+      notify(entry);
+    } else if (entry.signature === null || entry.running) continue;
+
+    entry.needsRefresh = true;
+    if (entry.listeners.size) queue.add(entry);
   }
   drain();
 }
@@ -165,8 +164,9 @@ export function useTagSignature(
   identityId: string | null,
   name: string,
   oid: string | undefined,
+  visible: boolean,
 ) {
-  return useRepositorySignature(repositoryId, identityId, oid, name);
+  return useRepositorySignature(repositoryId, identityId, oid, name, visible);
 }
 
 function useRepositorySignature(
@@ -174,30 +174,23 @@ function useRepositorySignature(
   identityId: string | null,
   oid: string | undefined,
   tagName?: string,
+  enabled = true,
 ) {
-  const entry = useMemo(
-    () => (repositoryId && oid ? entryFor(repositoryId, identityId, oid, tagName) : null),
-    [repositoryId, identityId, oid, tagName],
-  );
+  const key = repositoryId && oid ? signatureKey(repositoryId, identityId, oid, tagName) : null;
 
   const subscribe = useCallback(
     (listener: () => void) => {
-      if (!entry) return () => {};
+      if (!repositoryId || !oid || !enabled) return () => {};
 
+      const entry = entryFor(repositoryId, identityId, oid, tagName);
       entry.listeners.add(listener);
       subscriptions++;
       refreshTimer ??= setInterval(() => {
-        if (document.visibilityState === "visible") invalidateRepositorySignatures();
+        if (document.visibilityState === "visible") invalidateRepositorySignatures(false);
       }, 60_000);
 
-      if (entry.failed) {
-        entry.signature = null;
-        entry.failed = false;
-        notify(entry);
-      }
-
-      if (!entry.signature && !entry.running && !queue.includes(entry)) {
-        queue.push(entry);
+      if (entry.needsRefresh && !entry.running) {
+        queue.add(entry);
         drain();
       }
 
@@ -209,16 +202,13 @@ function useRepositorySignature(
           refreshTimer = undefined;
         }
 
-        if (!entry.listeners.size) {
-          const index = queue.indexOf(entry);
-          if (index >= 0) queue.splice(index, 1);
-        }
+        if (!entry.listeners.size) queue.delete(entry);
       };
     },
-    [entry],
+    [repositoryId, identityId, oid, tagName, enabled],
   );
 
-  const snapshot = useCallback(() => entry?.signature ?? null, [entry]);
+  const snapshot = useCallback(() => (key ? entries.get(key)?.signature : undefined), [key]);
   return useSyncExternalStore(subscribe, snapshot);
 }
 
@@ -236,11 +226,9 @@ useAppStore.subscribe((state, previous) => {
   for (const entry of entries.values()) {
     if (entry.identityId !== identityId || live.has(entry.repositoryId)) continue;
 
-    entry.discarded = true;
-    entry.signature = null;
+    entry.revision++;
     entries.delete(entry.key);
-    const index = queue.indexOf(entry);
-    if (index >= 0) queue.splice(index, 1);
+    queue.delete(entry);
     notify(entry);
   }
 });

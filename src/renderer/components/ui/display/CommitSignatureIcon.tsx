@@ -12,7 +12,7 @@ import {
 } from "../icons";
 import { commitSignatureLabel } from "./commit-signature-label";
 
-export function commitSignatureTone(signature: CommitSignatureVerification | null) {
+export function commitSignatureTone(signature: CommitSignatureVerification | null | undefined) {
   if (
     signature?.status === "invalid" ||
     signature?.validity === "invalid" ||
@@ -47,15 +47,16 @@ export function CommitSignatureIcon({
   verifying = false,
   focusable = true,
 }: {
-  signature: CommitSignatureVerification | null;
+  signature: CommitSignatureVerification | null | undefined;
   verifying?: boolean;
   focusable?: boolean;
 }) {
-  const label = verifying
-    ? t("diff.commitDetails.checkingSignature")
-    : signature
-      ? commitSignatureLabel(signature)
-      : t("diff.commitDetails.signatureUnverified");
+  const label =
+    verifying || signature === undefined
+      ? t("diff.commitDetails.checkingSignature")
+      : signature
+        ? commitSignatureLabel(signature)
+        : t("diff.commitDetails.signatureUnverified");
 
   let Icon: typeof GitHubIcon | typeof CircleHelpIcon = CircleHelpIcon;
   if (

@@ -1082,8 +1082,9 @@ it("labels local and remote tags directly in one Tags list", async () => {
   expect(button("Check out tag (detached HEAD)").disabled).toBe(true);
 });
 
-it("shows tag signature status only in Vigilant mode and rejects results for a different tag object", async () => {
+it("keeps tag signatures when scrolling and rejects results for a different tag object", async () => {
   const objectOid = "b".repeat(40);
+  const intersections: Array<(visible: boolean) => void> = [];
   listTags.mockResolvedValue(
     ok([
       { name: "signed", oid: local.oid, annotated: true, objectOid },
@@ -1109,10 +1110,13 @@ it("shows tag signature status only in Vigilant mode and rejects results for a d
       constructor(private readonly onIntersection: IntersectionObserverCallback) {}
 
       observe() {
-        this.onIntersection(
-          [{ isIntersecting: true } as IntersectionObserverEntry],
-          this as unknown as IntersectionObserver,
-        );
+        const intersect = (visible: boolean) =>
+          this.onIntersection(
+            [{ isIntersecting: visible } as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver,
+          );
+        intersections.push(intersect);
+        intersect(true);
       }
 
       disconnect() {}
@@ -1145,6 +1149,12 @@ it("shows tag signature status only in Vigilant mode and rejects results for a d
     expect(verifyTag).toHaveBeenCalledTimes(2);
     expect(verifyTag).toHaveBeenCalledWith({ repositoryId: "repo", name: "signed" });
     expect(verifyTag).toHaveBeenCalledWith({ repositoryId: "repo", name: "moved" });
+
+    await act(async () => intersections.forEach((intersect) => intersect(false)));
+    expect(tagStatus("signed")).toBe("Valid signature · trusted signer");
+    await act(async () => intersections.forEach((intersect) => intersect(true)));
+    expect(tagStatus("signed")).toBe("Valid signature · trusted signer");
+    expect(verifyTag.mock.calls.filter(([{ name }]) => name === "signed")).toHaveLength(1);
 
     await setVigilant(false);
     expect(tagStatus("signed")).toBeUndefined();

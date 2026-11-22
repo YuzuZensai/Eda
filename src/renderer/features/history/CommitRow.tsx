@@ -335,7 +335,9 @@ export function WorkingTreeRow({
 function HistorySignatureIcon({ oid }: { oid: string }) {
   const signature = useCommitSignature(oid);
 
-  return <CommitSignatureIcon signature={signature} verifying={!signature} focusable={false} />;
+  return (
+    <CommitSignatureIcon signature={signature} verifying={signature === null} focusable={false} />
+  );
 }
 
 function Decorations({ decorations }: { decorations: CommitDecoration[] }) {

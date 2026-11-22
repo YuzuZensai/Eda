@@ -173,18 +173,15 @@ function TagSignature({
     context.repositoryId,
     context.identityId,
     tag.name,
-    visible ? objectOid : undefined,
+    objectOid,
+    visible,
   );
   const knownStatus =
     tag.local && !tag.annotated ? UNSIGNED_COMMIT_SIGNATURE : UNVERIFIED_COMMIT_SIGNATURE;
 
   return (
     <span id={id} ref={anchor} className="shrink-0">
-      <CommitSignatureIcon
-        signature={objectOid ? signature : knownStatus}
-        verifying={!!objectOid && !signature}
-        focusable={false}
-      />
+      <CommitSignatureIcon signature={objectOid ? signature : knownStatus} focusable={false} />
     </span>
   );
 }

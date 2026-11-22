@@ -158,7 +158,7 @@ it("ignores old profile responses and keeps a rechecked signature newer than pen
   expect(container.querySelector('[role="img"]')?.getAttribute("aria-label")).toBe(
     "Checking signature",
   );
-  expect(container.querySelector('[role="img"] .animate-spin-fast')).not.toBeNull();
+  expect(container.querySelector('[role="img"] .animate-spin-fast')).toBeNull();
 
   await act(async () => useRepositoryStore.setState({ identityId: "home" }));
   await act(async () => pending[0]!(ok(signature("verified"))));
@@ -220,17 +220,57 @@ it("reuses verified statuses when repository history refreshes", async () => {
   expect(commitSignature).toHaveBeenCalledOnce();
 });
 
-it("retries an unavailable request when its row is shown again", async () => {
+it("keeps the signature status visible during a timed refresh and after scrolling back", async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const pending: Array<(value: Result<CommitSignatureVerification>) => void> = [];
+  const commitSignature = vi.fn(
+    () => new Promise<Result<CommitSignatureVerification>>((resolve) => pending.push(resolve)),
+  );
+  vi.stubGlobal("eda", { repository: { commitSignature } });
+
+  try {
+    await act(async () => root.render(row(true)));
+    await act(async () => pending[0]!(ok(signature("verified"))));
+    const iconLabel = () => container.querySelector('[role="img"]')?.getAttribute("aria-label");
+    expect(iconLabel()).toBe("Verified signature");
+
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(commitSignature).toHaveBeenCalledTimes(2);
+    expect(iconLabel()).toBe("Verified signature");
+
+    await act(async () => root.render(null));
+    await act(async () => root.render(row(true)));
+    expect(iconLabel()).toBe("Verified signature");
+    expect(commitSignature).toHaveBeenCalledTimes(2);
+
+    await act(async () => pending[1]!(ok(signature("invalid"))));
+    expect(iconLabel()).toBe("Invalid signature");
+  } finally {
+    await act(async () => root.render(null));
+    await act(async () => pending.forEach((resolve) => resolve(ok(signature("unsigned")))));
+    visibility.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
+it("keeps the unavailable status visible while retrying a row shown again", async () => {
+  let finishRetry: ((value: Result<CommitSignatureVerification>) => void) | undefined;
   const commitSignature = vi
     .fn()
     .mockResolvedValueOnce(err(errorFixture({ message: "Temporarily unavailable" })))
-    .mockResolvedValueOnce(ok(signature("verified")));
+    .mockImplementationOnce(
+      () => new Promise<Result<CommitSignatureVerification>>((resolve) => (finishRetry = resolve)),
+    );
   vi.stubGlobal("eda", { repository: { commitSignature } });
   await act(async () => root.render(row(true)));
   expect(container.querySelector('[aria-label="Signature could not be verified"]')).not.toBeNull();
 
   await act(async () => root.render(row(false)));
   await act(async () => root.render(row(true)));
+  const label = container.querySelector('[role="img"]')?.getAttribute("aria-label");
+  await act(async () => finishRetry!(ok(signature("verified"))));
+  expect(label).toBe("Signature could not be verified");
   expect(container.querySelector('[aria-label="Verified signature"]')).not.toBeNull();
 });
 

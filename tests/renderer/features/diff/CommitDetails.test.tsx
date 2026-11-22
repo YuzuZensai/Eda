@@ -319,6 +319,7 @@ it("finishes a history row's recheck after selecting another commit", async () =
     );
     const rowIcon = () => container.querySelector('[data-tour="history-commit"] [role="img"]');
     expect(rowIcon()?.getAttribute("aria-label")).toBe("Checking signature");
+    expect(rowIcon()?.querySelector(".animate-spin-fast")).not.toBeNull();
 
     await act(async () =>
       useRepositoryStore.setState({ selection: { kind: "commit", oid: "c".repeat(40) } }),
