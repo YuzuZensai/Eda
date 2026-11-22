@@ -1,9 +1,21 @@
 import { t } from "@shared/i18n";
+import {
+  UNSIGNED_COMMIT_SIGNATURE,
+  UNVERIFIED_COMMIT_SIGNATURE,
+} from "@shared/repository/repository-read";
 import type { BranchSummary } from "@shared/repository/repository-write";
+import { useEffect, useId, useRef, useState } from "react";
+import { CommitSignatureIcon } from "../../components/ui/display/CommitSignatureIcon";
 import { cx, ListItemButton } from "../../components/ui/index";
+import { useTagSignature } from "../../repository/hooks/useCommitSignature";
 import { useRepositoryStore } from "../../stores/repository-store";
 import type { TagReference } from "./hooks/useTagReferences";
 import type { ReferenceTarget } from "./ReferenceMenu";
+
+interface SignatureContext {
+  repositoryId: string;
+  identityId: string | null;
+}
 
 export function ReferenceRow({
   item,
@@ -11,14 +23,18 @@ export function ReferenceRow({
   onActions,
   onCheckout,
   onInspect,
+  signatureContext,
 }: {
   item: BranchSummary | TagReference;
   selected: boolean;
   onActions: (target: ReferenceTarget) => void;
   onCheckout: (branch: BranchSummary) => void;
   onInspect?: () => void;
+  signatureContext?: SignatureContext;
 }) {
   const tag = "isHead" in item ? null : item;
+  const showSignature = tag !== null && signatureContext !== undefined;
+  const signatureId = useId();
 
   const tagTarget = tag
     ? {
@@ -80,6 +96,7 @@ export function ReferenceRow({
         name: item.name,
       })}
       aria-pressed={selected}
+      aria-describedby={showSignature ? signatureId : undefined}
       onClick={(event) => {
         if (tagTarget && !tagTarget.local) {
           const bounds = event.currentTarget.getBoundingClientRect();
@@ -109,8 +126,10 @@ export function ReferenceRow({
         }
       }}
       selected={selected}
-      className="py-1.5 pl-[51px] text-xs"
+      className={cx("py-1.5 text-xs", showSignature ? "pl-[29px]" : "pl-[51px]")}
     >
+      {showSignature && <TagSignature tag={tag} id={signatureId} context={signatureContext} />}
+
       <span className={cx("min-w-0 flex-1 truncate", head && "font-medium text-accent-text")}>
         {displayName}
       </span>
@@ -124,5 +143,48 @@ export function ReferenceRow({
         </span>
       )}
     </ListItemButton>
+  );
+}
+
+function TagSignature({
+  tag,
+  id,
+  context,
+}: {
+  tag: TagReference;
+  id: string;
+  context: SignatureContext;
+}) {
+  const anchor = useRef<HTMLSpanElement>(null);
+  const [visible, setVisible] = useState(false);
+  const objectOid = tag.local ? tag.objectOid : undefined;
+
+  useEffect(() => {
+    if (!objectOid || !anchor.current) return;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      setVisible(entry?.isIntersecting ?? false);
+    });
+    observer.observe(anchor.current);
+    return () => observer.disconnect();
+  }, [objectOid]);
+
+  const signature = useTagSignature(
+    context.repositoryId,
+    context.identityId,
+    tag.name,
+    visible ? objectOid : undefined,
+  );
+  const knownStatus =
+    tag.local && !tag.annotated ? UNSIGNED_COMMIT_SIGNATURE : UNVERIFIED_COMMIT_SIGNATURE;
+
+  return (
+    <span id={id} ref={anchor} className="shrink-0">
+      <CommitSignatureIcon
+        signature={objectOid ? signature : knownStatus}
+        verifying={!!objectOid && !signature}
+        focusable={false}
+      />
+    </span>
   );
 }

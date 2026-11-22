@@ -2531,7 +2531,7 @@
   "signingSettings.chooseSigningKey": "Choose an SSH signing key...",
   "signingSettings.commitSigning": "Commit signing",
   "vigilantModeSettings.title": "Vigilant mode",
-  "vigilantModeSettings.description": "Show signing status beside each SHA in commit history, including unsigned commits. Eda checks local keys and trust settings and automatically looks up missing public keys. Downloaded keys are not automatically trusted.",
+  "vigilantModeSettings.description": "Show signing status beside commit SHAs and tags, including unsigned ones. Eda checks local keys and trust settings and automatically looks up missing public keys for commits. Downloaded keys are not automatically trusted.",
   "signingSettings.couldNotChooseAnSshPublicKey": "Could not choose an SSH public key.",
   "signingSettings.couldNotSaveSigningConfigurationYourSelectionHasBeenRetained": "Could not save signing configuration. Your selection has been retained.",
   "signingSettings.disabled": "Disabled",

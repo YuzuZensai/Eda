@@ -27,6 +27,7 @@ import {
   TextButton,
 } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
+import { usePreferencesStore } from "../../stores/preferences-store";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { useSessionStore } from "../../stores/session-store";
 import { useTagReferences } from "./hooks/useTagReferences";
@@ -54,6 +55,7 @@ export function ReferenceSidebar({
   const transition = useLayoutTransition();
   const [manageOpen, setManageOpen] = useState(false);
   const profileId = useAppStore((state) => state.activeIdentity?.id);
+  const vigilantMode = usePreferencesStore((state) => state.values.vigilantMode.value);
   const status = useRepositoryStore((state) => state.status);
   const selection = useRepositoryStore((state) => state.selection);
 
@@ -176,6 +178,7 @@ export function ReferenceSidebar({
   };
 
   const collapsed = !forceExpanded && (saved.hidden || compact);
+  const showTagSignatures = vigilantMode && !pending && !collapsed && saved.tags;
   const sidebarWidth = forceExpanded ? "w-full" : collapsed ? "w-9" : "w-[200px]";
   const contentWidth = forceExpanded ? "w-full" : "w-[200px]";
   const sidebar = useRef<HTMLElement>(null);
@@ -373,6 +376,10 @@ export function ReferenceSidebar({
                         <ReferenceRow
                           key={item.name}
                           item={item}
+                          {...(group.key === "tags" &&
+                            showTagSignatures && {
+                              signatureContext: { repositoryId, identityId: profileId ?? null },
+                            })}
                           selected={
                             selection?.kind === "commit" &&
                             selection.oid === item.oid &&

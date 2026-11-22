@@ -9,6 +9,7 @@ import { useTagReferences } from "@renderer/features/references/hooks/useTagRefe
 import { ReferenceRow } from "@renderer/features/references/ReferenceRow";
 import { ReferenceSidebar } from "@renderer/features/references/ReferenceSidebar";
 import { useAppStore } from "@renderer/stores/app-store";
+import { usePreferencesStore } from "@renderer/stores/preferences-store";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
 import { useSessionStore } from "@renderer/stores/session-store";
 import { ACTION_FEEDBACK } from "@renderer/motion";
@@ -47,6 +48,7 @@ const deleteBranch = vi.fn();
 const checkoutBranch = vi.fn();
 const deleteTag = vi.fn();
 const listTags = vi.fn();
+const verifyTag = vi.fn();
 const remoteTags = vi.fn();
 const fetchRemote = vi.fn();
 const preparePush = vi.fn();
@@ -115,6 +117,7 @@ beforeEach(() => {
   inspect.mockReset().mockResolvedValue(ok({ branches: [local, remote], remotes }));
   deleteTag.mockReset().mockResolvedValue(ok(undefined));
   listTags.mockReset().mockResolvedValue(ok([{ name: "v1", oid: local.oid }]));
+  verifyTag.mockReset();
   remoteTags.mockReset().mockResolvedValue(ok([{ name: "v1", oid: local.oid }]));
   fetchRemote.mockReset().mockResolvedValue(ok("Fetched."));
   deleteBranch.mockReset().mockResolvedValue(ok(undefined));
@@ -141,6 +144,7 @@ beforeEach(() => {
       renameBranch,
       listBranches: vi.fn().mockResolvedValue(ok([local, remote])),
       listTags,
+      verifyTag,
     },
     remotes: { inspect, preparePush, push, listTags: remoteTags, fetch: fetchRemote },
     settings: { resolve: vi.fn(async (key: SettingKey) => ok(builtInSetting(key))) },
@@ -1076,6 +1080,77 @@ it("labels local and remote tags directly in one Tags list", async () => {
   expect(row.querySelector("svg")).toBeNull();
   await act(async () => row.click());
   expect(button("Check out tag (detached HEAD)").disabled).toBe(true);
+});
+
+it("shows tag signature status only in Vigilant mode and rejects results for a different tag object", async () => {
+  const objectOid = "b".repeat(40);
+  listTags.mockResolvedValue(
+    ok([
+      { name: "signed", oid: local.oid, annotated: true, objectOid },
+      { name: "moved", oid: local.oid, annotated: true, objectOid: "c".repeat(40) },
+      { name: "lightweight", oid: local.oid },
+    ]),
+  );
+  remoteTags.mockResolvedValue(ok([{ name: "remote-only", oid: "d".repeat(40) }]));
+  verifyTag.mockResolvedValue(
+    ok({
+      oid: objectOid,
+      status: "verified",
+      format: "ssh",
+      validity: "valid",
+      signerTrust: "local",
+      reasonCode: null,
+      diagnostics: "",
+    }),
+  );
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(private readonly onIntersection: IntersectionObserverCallback) {}
+
+      observe() {
+        this.onIntersection(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          this as unknown as IntersectionObserver,
+        );
+      }
+
+      disconnect() {}
+    },
+  );
+
+  const values = usePreferencesStore.getState().values;
+  const setVigilant = (value: boolean) =>
+    act(async () =>
+      usePreferencesStore.setState({
+        values: { ...values, vigilantMode: { ...values.vigilantMode, value } },
+      }),
+    );
+  const tagStatus = (name: string) =>
+    container
+      .querySelector(`[aria-label="Inspect tag ${name}"] [role="img"]`)
+      ?.getAttribute("aria-label");
+
+  try {
+    await setVigilant(false);
+    await act(async () => root.render(<ReferenceSidebar repositoryId="repo" />));
+    expect(tagStatus("signed")).toBeUndefined();
+    expect(verifyTag).not.toHaveBeenCalled();
+
+    await setVigilant(true);
+    expect(tagStatus("signed")).toBe("Valid signature · trusted signer");
+    expect(tagStatus("moved")).toBe("Signature could not be verified");
+    expect(tagStatus("lightweight")).toBe("Unsigned");
+    expect(tagStatus("remote-only")).toBe("Signature could not be verified");
+    expect(verifyTag).toHaveBeenCalledTimes(2);
+    expect(verifyTag).toHaveBeenCalledWith({ repositoryId: "repo", name: "signed" });
+    expect(verifyTag).toHaveBeenCalledWith({ repositoryId: "repo", name: "moved" });
+
+    await setVigilant(false);
+    expect(tagStatus("signed")).toBeUndefined();
+  } finally {
+    await act(async () => usePreferencesStore.setState({ values }));
+  }
 });
 
 it("sorts tags newest first and uses descending natural names for equal or unavailable dates", async () => {

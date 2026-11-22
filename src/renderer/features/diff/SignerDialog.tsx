@@ -21,7 +21,7 @@ import {
   Disclosure,
 } from "../../components/ui/index";
 import { commitSignatureLabel } from "../../components/ui/display/commit-signature-label";
-import { invalidateCommitSignatures } from "../../repository/hooks/useCommitSignature";
+import { invalidateRepositorySignatures } from "../../repository/hooks/useCommitSignature";
 
 export function SignerDialog({
   repositoryId,
@@ -75,7 +75,7 @@ export function SignerDialog({
   }, [repositoryId]);
 
   const changed = () => {
-    invalidateCommitSignatures();
+    invalidateRepositorySignatures();
   };
   const perform = async (work: () => Promise<void>) => {
     if (busy) return;

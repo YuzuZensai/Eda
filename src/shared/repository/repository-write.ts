@@ -34,6 +34,7 @@ export interface BranchSummary {
 export interface TagSummary {
   name: string;
   oid: ObjectId;
+  objectOid?: ObjectId;
   createdAt?: string;
   annotated?: boolean;
   message?: string;

@@ -43,7 +43,12 @@ export function parseTags(fields: readonly string[]): TagSummary[] {
       oid: fields[index + 2] || fields[index + 1]!,
       ...(fields[index + 6] ? { createdAt: fields[index + 6]! } : {}),
       ...(fields[index + 3] === "tag"
-        ? { annotated: true, tagger: fields[index + 4]!, message: fields[index + 5]! }
+        ? {
+            annotated: true,
+            objectOid: fields[index + 1]!,
+            tagger: fields[index + 4]!,
+            message: fields[index + 5]!,
+          }
         : {}),
     });
   }

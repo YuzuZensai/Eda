@@ -11,6 +11,7 @@ interface Entry {
   repositoryId: string;
   identityId: string | null;
   oid: string;
+  tagName?: string | undefined;
   signature: CommitSignatureVerification | null;
   listeners: Set<() => void>;
   running: boolean;
@@ -25,12 +26,17 @@ let running = 0;
 let subscriptions = 0;
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
-function signatureKey(repositoryId: string, identityId: string | null, oid: string) {
-  return JSON.stringify([identityId, repositoryId, oid]);
+function signatureKey(
+  repositoryId: string,
+  identityId: string | null,
+  oid: string,
+  tagName?: string,
+) {
+  return JSON.stringify([identityId, repositoryId, oid, tagName]);
 }
 
-function entryFor(repositoryId: string, identityId: string | null, oid: string) {
-  const key = signatureKey(repositoryId, identityId, oid);
+function entryFor(repositoryId: string, identityId: string | null, oid: string, tagName?: string) {
+  const key = signatureKey(repositoryId, identityId, oid, tagName);
   let entry = entries.get(key);
 
   if (!entry) {
@@ -39,6 +45,7 @@ function entryFor(repositoryId: string, identityId: string | null, oid: string) 
       repositoryId,
       identityId,
       oid,
+      tagName,
       signature: null,
       listeners: new Set(),
       running: false,
@@ -49,7 +56,7 @@ function entryFor(repositoryId: string, identityId: string | null, oid: string) 
     entries.set(key, entry);
   }
 
-  // Retain recently viewed commits without growing with the entire repository history.
+  // Retain recently viewed signatures without growing with the entire repository history.
   entries.delete(key);
   entries.set(key, entry);
 
@@ -70,12 +77,21 @@ async function load(entry: Entry) {
   const revision = entry.revision;
 
   try {
-    const result = await window.eda.repository.commitSignature(entry.repositoryId, entry.oid);
+    const result = entry.tagName
+      ? await window.eda.repository.verifyTag({
+          repositoryId: entry.repositoryId,
+          name: entry.tagName,
+        })
+      : await window.eda.repository.commitSignature(entry.repositoryId, entry.oid);
 
     if (entry.discarded || entry.revision !== revision) return;
 
-    entry.signature = result.ok ? result.value : UNVERIFIED_COMMIT_SIGNATURE;
-    entry.failed = !result.ok;
+    const signature =
+      result.ok && (!("oid" in result.value) || result.value.oid === entry.oid)
+        ? result.value
+        : null;
+    entry.signature = signature ?? UNVERIFIED_COMMIT_SIGNATURE;
+    entry.failed = signature === null;
   } catch {
     if (entry.discarded || entry.revision !== revision) return;
 
@@ -127,7 +143,7 @@ export function cacheCommitSignature(
   return entry.revision;
 }
 
-export function invalidateCommitSignatures() {
+export function invalidateRepositorySignatures() {
   for (const entry of entries.values()) {
     entry.revision++;
     entry.signature = null;
@@ -141,9 +157,27 @@ export function invalidateCommitSignatures() {
 export function useCommitSignature(oid: string) {
   const repositoryId = useRepositoryStore((state) => state.repositoryId);
   const identityId = useRepositoryStore((state) => state.identityId);
+  return useRepositorySignature(repositoryId, identityId, oid);
+}
+
+export function useTagSignature(
+  repositoryId: string,
+  identityId: string | null,
+  name: string,
+  oid: string | undefined,
+) {
+  return useRepositorySignature(repositoryId, identityId, oid, name);
+}
+
+function useRepositorySignature(
+  repositoryId: string | null,
+  identityId: string | null,
+  oid: string | undefined,
+  tagName?: string,
+) {
   const entry = useMemo(
-    () => (repositoryId ? entryFor(repositoryId, identityId, oid) : null),
-    [repositoryId, identityId, oid],
+    () => (repositoryId && oid ? entryFor(repositoryId, identityId, oid, tagName) : null),
+    [repositoryId, identityId, oid, tagName],
   );
 
   const subscribe = useCallback(
@@ -153,7 +187,7 @@ export function useCommitSignature(oid: string) {
       entry.listeners.add(listener);
       subscriptions++;
       refreshTimer ??= setInterval(() => {
-        if (document.visibilityState === "visible") invalidateCommitSignatures();
+        if (document.visibilityState === "visible") invalidateRepositorySignatures();
       }, 60_000);
 
       if (entry.failed) {

@@ -186,6 +186,7 @@ describe("tags against real Git", () => {
       {
         name: "annotated",
         oid: head,
+        objectOid: tagObject,
         createdAt: expect.any(String),
         annotated: true,
         tagger: "Eda",

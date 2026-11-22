@@ -134,6 +134,24 @@ try {
     ],
     { env: fixtureEnv, stdio: "pipe" },
   );
+  execFileSync(
+    "git",
+    [
+      "-C",
+      repositoryPath,
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.com",
+      "tag",
+      "--no-sign",
+      "-a",
+      "-m",
+      "Navigation release annotation",
+      "navigation-release",
+    ],
+    { env: fixtureEnv, stdio: "pipe" },
+  );
   await writeFile(join(repositoryPath, "file.txt"), "working change\n");
 
   const repositoryId = await page.evaluate(async (path) => {
@@ -427,6 +445,10 @@ try {
   const unsigned = graph.getByRole("img", { name: "Unsigned", exact: true });
   await unsigned.waitFor({ state: "visible" });
   assert.ok(await unsigned.boundingBox(), "The SHA signing icon must fit the visible column.");
+  const tag = page.getByRole("button", { name: "Inspect tag navigation-release", exact: true });
+  const tagSignature = tag.getByRole("img", { name: "Unsigned", exact: true });
+  await expect(tagSignature).toBeVisible();
+  await expect(tag).toHaveAccessibleDescription("Unsigned");
 
   await page.setViewportSize({ width: 700, height: 900 });
   await expect(graph.locator('[data-tour="history-commit"] [role="img"]')).toHaveCount(0);
@@ -444,6 +466,7 @@ try {
   await expect(profileVigilantMode).toHaveText("Off");
   await settings.click();
   await unsigned.waitFor({ state: "detached" });
+  await expect(tagSignature).toHaveCount(0);
 
   await settings.click();
   await profileVigilantMode.click();
