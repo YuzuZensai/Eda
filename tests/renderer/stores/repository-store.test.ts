@@ -757,15 +757,21 @@ describe("repository read store", () => {
     ]);
   });
 
-  it("previews the next file in the same area after staging the selected one", async () => {
-    const unstaged = (path: string) => ({
+  it("finds the next unstaged file without rescanning a large refreshed status for each path", async () => {
+    let pathReads = 0;
+    const unstaged = (name: string) => ({
       kind: "ordinary" as const,
-      path,
+      get path() {
+        pathReads++;
+        return name;
+      },
       index: "." as const,
       worktree: "M" as const,
       submodule: "N...",
     });
 
+    const changes = Array.from({ length: 2000 }, (_, index) => unstaged(`file-${index}`));
+    const remaining = changes.slice(1000).reverse();
     let staged = false;
 
     Object.defineProperty(window, "eda", {
@@ -775,9 +781,7 @@ describe("repository read store", () => {
           status: async () =>
             ok({
               branch: { ahead: 0, behind: 0, detached: false, unborn: false },
-              changes: staged
-                ? [unstaged("b.ts"), unstaged("c.ts")]
-                : [unstaged("a.ts"), unstaged("b.ts"), unstaged("c.ts")],
+              changes: staged ? remaining : changes,
             }),
           history: async () => ok({ commits: [], nextOffset: null }),
           workingDiff: async () => ok({ files: [] }),
@@ -791,12 +795,14 @@ describe("repository read store", () => {
     });
 
     await useRepositoryStore.getState().open("repo", "identity", true);
-    await useRepositoryStore.getState().selectChange(unstaged("a.ts"), "unstaged");
-    await useRepositoryStore.getState().stage(["a.ts"]);
+    await useRepositoryStore.getState().selectChange(changes[0]!, "unstaged");
+    pathReads = 0;
+    await useRepositoryStore.getState().stage(changes.slice(0, 1000).map((change) => change.path));
 
     const selection = useRepositoryStore.getState().selection;
 
-    expect(selection).toMatchObject({ kind: "change", path: "b.ts", area: "unstaged" });
+    expect(selection).toMatchObject({ kind: "change", path: "file-1000", area: "unstaged" });
+    expect(pathReads).toBeLessThan(changes.length * 5);
   });
 
   it.each(["same", "different"])(

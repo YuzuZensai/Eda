@@ -346,18 +346,18 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     previous: Extract<RepositorySelection, { kind: "change" }>,
     successors: string[],
   ): Promise<void> => {
-    const remaining = categorizeChanges(get().status?.changes ?? [])[previous.area];
+    const remaining = new Set(
+      categorizeChanges(get().status?.changes ?? [])[previous.area].map((change) => change.path),
+    );
 
-    if (remaining.some((change) => change.path === previous.path)) {
+    if (remaining.has(previous.path)) {
       diff.invalidate();
       return loadDiff({ ...previous });
     }
 
-    const next = successors
-      .map((path) => remaining.find((change) => change.path === path))
-      .find((change) => change !== undefined);
+    const next = successors.find((path) => remaining.has(path));
 
-    if (next) return loadDiff({ kind: "change", path: next.path, area: previous.area });
+    if (next !== undefined) return loadDiff({ kind: "change", path: next, area: previous.area });
     set({ selection: null, diff: null, diffLoading: false, contentView: "history" });
     useLayoutStore.getState().reveal("graph");
   };
