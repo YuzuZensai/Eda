@@ -1195,6 +1195,37 @@ it("sorts tags newest first and uses descending natural names for equal or unava
   ]);
 });
 
+it("finds a tag outside the displayed rows without rebuilding unchanged tag metadata", async () => {
+  let metadataReads = 0;
+  const tags = Array.from({ length: 512 }, (_, index) => ({
+    name: `release-${index}`,
+    get oid() {
+      metadataReads++;
+      return local.oid;
+    },
+  }));
+  listTags.mockResolvedValue(ok(tags));
+  remoteTags.mockResolvedValue(ok([]));
+  await act(async () => root.render(<ReferenceSidebar repositoryId="repo" />));
+
+  const target = '[aria-label="Inspect tag release-0"]';
+  expect(container.querySelector(target)).toBeNull();
+  metadataReads = 0;
+  const field = container.querySelector<HTMLInputElement>(
+    '[aria-label="Filter branches and tags"]',
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      field,
+      "release-0",
+    );
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  expect(container.querySelector(target)?.textContent).toBe("release-0Local");
+  expect(metadataReads).toBe(0);
+});
+
 it("leaves local tags usable and discloses unavailable remote status in the tooltip", async () => {
   remoteTags.mockResolvedValue(
     err(errorFixture({ kind: "auth-failed", message: "Authentication failed" })),

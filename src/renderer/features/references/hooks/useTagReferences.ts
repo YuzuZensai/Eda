@@ -1,6 +1,8 @@
 import { preferredRemote, type RemoteTagSummary } from "@shared/integrations/remotes";
 import type { TagSummary } from "@shared/repository/repository-write";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+const tagNames = new Intl.Collator(undefined, { numeric: true });
 
 export interface TagReference extends TagSummary {
   local: boolean;
@@ -55,23 +57,16 @@ export function useTagReferences(
 
           if (cancelled) return;
 
-          setSnapshot((old) => {
-            const current =
-              old?.repositoryId === repositoryId && old.profileId === profileId ? old.remotes : [];
-            const tags = result?.ok ? result.value : null;
-            return {
-              ...context,
-              failed: false,
-              remotes: remotes.map((item) =>
-                item.name === remote.name
-                  ? { name: item.name, tags }
-                  : (current.find((saved) => saved.name === item.name) ?? {
-                      name: item.name,
-                      tags: null,
-                    }),
-              ),
-            };
-          });
+          const tags = result?.ok ? result.value : null;
+          setSnapshot(
+            (old) =>
+              old && {
+                ...old,
+                remotes: old.remotes.map((item) =>
+                  item.name === remote.name ? { ...item, tags } : item,
+                ),
+              },
+          );
         }),
       );
     })().catch(() => {
@@ -90,53 +85,55 @@ export function useTagReferences(
     snapshot.revision === revision
       ? snapshot
       : null;
-  const remoteStatusKnown = current !== null && !current.failed;
-  const remoteStatusUnavailable = current?.failed === true;
-  const remotes = current?.remotes ?? [];
-  const unknownRemotes = remotes
-    .filter((remote) => remote.tags === null)
-    .map((remote) => remote.name);
-  const merged = new Map<string, TagReference>(
-    localTags.map((tag) => [
-      tag.name,
-      {
-        ...tag,
-        local: true,
-        localOnly: false,
-        remotes: [],
-        unknownRemotes,
-        remoteStatusUnavailable,
-      },
-    ]),
-  );
-
-  for (const remote of remotes) {
-    for (const tag of remote.tags ?? []) {
-      let reference = merged.get(tag.name);
-      if (!reference) {
-        reference = {
+  return useMemo(() => {
+    const remoteStatusKnown = current !== null && !current.failed;
+    const remoteStatusUnavailable = current?.failed === true;
+    const remotes = current?.remotes ?? [];
+    const unknownRemotes = remotes
+      .filter((remote) => remote.tags === null)
+      .map((remote) => remote.name);
+    const merged = new Map<string, TagReference>(
+      localTags.map((tag) => [
+        tag.name,
+        {
           ...tag,
-          local: false,
+          local: true,
           localOnly: false,
           remotes: [],
           unknownRemotes,
           remoteStatusUnavailable,
-        };
-        merged.set(tag.name, reference);
+        },
+      ]),
+    );
+
+    for (const remote of remotes) {
+      for (const tag of remote.tags ?? []) {
+        let reference = merged.get(tag.name);
+        if (!reference) {
+          reference = {
+            ...tag,
+            local: false,
+            localOnly: false,
+            remotes: [],
+            unknownRemotes,
+            remoteStatusUnavailable,
+          };
+          merged.set(tag.name, reference);
+        }
+        reference.remotes.push({ name: remote.name, oid: tag.oid });
       }
-      reference.remotes.push({ name: remote.name, oid: tag.oid });
     }
-  }
 
-  for (const tag of merged.values()) {
-    tag.localOnly =
-      tag.local && remoteStatusKnown && unknownRemotes.length === 0 && tag.remotes.length === 0;
-  }
+    for (const tag of merged.values()) {
+      tag.localOnly =
+        tag.local && remoteStatusKnown && unknownRemotes.length === 0 && tag.remotes.length === 0;
+    }
 
-  return [...merged.values()].sort((a, b) => {
-    const aDate = a.createdAt ? Date.parse(a.createdAt) : -Infinity;
-    const bDate = b.createdAt ? Date.parse(b.createdAt) : -Infinity;
+    return [...merged.values()].sort((a, b) => {
+      const aDate = a.createdAt ? Date.parse(a.createdAt) : -Infinity;
+      const bDate = b.createdAt ? Date.parse(b.createdAt) : -Infinity;
 
-    return bDate - aDate || b.name.localeCompare(a.name, undefined, { numeric: true });
-  });
+      return bDate - aDate || tagNames.compare(b.name, a.name);
+    });
+  }, [current, localTags]);
 }
