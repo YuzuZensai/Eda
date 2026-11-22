@@ -5,7 +5,7 @@ import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { Identity } from "@shared/identity/identity";
-import type { GitConfigEntry } from "@shared/identity/profile-session";
+import { commitConfigKeys, type GitConfigEntry } from "@shared/identity/profile-session";
 import {
   HISTORY_PAGE_SIZE,
   MAX_HISTORY_PAGE_SIZE,
@@ -1451,22 +1451,21 @@ export class GitService {
     return exitCode === 0;
   }
 
-  async inspectConfig(
-    key: string,
-    options: { cwd?: string; scope?: "global" | "local" } = {},
-  ): Promise<GitConfigEntry> {
+  async inspectCommitConfig(
+    options: { cwd?: string; scope?: "global" } = {},
+  ): Promise<GitConfigEntry[]> {
+    const keys = commitConfigKeys("all");
     const showScope = this.engine.versionParts.major > 2 || this.engine.versionParts.minor >= 26;
-
-    const result = await this.exec(
+    const fields = await this.execFields(
       [
         "config",
         ...(options.scope ? [`--${options.scope}`] : []),
         "--null",
         "--show-origin",
         ...(showScope ? ["--show-scope"] : []),
-        "--get",
+        "--get-regexp",
         "--",
-        key,
+        `^(${keys.map((key) => key.replaceAll(".", "\\.")).join("|")})$`,
       ],
       {
         ...(options.cwd ? { cwd: options.cwd } : {}),
@@ -1475,18 +1474,17 @@ export class GitService {
       },
     );
 
-    if (result.exitCode === 1) return { key };
-
-    const parts = result.stdout.split("\0");
-    const scope = showScope ? parts.shift() : options.scope;
-    const [origin, value] = parts;
-
-    return {
-      key,
-      ...(scope !== undefined && { scope }),
-      ...(origin !== undefined && { origin }),
-      ...(value !== undefined && { value }),
-    };
+    const entries = new Map<string, GitConfigEntry>();
+    for (let index = 0; index < fields.length;) {
+      const scope = showScope ? fields[index++] : options.scope;
+      const origin = fields[index++]!;
+      const entry = fields[index++]!;
+      const newline = entry.indexOf("\n");
+      const key = newline < 0 ? entry : entry.slice(0, newline);
+      const value = newline < 0 ? "" : entry.slice(newline + 1);
+      entries.set(key, { key, origin, value, ...(scope !== undefined && { scope }) });
+    }
+    return keys.map((key) => entries.get(key) ?? { key });
   }
 
   async localConfigKeys(cwd: string): Promise<string[]> {

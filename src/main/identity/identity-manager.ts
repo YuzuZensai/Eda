@@ -63,8 +63,8 @@ export class IdentityManager {
 
     const keys = commitConfigKeys("all");
     const [global, repository, local] = await Promise.all([
-      Promise.all(keys.map((key) => this.git.inspectConfig(key, { scope: "global" }))),
-      path ? Promise.all(keys.map((key) => this.git.inspectConfig(key, { cwd: path }))) : null,
+      this.git.inspectCommitConfig({ scope: "global" }),
+      path ? this.git.inspectCommitConfig({ cwd: path }) : null,
       path ? this.git.localConfigKeys(path) : null,
     ]);
 

@@ -54,13 +54,17 @@ describe("IdentityManager switch transaction", () => {
     await repo.run(["config", "--local", "user.email", "local@example.com"]);
     await repo.run(["config", "--local", "eda.unrelated", "value"]);
 
+    const reads = vi.spyOn(repo.git, "exec");
     const global = await ctx.manager.inspectGit();
+    expect(reads.mock.calls.length).toBe(1);
     expect(global).toMatchObject({ profileId: profile.id, repository: null, localOverrides: null });
     expect(global.global).toContainEqual(
       expect.objectContaining({ key: "user.email", value: "dev@work.example" }),
     );
 
+    reads.mockClear();
     const local = await ctx.manager.inspectGit(repo.path);
+    expect(reads.mock.calls.length).toBeLessThanOrEqual(3);
     expect(local.repository).toContainEqual(
       expect.objectContaining({ key: "user.email", value: "local@example.com" }),
     );

@@ -254,7 +254,8 @@ describe("GitService against real Git", () => {
 
   it("reports actual global and overriding local origins, including unset keys", async () => {
     repo = await createTempRepo();
-    expect(await repo.git.inspectConfig("user.email", { scope: "global" })).toMatchObject({
+    expect(await repo.git.inspectCommitConfig({ scope: "global" })).toContainEqual({
+      key: "user.email",
       value: "test@eda.invalid",
       scope: "global",
       origin: expect.stringContaining(".gitconfig"),
@@ -264,14 +265,15 @@ describe("GitService against real Git", () => {
       cwd: repo.path,
       scope: "local",
     });
-    expect(await repo.git.inspectConfig("user.email", { cwd: repo.path })).toMatchObject({
-      value: "local@example.com",
+    await repo.run(["config", "--add", "user.email", "last\nvalue"]);
+    const entries = await repo.git.inspectCommitConfig({ cwd: repo.path });
+    expect(entries).toContainEqual({
+      key: "user.email",
+      value: "last\nvalue",
       scope: "local",
       origin: expect.stringContaining("config"),
     });
-    expect(await repo.git.inspectConfig("eda.nonexistent", { cwd: repo.path })).toEqual({
-      key: "eda.nonexistent",
-    });
+    expect(entries).toContainEqual({ key: "user.signingkey" });
   });
 
   it("reports a plain directory as not-a-repository rather than throwing", async () => {
