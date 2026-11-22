@@ -286,12 +286,26 @@ try {
   await expect(completion).toBeHidden();
   await expect(surface).toBeFocused();
   await expect(surface).toContainText("git status");
-  await surface.press("Enter");
 
+  const statusFile = join(".git", "terminal-status.txt");
+  await page.keyboard.type(` --porcelain=v1 --branch -- terminal-proof.txt > ${statusFile} 2>&1`);
+  await page.keyboard.press("Enter");
+  const statusPath = join(repository, statusFile);
+  await expect
+    .poll(
+      async () =>
+        existsSync(statusPath)
+          ? (await readFile(statusPath, "utf8")).trimEnd().split(/\r?\n/)
+          : null,
+      { message: "The completed Git command should report the fixture status", timeout: 15_000 },
+    )
+    .toEqual(["## develop", "?? terminal-proof.txt"]);
+
+  await page.keyboard.type(`${process.platform === "win32" ? "type" : "cat"} ${statusFile}`);
+  await page.keyboard.press("Enter");
+  await expect(surface).toContainText("## develop");
   await button(terminal, "Find in scrollback").click();
   await expect(search).toBeFocused();
-  await search.fill("On branch develop");
-  await expect(surface).toContainText("On branch develop");
   await search.fill("desktop-terminal");
   await expect(surface).toContainText(proofCommand);
   await search.press("Escape");
