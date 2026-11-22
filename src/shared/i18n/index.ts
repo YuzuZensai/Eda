@@ -30,16 +30,15 @@ export const catalogs: Readonly<Record<string, Catalog>> = { en: english };
 export const supportedLocales = Object.keys(catalogs);
 
 function resources(catalog: Catalog): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(catalog).flatMap(([key, message]) =>
-      typeof message === "string"
-        ? [[key, message]]
-        : [
-            [key, message.other],
-            ...Object.entries(message).map(([form, text]) => [`${key}_${form}`, text]),
-          ],
-    ),
-  );
+  const result: Record<string, string> = Object.create(null);
+  for (const [key, message] of Object.entries(catalog)) {
+    if (typeof message === "string") result[key] = message;
+    else {
+      result[key] = message.other;
+      for (const [form, text] of Object.entries(message)) result[`${key}_${form}`] = text;
+    }
+  }
+  return result;
 }
 
 function createEngine(language: string, translations: Readonly<Record<string, Catalog>>): I18n {
