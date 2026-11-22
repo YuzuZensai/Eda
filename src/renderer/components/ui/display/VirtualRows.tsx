@@ -10,6 +10,7 @@ import {
 } from "react";
 
 export const MAX_RENDERED_ROWS = 80;
+const PREFETCH_ROWS = 24;
 const scrollPositions = new Map<string, number>();
 
 export interface VirtualRange {
@@ -24,9 +25,10 @@ export function getVirtualRange(
   rowHeight: number,
   overscan = 8,
 ): VirtualRange {
-  const visible = Math.ceil(viewportHeight / rowHeight);
-  const start = Math.min(count, Math.max(0, Math.floor(scrollTop / rowHeight) - overscan));
-  const end = Math.min(count, start + Math.min(MAX_RENDERED_ROWS, visible + overscan * 2));
+  const visible = Math.min(MAX_RENDERED_ROWS, Math.ceil(viewportHeight / rowHeight));
+  const margin = Math.min(overscan, Math.floor((MAX_RENDERED_ROWS - visible) / 2));
+  const start = Math.min(count, Math.max(0, Math.floor(scrollTop / rowHeight) - margin));
+  const end = Math.min(count, start + visible + margin * 2);
   return { start, end };
 }
 
@@ -49,10 +51,11 @@ export function VirtualRows<T>({
   onNearEnd,
   onNearStart,
   itemOffset = 0,
-  totalCount = items.length,
   horizontalScroll = true,
+  buffered = false,
   measureRows = false,
   revealIndex,
+  revealKey = revealIndex,
   scrollKey,
   ariaLabel = t("virtualRows.scrollableRows"),
 }: {
@@ -60,13 +63,14 @@ export function VirtualRows<T>({
   rowHeight: number;
   renderRow: (item: T, index: number) => ReactNode;
   className?: string;
-  onNearEnd?: () => void;
-  onNearStart?: () => void;
+  onNearEnd?: (() => void) | undefined;
+  onNearStart?: (() => void) | undefined;
   itemOffset?: number;
-  totalCount?: number;
   horizontalScroll?: boolean;
+  buffered?: boolean;
   measureRows?: boolean;
   revealIndex?: number | undefined;
+  revealKey?: string | number | undefined;
   scrollKey?: string | undefined;
   ariaLabel?: string;
 }) {
@@ -75,6 +79,7 @@ export function VirtualRows<T>({
   const restoredScroll = useRef(false);
   const [viewport, setViewport] = useState({ scrollTop: 0, height: 500 });
   const mounted = useRef<HTMLDivElement>(null);
+  const origin = itemOffset * rowHeight;
   const [measurements, setMeasurements] = useState<ReadonlyMap<T, number>>(() => new Map());
   const offsets = useMemo(() => {
     if (!measureRows) return null;
@@ -83,20 +88,27 @@ export function VirtualRows<T>({
       result.push(result[result.length - 1]! + (measurements.get(item) ?? rowHeight));
     return result;
   }, [items, rowHeight, measurements, measureRows]);
-  const range = offsets
-    ? {
-        start: Math.max(0, firstVisibleRow(offsets, viewport.scrollTop) - 8),
-        end: Math.min(
-          items.length,
-          firstVisibleRow(offsets, viewport.scrollTop + viewport.height) + 9,
-        ),
-      }
-    : getVirtualRange(totalCount, viewport.scrollTop, viewport.height, rowHeight);
-  const retainedStart = Math.min(itemOffset + items.length, Math.max(range.start, itemOffset));
-  const retainedEnd = Math.max(
-    retainedStart,
-    Math.min(range.end, retainedStart + MAX_RENDERED_ROWS, itemOffset + items.length),
+  const contentHeight = offsets?.at(-1) ?? items.length * rowHeight;
+  const scrollTop = Math.max(
+    0,
+    Math.min(viewport.scrollTop - origin, contentHeight - viewport.height),
   );
+  const { start, end } = offsets
+    ? {
+        start: Math.max(0, firstVisibleRow(offsets, scrollTop) - 8),
+        end: Math.min(items.length, firstVisibleRow(offsets, scrollTop + viewport.height) + 9),
+      }
+    : getVirtualRange(
+        items.length,
+        scrollTop,
+        viewport.height + (buffered ? rowHeight * 7 : 0),
+        rowHeight,
+        buffered ? 24 : 8,
+      );
+  const renderEnd = Math.min(end, start + MAX_RENDERED_ROWS);
+  const rowTop = offsets?.[start] ?? start * rowHeight;
+  const pinRenderedRows = buffered && !offsets;
+  const stickyInset = Math.min(0, viewport.height - (renderEnd - start) * rowHeight);
 
   useLayoutEffect(() => {
     if (!measureRows || !mounted.current) return;
@@ -118,30 +130,39 @@ export function VirtualRows<T>({
     });
     for (const row of mounted.current.children) observer.observe(row);
     return () => observer.disconnect();
-  }, [measureRows, items, retainedStart, retainedEnd]);
+  }, [measureRows, items, start, renderEnd]);
 
   useEffect(() => {
     setMeasurements((previous) => (previous.size ? new Map() : previous));
   }, [items, measureRows]);
 
-  useEffect(() => {
+  const updateViewport = (element: HTMLDivElement) => {
+    const top = element.scrollTop;
+    const height = element.clientHeight;
+    lastScroll.current = top + origin;
+    const batch =
+      buffered && height <= (MAX_RENDERED_ROWS - 8) * rowHeight ? rowHeight * 8 : rowHeight;
+    const scrollTop = measureRows
+      ? lastScroll.current
+      : Math.floor(lastScroll.current / batch) * batch;
+    setViewport((previous) =>
+      previous.scrollTop === scrollTop && previous.height === height
+        ? previous
+        : { scrollTop, height },
+    );
+  };
+  const readViewport = useEffectEvent(updateViewport);
+
+  useLayoutEffect(() => {
     const element = container.current;
 
     if (!element) return;
 
-    restoredScroll.current = !!scrollKey && scrollPositions.has(scrollKey);
+    const savedPosition = scrollKey ? scrollPositions.get(scrollKey) : undefined;
+    restoredScroll.current = savedPosition !== undefined;
+    if (scrollKey) lastScroll.current = savedPosition ?? 0;
 
-    if (scrollKey) element.scrollTop = scrollPositions.get(scrollKey) ?? 0;
-
-    lastScroll.current = element.scrollTop;
-
-    const update = () =>
-      setViewport({ scrollTop: element.scrollTop, height: element.clientHeight });
-
-    update();
-
-    const observer = new ResizeObserver(update);
-
+    const observer = new ResizeObserver(() => readViewport(element));
     observer.observe(element);
 
     return () => {
@@ -154,10 +175,18 @@ export function VirtualRows<T>({
     };
   }, [scrollKey]);
 
+  useLayoutEffect(() => {
+    const element = container.current;
+    if (!element) return;
+
+    element.scrollTop = Math.max(0, lastScroll.current - origin);
+    readViewport(element);
+  }, [origin, scrollKey]);
+
   useEffect(() => {
-    if (range.end >= itemOffset + items.length - 8) onNearEnd?.();
-    if (range.start <= itemOffset + 8) onNearStart?.();
-  }, [itemOffset, items.length, onNearEnd, onNearStart, range.end, range.start]);
+    if (end >= items.length - PREFETCH_ROWS) onNearEnd?.();
+    if (start <= PREFETCH_ROWS) onNearStart?.();
+  }, [itemOffset, items.length, onNearEnd, onNearStart, end, start]);
 
   const reveal = useEffectEvent(() => {
     const element = container.current;
@@ -167,10 +196,11 @@ export function VirtualRows<T>({
       return;
     }
 
-    if (!element || revealIndex === undefined || revealIndex < 0) return;
+    if (!element || revealIndex === undefined || revealIndex < itemOffset) return;
 
-    const top = offsets?.[revealIndex] ?? revealIndex * rowHeight;
-    const bottom = offsets?.[revealIndex + 1] ?? top + rowHeight;
+    const index = revealIndex - itemOffset;
+    const top = offsets?.[index] ?? index * rowHeight;
+    const bottom = offsets?.[index + 1] ?? top + rowHeight;
 
     if (top < element.scrollTop) element.scrollTop = top;
     else if (bottom > element.scrollTop + element.clientHeight)
@@ -178,7 +208,7 @@ export function VirtualRows<T>({
   });
   useEffect(() => {
     reveal();
-  }, [revealIndex, rowHeight, measureRows]);
+  }, [revealKey, rowHeight, measureRows]);
 
   return (
     <div
@@ -187,42 +217,37 @@ export function VirtualRows<T>({
       aria-label={ariaLabel}
       tabIndex={0}
       data-virtual-list="true"
-      data-mounted-count={Math.max(0, retainedEnd - retainedStart)}
       data-retained-count={items.length}
-      data-total-count={totalCount}
       data-item-offset={itemOffset}
       className={`ui-scroll-region relative overflow-auto ${className}`}
-      onScroll={(event) => {
-        lastScroll.current = event.currentTarget.scrollTop;
-        setViewport({
-          scrollTop: event.currentTarget.scrollTop,
-          height: event.currentTarget.clientHeight,
-        });
-      }}
+      onScroll={(event) => updateViewport(event.currentTarget)}
     >
       <div
         className="relative min-w-full"
         style={{
-          height: offsets?.at(-1) ?? totalCount * rowHeight,
+          height: contentHeight,
           width: horizontalScroll ? "max-content" : "100%",
         }}
       >
+        {pinRenderedRows && <div style={{ height: rowTop }} />}
         <div
           ref={mounted}
-          className="absolute left-0 top-0 min-w-full"
+          className={pinRenderedRows ? "sticky min-w-full" : "absolute left-0 top-0 min-w-full"}
           style={{
-            transform: `translateY(${offsets?.[retainedStart] ?? retainedStart * rowHeight}px)`,
-            ...(horizontalScroll ? {} : { width: "100%" }),
+            ...(pinRenderedRows
+              ? { insetBlock: stickyInset }
+              : { transform: `translateY(${rowTop}px)` }),
+            width: horizontalScroll ? undefined : "100%",
           }}
         >
-          {items.slice(retainedStart - itemOffset, retainedEnd - itemOffset).map((item, offset) => {
-            const index = retainedStart + offset;
+          {items.slice(start, renderEnd).map((item, offset) => {
+            const index = start + offset;
             return measureRows ? (
               <div key={index} data-row-index={index}>
                 {renderRow(item, index)}
               </div>
             ) : (
-              renderRow(item, index)
+              renderRow(item, itemOffset + index)
             );
           })}
         </div>

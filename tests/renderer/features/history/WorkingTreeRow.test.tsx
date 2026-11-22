@@ -306,12 +306,10 @@ it("connects to HEAD below newer commits without changing their graph lanes", as
 
 it("keeps pagination offsets in commit units while reserving one virtual working-changes row", async () => {
   const loadPrevious = vi.fn(async () => {});
-  await act(async () =>
-    useRepositoryStore.setState({ baseOffset: 100, nextOffset: 200, loadPrevious }),
-  );
+  await act(async () => useRepositoryStore.setState({ baseOffset: 100, loadPrevious }));
   const list = container.querySelector("[data-virtual-list]")!;
   expect(list.getAttribute("data-item-offset")).toBe("101");
-  expect(list.getAttribute("data-total-count")).toBe("201");
+  expect(list.getAttribute("data-retained-count")).toBe("1");
   expect(workingRow()).toBeNull();
   expect(loadPrevious).toHaveBeenCalled();
 });

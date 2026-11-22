@@ -140,6 +140,7 @@ export function CommitGraph({
   const baseOffset = useRepositoryStore((state) => state.baseOffset);
   const loadPrevious = useRepositoryStore((state) => state.loadPrevious);
   const historyError = useRepositoryStore((state) => state.historyError);
+  const canPage = !historyLoading && !historyError;
   const panel = usePanel("graph");
   const transitionLayout = useLayoutTransition();
   const [menu, setMenu] = useState<CommitMenuTarget | null>(null);
@@ -525,18 +526,15 @@ export function CommitGraph({
           <VirtualRows
             scrollKey={`${identityId}:${repositoryId}:graph`}
             horizontalScroll={false}
+            buffered
             revealIndex={selectedIndex >= 0 ? graphOffset + selectedIndex : undefined}
+            revealKey={`${historyTip ?? ""}:${selection?.kind === "commit" ? selection.oid : ""}`}
             items={graphRows}
             rowHeight={rowHeight}
             itemOffset={graphOffset}
-            totalCount={(nextOffset ?? baseOffset + rows.length) + workingRowCount}
-            className="min-h-0 flex-1"
-            {...(nextOffset !== null && !historyLoading
-              ? { onNearEnd: () => void loadMore() }
-              : {})}
-            {...(baseOffset > 0 && !historyLoading
-              ? { onNearStart: () => void loadPrevious() }
-              : {})}
+            className="min-h-0 flex-1 [overflow-anchor:none]"
+            onNearEnd={canPage && nextOffset !== null ? loadMore : undefined}
+            onNearStart={canPage && baseOffset > 0 ? loadPrevious : undefined}
             renderRow={(row, index) =>
               row ? (
                 <CommitRow

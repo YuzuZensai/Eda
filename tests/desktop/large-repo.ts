@@ -2,6 +2,7 @@ import { electron } from "../helpers/fixture-electron.ts";
 import { fixtureEnvironment } from "../helpers/fixture-environment.ts";
 import { trustFixture } from "./helpers/trust.ts";
 import { type Page, type Locator } from "playwright";
+import { expect } from "playwright/test";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -47,9 +48,22 @@ const app = await electron.launch({
 
 try {
   await trustFixture(app, repository);
+  await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler("avatar:commit-get");
+    ipcMain.handle("avatar:commit-get", () => ({
+      ok: true,
+      value: {
+        dataUrl:
+          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMQ3RkHAAITAS23Eb1qAAAAAElFTkSuQmCC",
+        expiresAt: Date.now() + 60 * 60_000,
+      },
+    }));
+  });
   const page = await app.firstWindow();
 
-  await page.setViewportSize({ width: 1440, height: 900 });
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0]!.setContentSize(1440, 900),
+  );
   await page.waitForLoadState("domcontentloaded");
 
   const openedRepository = await page.evaluate(async (path) => {
@@ -98,14 +112,17 @@ try {
   await waitForSignatures(page);
   const coldVerificationMs = Math.round(performance.now() - coldStart);
   const targetOffset = Math.min(commitCount - PAGE_SIZE * MAX_PAGES, 1_000);
+  const rowHeight = await list
+    .locator('[data-tour="history-commit"]')
+    .first()
+    .evaluate((row) => row.getBoundingClientRect().height);
+  await assertCachedRowDetailsDuringScroll(list, rowHeight);
+
+  const prefetchInset = 24 * rowHeight;
   let offset = 0;
 
   for (let attempts = 0; attempts < 30 && offset < targetOffset; attempts += 1) {
-    const previous = await readMetrics(list);
-
-    await list.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-    });
+    const previous = await readMetrics(list, "end", prefetchInset);
     await page.waitForFunction(
       ({ previous }) => {
         const list = document.querySelector(
@@ -126,6 +143,7 @@ try {
 
     offset = metrics.offset;
     assertBounds(metrics);
+    assertScrollAnchor(previous, metrics, rowHeight);
   }
 
   if (offset < targetOffset)
@@ -133,9 +151,7 @@ try {
 
   const forwardOffset = offset;
 
-  await list.evaluate((element) => {
-    element.scrollTop = 0;
-  });
+  const previous = await readMetrics(list, "start", prefetchInset);
   await page.waitForFunction(
     (forwardOffset) =>
       Number(
@@ -150,6 +166,7 @@ try {
   const backward = await readMetrics(list);
 
   assertBounds(backward);
+  assertScrollAnchor(previous, backward, rowHeight);
 
   if (backward.offset >= forwardOffset)
     throw new Error("Scrolling backward did not refetch an evicted history page.");
@@ -159,6 +176,8 @@ try {
   if (heapGrowth > 128 * 1024 * 1024)
     throw new Error(`Renderer heap grew by ${Math.round(heapGrowth / 1024 / 1024)} MiB.`);
 
+  await assertThumbDragCoverage(page, list, rowHeight);
+  await assertWheelScrollCoverage(page, list, rowHeight);
   await waitForSignatures(page);
   const warmStart = performance.now();
   await page.reload();
@@ -230,12 +249,276 @@ async function createSyntheticRepository() {
   return path;
 }
 
-async function readMetrics(locator: Locator) {
-  return locator.evaluate((element) => ({
-    mounted: Number(element.getAttribute("data-mounted-count")),
-    retained: Number(element.getAttribute("data-retained-count")),
-    offset: Number(element.getAttribute("data-item-offset")),
-  }));
+async function assertCachedRowDetailsDuringScroll(list: Locator, rowHeight: number) {
+  const avatar = list.locator('[data-tour="history-commit"] .profile-avatar img').first();
+  await avatar.waitFor({ state: "visible" });
+  const result = await list.evaluate(async (element, rowHeight) => {
+    const commitRow = '[data-tour="history-commit"]';
+    const first = element.querySelector(commitRow);
+    const firstTitle = first?.getAttribute("title");
+    let flashes = 0;
+    const observer = new MutationObserver((records) => {
+      for (const { addedNodes } of records) {
+        for (const node of addedNodes) {
+          if (!(node instanceof HTMLElement)) continue;
+          for (const avatar of node.querySelectorAll(".profile-avatar")) {
+            if (avatar.matches(".ui-skeleton") || !avatar.querySelector("img")) flashes++;
+          }
+        }
+      }
+    });
+    observer.observe(element, { childList: true, subtree: true });
+
+    const scroll = async (top: number, firstRowMounted: boolean) => {
+      element.scrollTop = top;
+      for (let frame = 0; frame < 120; frame++) {
+        await new Promise(requestAnimationFrame);
+        const firstVisible = element.querySelector(commitRow)?.getAttribute("title");
+        if ((firstVisible === firstTitle) === firstRowMounted) return;
+      }
+      throw new Error("Scrolling should unmount and remount the first commit");
+    };
+
+    try {
+      await scroll(32 * rowHeight, false);
+      await scroll(0, true);
+      return {
+        flashes,
+        signature: element.querySelector(`${commitRow} [role="img"]`)?.getAttribute("aria-label"),
+      };
+    } finally {
+      observer.disconnect();
+    }
+  }, rowHeight);
+  assert.equal(result.flashes, 0, "Scrolling should display cached author avatars immediately");
+  assert.equal(result.signature, "Unsigned", "Returning rows should show their cached signature");
+}
+
+async function assertThumbDragCoverage(page: Page, list: Locator, rowHeight: number) {
+  const marker = await page.addStyleTag({
+    content: '[data-tour="history-commit"] { box-shadow: inset 5px 0 lime }',
+  });
+  const track = await list.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const height = element.clientHeight;
+    const thumb = (height * height) / element.scrollHeight;
+    return {
+      x: rect.right - (rect.width - element.clientWidth) / 2,
+      grab: rect.top + (height * element.scrollTop) / element.scrollHeight + thumb / 2,
+      low: rect.top + height * 0.72,
+      high: rect.top + height * 0.28,
+      strip: { x: rect.left + 2, y: rect.top + 1, height: height - 2 },
+      viewportWidth: innerWidth,
+    };
+  });
+  const monitor = await app.evaluateHandle(({ BrowserWindow }, { strip, viewportWidth }) => {
+    const contents = BrowserWindow.getAllWindows()[0]!.webContents;
+    let frames = 0;
+    let maxGap = 0;
+    contents.beginFrameSubscription((image) => {
+      const scale = image.getSize().width / viewportWidth;
+      const pixels = image
+        .crop({
+          x: Math.round(strip.x * scale),
+          y: Math.round(strip.y * scale),
+          width: 1,
+          height: Math.round(strip.height * scale),
+        })
+        .toBitmap();
+      let gap = 0;
+      let longest = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        gap =
+          pixels[index + 1]! > 220 && pixels[index]! < 40 && pixels[index + 2]! < 40 ? 0 : gap + 1;
+        longest = Math.max(longest, gap);
+      }
+      if (!frames && longest / scale >= 5) return;
+      frames++;
+      maxGap = Math.max(maxGap, longest / scale);
+    });
+    contents.invalidate();
+    return { stats: () => ({ frames, maxGap }), stop: () => contents.endFrameSubscription() };
+  }, track);
+  const coverage = await list.evaluateHandle((element) => {
+    let previous = element.scrollTop;
+    let down = 0;
+    let up = 0;
+    let gap = 0;
+    const sample = () => {
+      const rows = element.querySelectorAll('[data-tour="history-commit"]');
+      const viewport = element.getBoundingClientRect();
+      const first = rows[0]?.getBoundingClientRect();
+      const last = rows[rows.length - 1]?.getBoundingClientRect();
+      gap = Math.max(
+        gap,
+        first && last
+          ? Math.min(
+              viewport.height,
+              Math.max(first.top - viewport.top, viewport.bottom - last.bottom),
+            )
+          : viewport.height,
+      );
+      down = Math.max(down, element.scrollTop - previous);
+      up = Math.max(up, previous - element.scrollTop);
+      previous = element.scrollTop;
+    };
+    element.addEventListener("scroll", sample, true);
+    return {
+      stats: () => ({ down, up, gap }),
+      stop: () => element.removeEventListener("scroll", sample, true),
+    };
+  });
+  const session = await page.context().newCDPSession(page);
+  try {
+    await expect
+      .poll(() => monitor.evaluate((monitor) => monitor.stats().frames))
+      .toBeGreaterThan(0);
+    await session.send("Emulation.setCPUThrottlingRate", { rate: 8 });
+    await page.mouse.move(track.x, track.grab);
+    await page.mouse.down();
+    const baseline = await monitor.evaluate((monitor) => monitor.stats().frames);
+    for (let pass = 0; pass < 6; pass++) {
+      await page.mouse.move(track.x, track.low);
+      await page.mouse.move(track.x, track.high);
+    }
+    const { down, up, gap } = await coverage.evaluate((coverage) => coverage.stats());
+    assert.ok(
+      Math.min(down, up) > MAX_MOUNTED_ROWS * rowHeight,
+      "The thumb must jump beyond the mounted rows in both directions",
+    );
+    assert.ok(gap <= 1, `Dragging the scrollbar uncovered ${gap}px before the rows updated`);
+    const { frames, maxGap } = await monitor.evaluate((monitor) => monitor.stats());
+    assert.ok(frames - baseline >= 2, "Expected painted frames during the drag");
+    assert.ok(maxGap < rowHeight, `The scrollbar drag painted a ${maxGap}px gap`);
+  } finally {
+    await page.mouse.up();
+    await coverage.evaluate((coverage) => coverage.stop());
+    await coverage.dispose();
+    await monitor.evaluate((monitor) => monitor.stop());
+    await monitor.dispose();
+    await session.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+    await session.detach();
+    await marker.evaluate((element) => element.parentNode?.removeChild(element));
+  }
+  await expect
+    .poll(() =>
+      list.evaluate(
+        (element, { commitCount, rowHeight }) => {
+          const viewport = element.getBoundingClientRect();
+          const middle = Math.floor(viewport.height / 2);
+          const index =
+            Number(element.getAttribute("data-item-offset")) +
+            Math.floor((element.scrollTop + middle) / rowHeight);
+          const row = document
+            .elementFromPoint(viewport.left + 20, viewport.top + middle)
+            ?.closest('[data-tour="history-commit"]');
+          return (
+            row?.getAttribute("title")?.split("\n")[0] === `Gate commit ${commitCount - index}`
+          );
+        },
+        { commitCount, rowHeight },
+      ),
+    )
+    .toBe(true);
+}
+
+async function assertWheelScrollCoverage(page: Page, list: Locator, rowHeight: number) {
+  await list.hover();
+  const session = await page.context().newCDPSession(page);
+  const monitor = await list.evaluateHandle((element, rowHeight) => {
+    const scrollPosition = () =>
+      element.scrollTop + Number(element.getAttribute("data-item-offset")) * rowHeight;
+    let frame = 0;
+    let forward = 0;
+    let backward = 0;
+    let animatedSignatures = 0;
+    let previous = scrollPosition();
+    let maxGap = 0;
+    const sample = () => {
+      const position = scrollPosition();
+      if (position !== previous) {
+        const rows = element.querySelectorAll('[data-tour="history-commit"]');
+        const viewport = element.getBoundingClientRect();
+        const first = rows[0]?.getBoundingClientRect();
+        const last = rows[rows.length - 1]?.getBoundingClientRect();
+        const gap =
+          first && last
+            ? Math.max(first.top - viewport.top, viewport.bottom - last.bottom)
+            : viewport.height;
+        if (element.querySelector('[role="img"] .animate-spin-fast')) animatedSignatures++;
+        maxGap = Math.max(maxGap, gap);
+        if (position > previous) forward++;
+        else backward++;
+        previous = position;
+      }
+      frame = requestAnimationFrame(sample);
+    };
+    frame = requestAnimationFrame(sample);
+    return {
+      stats: () => ({ forward, backward, maxGap, animatedSignatures }),
+      stop: () => cancelAnimationFrame(frame),
+    };
+  }, rowHeight);
+  try {
+    await session.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+    for (const deltaY of [780, -780]) {
+      for (let step = 0; step < 15; step++) {
+        await page.mouse.wheel(0, deltaY);
+        await page.evaluate(
+          () =>
+            new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+        );
+      }
+    }
+    const result = await monitor.evaluate((monitor) => monitor.stats());
+    assert.ok(
+      result.forward >= 10 && result.backward >= 10,
+      `Wheel input should move the viewport in both directions (${result.forward} down, ${result.backward} up)`,
+    );
+    assert.ok(
+      result.maxGap <= 1,
+      `Wheel scrolling showed blank areas up to ${result.maxGap}px high`,
+    );
+    assert.equal(result.animatedSignatures, 0, "Wheel scrolling should not spin signature icons");
+  } finally {
+    await monitor.evaluate((monitor) => monitor.stop());
+    await monitor.dispose();
+    await session.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+    await session.detach();
+  }
+}
+
+async function readMetrics(locator: Locator, edge?: "start" | "end", inset = 0) {
+  return locator.evaluate(
+    (element, { edge, inset }) => {
+      if (edge === "start") element.scrollTop = inset;
+      else if (edge === "end")
+        element.scrollTop = element.scrollHeight - element.clientHeight - inset;
+      const viewport = element.getBoundingClientRect();
+      const rows = Array.from(element.querySelectorAll('[data-tour="history-commit"]'));
+      return {
+        mounted: rows.length,
+        retained: Number(element.getAttribute("data-retained-count")),
+        offset: Number(element.getAttribute("data-item-offset")),
+        scrollTop: element.scrollTop,
+        hasVisibleCommit: rows.some((row) => {
+          const bounds = row.getBoundingClientRect();
+          return bounds.top < viewport.bottom && bounds.bottom > viewport.top;
+        }),
+      };
+    },
+    { edge, inset },
+  );
+}
+
+function assertScrollAnchor(
+  before: Awaited<ReturnType<typeof readMetrics>>,
+  after: Awaited<ReturnType<typeof readMetrics>>,
+  rowHeight: number,
+) {
+  assert.ok(after.hasVisibleCommit, "The viewport should still show commits after loading a page");
+  const shift = after.scrollTop - before.scrollTop + (after.offset - before.offset) * rowHeight;
+  assert.ok(Math.abs(shift) <= 1, `Loading a history page moved the visible commits by ${shift}px`);
 }
 
 async function waitForSignatures(page: Page) {
