@@ -91,13 +91,8 @@ try {
     );
     assert.ok(trust.ok, JSON.stringify(trust));
   };
-  const opened = await page.evaluate((path) => window.eda.repository.open(path), repository);
-  assert.ok(opened.ok, JSON.stringify(opened));
-  assert.ok(
-    (await page.evaluate((id) => window.eda.repository.reviewTrust(id), opened.value.id)).ok,
-  );
-  await page.keyboard.press((process.platform === "darwin" ? "Meta" : "Control") + "+p");
-  await page.getByRole("button", { name: /^git-tools-fixture / }).click();
+  await approveCheckout(repository);
+  await button(page, "Open git-tools-fixture").click();
 
   const overview = page.getByLabel("Repository overview", { exact: true });
   const tools = page.getByRole("dialog", { name: "Worktrees", exact: true });
