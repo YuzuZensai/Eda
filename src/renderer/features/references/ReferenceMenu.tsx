@@ -403,11 +403,7 @@ export function ReferenceMenu({
             </>
           )}
 
-          <MenuItem
-            disabled={busy || !!unavailable}
-            className="text-git-deleted"
-            onClick={() => setMode("delete")}
-          >
+          <MenuItem danger disabled={busy || !!unavailable} onClick={() => setMode("delete")}>
             <Trash2 size={13} />
 
             {t(

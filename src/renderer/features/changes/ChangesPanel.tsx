@@ -591,6 +591,7 @@ export function ChangesPanel({
           </MenuItem>
           {menu.stagePaths.length > 0 && (
             <MenuItem
+              danger
               disabled={writing}
               onClick={() => {
                 setDiscard({ repositoryId: menu.repositoryId, paths: menu.stagePaths });

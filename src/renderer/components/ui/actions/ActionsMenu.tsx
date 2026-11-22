@@ -51,6 +51,7 @@ export function ActionsMenu({
           {items.map((item) => (
             <MenuItem
               key={item.label}
+              danger={item.danger}
               disabled={disabled}
               onClick={() => {
                 setOpen(false);
@@ -59,7 +60,7 @@ export function ActionsMenu({
               }}
             >
               {item.icon}
-              <span className={item.danger ? "text-git-deleted" : undefined}>{item.label}</span>
+              {item.label}
             </MenuItem>
           ))}
         </AnchoredPopover>

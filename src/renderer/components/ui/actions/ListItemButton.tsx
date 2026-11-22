@@ -2,6 +2,12 @@ import type { ButtonHTMLAttributes, ComponentPropsWithRef, ReactNode } from "rea
 import { cx } from "../cx";
 import { ButtonBase } from "./ButtonBase";
 
+const ITEM_COLORS = {
+  list: "text-text-secondary hover:not-disabled:bg-bg-raised hover:not-disabled:text-text-primary",
+  menu: "text-text-secondary hover:not-disabled:bg-accent-muted hover:not-disabled:text-text-primary",
+  danger: "text-git-deleted hover:not-disabled:bg-git-deleted/10 focus-visible:bg-git-deleted/10",
+};
+
 export function ListItemButton({
   children,
   selected = false,
@@ -12,7 +18,7 @@ export function ListItemButton({
 }: ComponentPropsWithRef<"button"> & {
   children: ReactNode;
   selected?: boolean;
-  variant?: "list" | "menu";
+  variant?: keyof typeof ITEM_COLORS;
 }) {
   return (
     <ButtonBase
@@ -20,13 +26,10 @@ export function ListItemButton({
       type={type}
       className={cx(
         "flex min-w-0 w-full items-center gap-2 rounded-sm px-2 text-left text-sm",
-        variant === "menu" ? "min-h-[32px] py-1 focus-visible:bg-bg-raised" : "py-1.5",
+        variant === "list" ? "py-1.5" : "min-h-[32px] py-1",
+        variant === "menu" && "focus-visible:bg-bg-raised",
         "disabled:cursor-not-allowed disabled:opacity-45",
-        selected
-          ? "bg-accent-muted text-accent-text"
-          : variant === "menu"
-            ? "text-text-secondary hover:not-disabled:bg-accent-muted hover:not-disabled:text-text-primary"
-            : "text-text-secondary hover:not-disabled:bg-bg-raised hover:not-disabled:text-text-primary",
+        selected ? "bg-accent-muted text-accent-text" : ITEM_COLORS[variant],
         className,
       )}
     >
@@ -35,6 +38,12 @@ export function ListItemButton({
   );
 }
 
-export function MenuItem(props: ButtonHTMLAttributes<HTMLButtonElement> & { children: ReactNode }) {
-  return <ListItemButton {...props} role="menuitem" variant="menu" />;
+export function MenuItem({
+  danger,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  children: ReactNode;
+  danger?: boolean | undefined;
+}) {
+  return <ListItemButton {...props} role="menuitem" variant={danger ? "danger" : "menu"} />;
 }

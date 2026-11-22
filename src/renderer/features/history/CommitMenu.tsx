@@ -326,7 +326,7 @@ export function CommitMenu({
             {t("commitMenu.revert")}
           </MenuItem>
 
-          <MenuItem disabled={!!commandUnavailable} onClick={() => setMode("reset")}>
+          <MenuItem danger disabled={!!commandUnavailable} onClick={() => setMode("reset")}>
             <RotateCcw size={13} className="shrink-0" aria-hidden="true" />
             {t("commitMenu.resetCurrentBranchHere")}
           </MenuItem>

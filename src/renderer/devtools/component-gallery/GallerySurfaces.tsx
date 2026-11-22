@@ -10,6 +10,7 @@ import {
   AnchoredPopover,
   RefreshIcon,
 } from "../../components/ui/index";
+import { Trash2Icon } from "../../components/ui/icons";
 import {
   ModalDescription,
   ModalSurface,
@@ -23,6 +24,11 @@ export function GallerySurfaces({ setFeedback }: { setFeedback: (message: string
   const [menuOpen, setMenuOpen] = useState(false);
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const [modal, setModal] = useState<"dialog" | "drawer" | "surface" | "trust" | null>(null);
+
+  const selectMenuItem = () => {
+    setFeedback(t("settings.componentGallery.menuItemClicked"));
+    setMenuOpen(false);
+  };
 
   return (
     <>
@@ -57,12 +63,7 @@ export function GallerySurfaces({ setFeedback }: { setFeedback: (message: string
                 anchorRef={menuTrigger}
                 className="w-52 p-1"
               >
-                <MenuItem
-                  onClick={() => {
-                    setFeedback(t("settings.componentGallery.menuItemClicked"));
-                    setMenuOpen(false);
-                  }}
-                >
+                <MenuItem onClick={selectMenuItem}>
                   <RefreshIcon size={14} />
                   {t("settings.componentGallery.refreshPreview")}
                 </MenuItem>
@@ -70,6 +71,11 @@ export function GallerySurfaces({ setFeedback }: { setFeedback: (message: string
                 <MenuItem disabled>
                   <FolderIcon size={14} />
                   {t("settings.componentGallery.unavailableAction")}
+                </MenuItem>
+
+                <MenuItem danger onClick={selectMenuItem}>
+                  <Trash2Icon size={14} />
+                  {t("common.delete")}
                 </MenuItem>
               </AnchoredPopover>
             )}

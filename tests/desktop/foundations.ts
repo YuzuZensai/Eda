@@ -329,7 +329,27 @@ try {
     .getByRole("button", { name: "Inspect branch feature/work", exact: true })
     .click({ button: "right" });
 
-  await page.getByRole("menuitem", { name: "Rename branch...", exact: true }).click();
+  const deleteBranch = page.getByRole("menuitem", { name: "Delete branch...", exact: true });
+  const renameBranch = page.getByRole("menuitem", { name: "Rename branch...", exact: true });
+  const dangerColor = await page.evaluate(() => {
+    const sample = document.createElement("span");
+    sample.style.color = "var(--git-deleted)";
+    document.body.append(sample);
+    const color = getComputedStyle(sample).color;
+    sample.remove();
+    return color;
+  });
+  await expect(deleteBranch).toHaveCSS("color", dangerColor);
+  await deleteBranch.hover();
+  await expect(deleteBranch).toHaveCSS("color", dangerColor);
+  await expect(deleteBranch.locator("svg")).toHaveCSS("stroke", dangerColor);
+  await renameBranch.hover();
+  await expect(renameBranch).not.toHaveCSS("color", dangerColor);
+  await page.keyboard.press("End");
+  await expect(deleteBranch).toBeFocused();
+  await expect(deleteBranch).toHaveCSS("color", dangerColor);
+
+  await renameBranch.click();
   const branch = page.getByRole("dialog", { name: "Rename branch", exact: true });
 
   await branch.getByRole("textbox", { name: "Rename branch to" }).fill("feature/renamed");
@@ -363,6 +383,10 @@ try {
     .getByRole("button", { name: "Inspect tag release/new", exact: true })
     .click({ button: "right" });
 
+  await expect(page.getByRole("menuitem", { name: "Delete tag...", exact: true })).toHaveCSS(
+    "color",
+    dangerColor,
+  );
   await page.getByRole("menuitem", { name: "Verify tag signature...", exact: true }).click();
   const tag = page.getByRole("dialog", { name: "Verify tag" });
 
@@ -511,6 +535,9 @@ try {
     .getByTestId("commit-graph")
     .getByRole("button", { name: /^topic conflict\./ })
     .click({ button: "right" });
+  await expect(
+    page.getByRole("menuitem", { name: "Reset current branch here...", exact: true }),
+  ).toHaveCSS("color", dangerColor);
   await page
     .getByRole("menu", { name: "Commit actions" })
     .getByRole("menuitem", { name: "Merge into current branch...", exact: true })
@@ -769,6 +796,9 @@ try {
   await squashPage
     .getByRole("button", { name: "Unstaged file.txt, status M", exact: true })
     .click({ button: "right" });
+  await expect(
+    squashPage.getByRole("menuitem", { name: "Discard selected changes...", exact: true }),
+  ).toHaveCSS("color", dangerColor);
   await squashPage.getByRole("menuitem", { name: "Stash 2 selected files", exact: true }).click();
   await expect(squashPage.getByRole("dialog")).toHaveCount(0);
   await expect(
