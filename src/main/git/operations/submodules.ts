@@ -1,6 +1,6 @@
 import { isUtf8 } from "node:buffer";
 import { lstat, realpath } from "node:fs/promises";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import { AppError, GitError } from "@shared/errors";
 import { ERROR_CODE, errorText } from "@shared/error-codes";
 import { t } from "@shared/i18n";
@@ -71,7 +71,7 @@ export async function listSubmodules(
     }
   }
   const parent = superproject.stdout.replace(/\r?\n$/, "");
-  return { entries, ...(parent && { parent }) };
+  return { entries, ...(parent && { parent: normalize(parent) }) };
 }
 
 const invalidModule = (key: "submodules.trust" | "submodules.invalid" | "submodules.clean") =>
