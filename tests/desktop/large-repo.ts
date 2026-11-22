@@ -461,20 +461,26 @@ async function assertWheelScrollCoverage(page: Page, list: Locator, rowHeight: n
   }, rowHeight);
   try {
     await session.send("Emulation.setCPUThrottlingRate", { rate: 4 });
-    for (const deltaY of [780, -780]) {
-      for (let step = 0; step < 15; step++) {
-        await page.mouse.wheel(0, deltaY);
-        await page.evaluate(
-          () =>
-            new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-        );
-      }
+    for (const direction of ["forward", "backward"] as const) {
+      const movedFrames = () => monitor.evaluate((monitor, dir) => monitor.stats()[dir], direction);
+      const baseline = await movedFrames();
+
+      // Wheel events at the edge of a retained page can arrive before the next page loads.
+      await expect
+        .poll(
+          async () => {
+            await page.mouse.wheel(0, direction === "forward" ? 780 : -780);
+            return (await movedFrames()) - baseline;
+          },
+          {
+            message: `Wheel input should move the viewport ${direction}`,
+            intervals: [32],
+            timeout: 15000,
+          },
+        )
+        .toBeGreaterThanOrEqual(15);
     }
     const result = await monitor.evaluate((monitor) => monitor.stats());
-    assert.ok(
-      result.forward >= 10 && result.backward >= 10,
-      `Wheel input should move the viewport in both directions (${result.forward} down, ${result.backward} up)`,
-    );
     assert.ok(
       result.maxGap <= 1,
       `Wheel scrolling showed blank areas up to ${result.maxGap}px high`,
