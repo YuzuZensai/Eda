@@ -6,6 +6,49 @@ test("catalogs preserve keys, parameters, plural forms, and externalized JSX cop
   assert.deepEqual(checkLocalization(process.cwd()), []);
 });
 
+test("production catalogs share repeated messages without changing keys or plural forms", async () => {
+  const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { build } = await import("vite");
+  const { compactMessageCatalogs } = await import("../../scripts/build.ts");
+  const root = await mkdtemp(join(tmpdir(), "eda-localization-build-"));
+  const repeated = "No repositories match this filter.";
+  const catalog = {
+    "sidebar.empty": repeated,
+    "workspace.empty": repeated,
+    "workspace.count": { one: "{count} repository", other: "{count} repositories" },
+  };
+
+  try {
+    const locales = "src/shared/locales/en";
+    await mkdir(join(root, locales), { recursive: true });
+    await writeFile(join(root, locales, "messages.json"), JSON.stringify(catalog));
+    const entry = join(root, "entry.js");
+    await writeFile(entry, `export { default } from "./${locales}/messages.json";`);
+
+    const result = await build({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      plugins: [compactMessageCatalogs()],
+      build: { lib: { entry, formats: ["es"] }, write: false, minify: false },
+    });
+    const bundle = Array.isArray(result) ? result[0] : result;
+    assert.ok(bundle && "output" in bundle);
+    const chunk = bundle.output.find((output) => output.type === "chunk" && output.isEntry);
+    assert.ok(chunk?.type === "chunk");
+    const module: { default: unknown } = await import(
+      "data:text/javascript;base64," + Buffer.from(chunk.code).toString("base64")
+    );
+
+    assert.deepEqual(module.default, catalog);
+    assert.equal(chunk.code.split(repeated).length - 1, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("reports duplicate keys, changed translation parameters, and hard-coded expressions", async () => {
   const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
