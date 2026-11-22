@@ -171,6 +171,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  node-pty@1.1.0: ec7b5ef884c6beb40254d84516b7aae8b697e29d2377fbfcb42e934cd9bc4284
+
 importers:
 
   .:
@@ -180,7 +183,7 @@ importers:
         version: 6.0.0
       node-pty:
         specifier: 1.1.0
-        version: 1.1.0
+        version: 1.1.0(patch_hash=ec7b5ef884c6beb40254d84516b7aae8b697e29d2377fbfcb42e934cd9bc4284)
       velopack:
         specifier: 1.2.161
         version: 1.2.161
@@ -4966,7 +4969,7 @@ snapshots:
 
   node-int64@0.4.0: {}
 
-  node-pty@1.1.0:
+  node-pty@1.1.0(patch_hash=ec7b5ef884c6beb40254d84516b7aae8b697e29d2377fbfcb42e934cd9bc4284):
     dependencies:
       node-addon-api: 7.1.1
 

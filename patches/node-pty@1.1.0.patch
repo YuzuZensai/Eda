@@ -1,0 +1,9 @@
+diff --git a/scripts/prebuild.js b/scripts/prebuild.js
+--- a/scripts/prebuild.js
++++ b/scripts/prebuild.js
+@@ -34 +34,5 @@
++if (process.platform === 'darwin') {
++  fs.chmodSync(path.join(PREBUILD_DIR, 'spawn-helper'), 0o755);
++}
++
+ process.exit(0);

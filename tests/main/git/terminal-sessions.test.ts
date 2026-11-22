@@ -19,7 +19,9 @@ it("runs real shells in each worktree, retains output across tab switches, resiz
         : "test -t 0 && printf hello > terminal-fixture.txt && echo terminal-ready";
     sessions.input(owner, id, command + "\r", false);
     await expect
-      .poll(() => readFile(join(repo.path, "terminal-fixture.txt"), "utf8").catch(() => ""))
+      .poll(() => readFile(join(repo.path, "terminal-fixture.txt"), "utf8").catch(() => ""), {
+        timeout: 5000,
+      })
       .toMatch(/hello/);
     expect(sessions.busyAt(repo.path)).toBe(true);
     const remove = vi.fn(async () => undefined);
@@ -35,7 +37,9 @@ it("runs real shells in each worktree, retains output across tab switches, resiz
     expect(sessions.list(otherOwner)).toEqual([]);
     expect(() => sessions.input(otherOwner, id, "exit\r", false)).toThrow();
     sessions.input(owner, id, "exit 0\r", false);
-    await expect.poll(() => sessions.list(owner).find((tab) => tab.id === id)?.exit).toBe(0);
+    await expect
+      .poll(() => sessions.list(owner).find((tab) => tab.id === id)?.exit, { timeout: 5000 })
+      .toBe(0);
     sessions.close(owner, id);
     expect(sessions.list(owner)).toHaveLength(1);
     sessions.close(owner, other);

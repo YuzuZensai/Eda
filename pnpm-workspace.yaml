@@ -5,3 +5,5 @@ allowBuilds:
   node-pty: true
   cpu-features: false
   ssh2: false
+patchedDependencies:
+  node-pty@1.1.0: patches/node-pty@1.1.0.patch
