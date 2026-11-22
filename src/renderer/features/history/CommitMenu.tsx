@@ -13,6 +13,7 @@ import {
   GitMergeIcon as GitMerge,
   LinkIcon as Link,
   RotateCcwIcon as RotateCcw,
+  SearchIcon,
   TagIcon as Tag,
   Undo2Icon as Undo2,
 } from "../../components/ui/icons";
@@ -270,6 +271,7 @@ export function CommitMenu({
                 setMode("range");
               }}
             >
+              <SearchIcon size={13} className="shrink-0" aria-hidden="true" />
               {t("range.select")}
             </MenuItem>
           )}

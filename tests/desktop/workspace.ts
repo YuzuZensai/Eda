@@ -321,7 +321,9 @@ try {
   await graph
     .getByRole("button", { name: /Make branch navigation visible/ })
     .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Inspect range from selected commit" }).click();
+  const inspectRange = page.getByRole("menuitem", { name: "Inspect range from selected commit" });
+  await expect(inspectRange.locator('svg[aria-hidden="true"]')).toBeVisible();
+  await inspectRange.click();
   const range = page.getByRole("dialog", { name: /^Inspect \d+ commits$/ });
   await expect(range.getByText("Make branch navigation visible", { exact: false })).toBeVisible();
   await expect(
