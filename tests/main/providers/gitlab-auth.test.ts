@@ -100,6 +100,7 @@ function setup() {
   };
 
   return {
+    now: () => now,
     db,
     identities,
     profile,
@@ -165,18 +166,11 @@ it("uses PKCE without a client secret, verifies account identity and stores only
   });
 });
 
-it("persists connections across service restarts, refreshes once for concurrent Git requests, and disconnects", async () => {
+it("renews once for concurrent Git requests and uses the rotated refresh token after a restart", async () => {
   const ctx = setup();
   await ctx.connect();
-
-  const restarted = new GitLabAuth(
-    ctx.accounts,
-    ctx.secrets,
-    ctx.fetch,
-    () => Date.now() + 8_000_000,
-  );
-
-  services.push(restarted);
+  ctx.advance(token.expires_in * 1000);
+  const remote = "https://gitlab.com/team/subgroup/invited.git";
   ctx.fetch.mockClear();
 
   ctx.fetch
@@ -185,11 +179,7 @@ it("persists connections across service restarts, refreshes once for concurrent 
     )
     .mockResolvedValueOnce(json({ id: 7, username: "work.user", ...profileFields }));
 
-  const creds = await Promise.all(
-    [1, 2].map(() =>
-      restarted.forFetch(ctx.profile.id, "https://gitlab.com/team/subgroup/invited.git"),
-    ),
-  );
+  const creds = await Promise.all([1, 2].map(() => ctx.service.forFetch(ctx.profile.id, remote)));
 
   expect(creds).toEqual(Array(2).fill({ username: "oauth2", password: "rotated-access" }));
   expect(ctx.fetch).toHaveBeenCalledTimes(2);
@@ -198,11 +188,30 @@ it("persists connections across service restarts, refreshes once for concurrent 
   expect(form.get("refresh_token")).toBe(token.refresh_token);
   expect(form.has("client_secret")).toBe(false);
   expect([...ctx.values.values()].join()).not.toContain(token.refresh_token);
-  expect(await restarted.profile(ctx.profile.id)).toEqual({
+  expect(await ctx.service.profile(ctx.profile.id)).toEqual({
     id: "7",
     ...profileFields,
     avatarUrl: null,
   });
+
+  ctx.advance(30 * 24 * 60 * 60 * 1000);
+  const restarted = new GitLabAuth(ctx.accounts, ctx.secrets, ctx.fetch, ctx.now);
+  services.push(restarted);
+  ctx.fetch.mockClear();
+  ctx.fetch
+    .mockResolvedValueOnce(
+      json({ ...token, access_token: "next-access", refresh_token: "next-refresh" }),
+    )
+    .mockResolvedValueOnce(json({ id: 7, username: "work.user", ...profileFields }));
+
+  expect(await restarted.forFetch(ctx.profile.id, remote)).toEqual({
+    username: "oauth2",
+    password: "next-access",
+  });
+  const renewal = new URLSearchParams(String(ctx.fetch.mock.calls[0]?.[1]?.body));
+  expect(renewal.get("refresh_token")).toBe("rotated-refresh");
+  expect(restarted.status(ctx.profile.id).account?.state).toBe("connected");
+
   await restarted.disconnect(ctx.profile.id);
   expect(ctx.accounts.find(ctx.profile.id)).toBeUndefined();
   expect(ctx.values.size).toBe(0);
