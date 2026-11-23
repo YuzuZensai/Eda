@@ -446,11 +446,11 @@ describe("GitHub device OAuth", () => {
   });
 });
 
-it("requests workflow write access and still connects for ordinary Git operations with a repo-only grant", async () => {
+it("requests repo and workflow access without opting into expiring tokens and accepts a repo-only grant", async () => {
   const ctx = setup();
   await ctx.connect();
   const form = new URLSearchParams(String(ctx.fetch.mock.calls[0]?.[1]?.body));
-  expect(form.get("scope")).toBe("repo workflow offline_access");
+  expect(form.get("scope")).toBe("repo workflow");
   expect(form.get("client_id")).toBe(INTEGRATIONS.github.clientId);
 
   expect(ctx.fetch.mock.calls.map(([url]) => url)).toEqual([
