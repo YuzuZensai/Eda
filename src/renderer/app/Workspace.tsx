@@ -244,7 +244,7 @@ function WorkspaceContent() {
                 <StateMessage
                   tone="loading"
                   className="flex-1"
-                  title={t(review.kind === "tree" ? "revision.browse" : "comparison.title")}
+                  title={t(review.kind === "tree" ? "revision.snapshot" : "comparison.title")}
                 />
               }
             >
@@ -252,6 +252,7 @@ function WorkspaceContent() {
                 <RevisionBrowser
                   key={JSON.stringify([owner, review.oid, review.path])}
                   initialPath={review.path ?? ""}
+                  repositoryName={selected.name}
                   repositoryId={selected.id}
                   oid={review.oid}
                   onBack={backToHistory}

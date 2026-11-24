@@ -566,8 +566,19 @@
   "range.select": "Inspect range from selected commit",
   "range.inspect": { "one": "Inspect {count} commit", "other": "Inspect {count} commits" },
   "range.limit": "Select up to 100 commits for cherry-pick or revert.",
-  "revision.browse": "Browse commit files",
-  "revision.parent": "Up one folder",
+  "revision.browse": "Browse all files",
+  "revision.browseHint": "Browse the whole repository at this commit",
+  "revision.snapshot": "Commit snapshot",
+  "revision.path": "Snapshot path",
+  "revision.selectFiles": "Select files",
+  "revision.restoreSelected": {
+    "one": "Restore {count} file…",
+    "other": "Restore {count} files…"
+  },
+  "revision.items": {
+    "one": "{count} item",
+    "other": "{count} items"
+  },
   "revision.empty": "Empty folder",
   "revision.lfs": "Git LFS pointer · {bytes} bytes · {oid}",
   "revision.binary": "Binary file ({bytes} bytes)",

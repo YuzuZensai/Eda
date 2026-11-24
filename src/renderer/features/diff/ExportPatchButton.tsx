@@ -9,7 +9,7 @@ export function ExportPatchButton({
   request,
   oldPath,
 }: {
-  request: PatchExportRequest;
+  request: PatchExportRequest & { path: string };
   oldPath?: string | undefined;
 }) {
   const diffTool = usePreferencesStore((state) => state.values.diffExecutable.value);
@@ -31,13 +31,12 @@ export function ExportPatchButton({
           }
         }}
       >
-        {t("oid" in request && !request.path ? "patch.commit" : "patch.export")}
+        {t("patch.export")}
       </TextButton>
-      {diffTool && request.path && (
+      {diffTool && (
         <TextButton
           disabled={busy}
           onClick={async () => {
-            if (!request.path) return;
             setBusy(true);
             try {
               const result = await window.eda.repository.externalDiff({

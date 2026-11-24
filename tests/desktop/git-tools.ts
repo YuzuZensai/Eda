@@ -417,8 +417,21 @@ try {
     .getByTestId("commit-graph")
     .getByRole("button", { name: /Tools fixture base/ })
     .click();
-  await button(page, "Browse commit files").click();
-  const tree = page.getByRole("region", { name: "Browse commit files", exact: true });
+  await page.getByTestId("commit-graph").press("Shift+F10");
+  await page.getByRole("menuitem", { name: "Browse all files", exact: true }).click();
+  const tree = page.getByRole("region", { name: "Commit snapshot", exact: true });
+  await expect(tree.getByRole("checkbox")).toHaveCount(0);
+  await button(tree, "Select files").click();
+  await tree.getByRole("checkbox", { name: "Select history.txt for restore" }).check();
+  await button(tree, "included").click();
+  await tree.getByRole("checkbox", { name: "Select included/readme.txt for restore" }).check();
+  await button(tree, "Restore 2 files…").click();
+  const selectionReview = page.getByRole("dialog", { name: "Restore files from this commit" });
+  await expect(selectionReview.getByText("included/readme.txt", { exact: true })).toBeVisible();
+  await expect(selectionReview.getByText("history.txt", { exact: true })).toBeVisible();
+  await button(selectionReview, "Cancel").click();
+  await button(tree, "git-tools-fixture").click();
+  await button(tree, "Cancel").click();
   await button(tree, "history.txt").click();
   await button(tree, "Restore files from this commit").click();
   const restore = page.getByRole("dialog", { name: "Restore files from this commit" });

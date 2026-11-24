@@ -366,8 +366,14 @@ try {
   ).toHaveAttribute("aria-pressed", "true");
   await expect(commitFiles.getByTitle(before.head, { exact: true })).toBeVisible();
 
-  await commitFiles.getByRole("button", { name: "Browse commit files" }).click();
-  const browser = page.getByRole("region", { name: "Browse commit files", exact: true });
+  await expect(commitFiles.getByRole("button", { name: "Browse all files" })).toHaveCount(0);
+  await expect(commitFiles.getByRole("button", { name: "Export commit patch" })).toHaveCount(0);
+  await graph
+    .getByRole("button", { name: /Make branch navigation visible/ })
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Browse all files", exact: true }).click();
+  const browser = page.getByRole("region", { name: "Commit snapshot", exact: true });
+  await expect(browser.getByTitle(feature, { exact: true })).toBeVisible();
   await browser.getByRole("button", { name: "file.txt", exact: true }).click();
   await expect(browser.getByRole("region", { name: "file.txt", exact: true })).toHaveText(
     "initial",

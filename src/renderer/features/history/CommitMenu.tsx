@@ -7,6 +7,7 @@ import {
   DiffIcon,
   FileIcon,
   FolderGit2Icon,
+  FolderIcon,
   DownloadIcon,
   PencilIcon,
   BranchIcon as GitBranch,
@@ -258,6 +259,17 @@ export function CommitMenu({
           >
             <PencilIcon size={13} aria-hidden="true" />
             {t("commitMenu.editMessage")}
+          </MenuItem>
+
+          <MenuItem
+            title={t("revision.browseHint")}
+            onClick={() => {
+              onClose();
+              useRepositoryStore.setState({ contentView: { kind: "tree", oid: target.oid } });
+            }}
+          >
+            <FolderIcon size={13} aria-hidden="true" />
+            {t("revision.browse")}
           </MenuItem>
 
           <MenuItem

@@ -18,7 +18,6 @@ import {
   TextButton,
 } from "../../components/ui/index";
 import { useRepositoryStore } from "../../stores/repository-store";
-import { ExportPatchButton } from "../diff/ExportPatchButton";
 import { CommitDetails } from "../diff/CommitDetails";
 import { cacheCommitSignature } from "../../repository/hooks/useCommitSignature";
 
@@ -130,22 +129,12 @@ export function CommitChangesPanel() {
           collapseDirection: "right",
         }}
       >
-        {oid && changeCount === 0 && (
-          <TextButton onClick={showWorkingTree}>{t("commitChangesPanel.workingTree")}</TextButton>
-        )}
-        {oid && (
-          <TextButton
-            onClick={() => useRepositoryStore.setState({ contentView: { kind: "tree", oid } })}
-          >
-            {t("revision.browse")}
+        {oid && changeCount === 0 ? (
+          <TextButton className="ml-auto shrink-0 whitespace-nowrap" onClick={showWorkingTree}>
+            {t("commitChangesPanel.workingTree")}
           </TextButton>
-        )}
+        ) : null}
       </PanelHeader>
-      {oid && repositoryId && !!diff?.files.length && (
-        <div className="px-3">
-          <ExportPatchButton key={oid} request={{ repositoryId, oid }} />
-        </div>
-      )}
 
       {changeCount > 0 && (
         <div className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-accent-border bg-accent-muted px-3 py-1.5 text-xs text-text-primary">
