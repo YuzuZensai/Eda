@@ -7,8 +7,8 @@ Follow these guidelines unless the user asks otherwise.
 
 ## Before editing
 
-1. Read the files you plan to change, their exports and callers, and the relevant tests. Look for existing helpers before writing new ones.
-2. Be clear about what the change should achieve and how you'll check it. State assumptions that affect the result. Look for answers in the code; ask if the remaining uncertainty would change your approach.
+1. Read the files you plan to change, their exports and callers, and the relevant tests. Search for the same behavior before adding code. Reuse what fits or extend it if that is simpler than a second implementation.
+2. Be clear about what the change should achieve and how you'll check it. State assumptions that affect the result. Look for answers in the code first. Ask if the remaining uncertainty would change your approach.
 3. Speak up if there's a simpler solution. If you don't understand a requirement or an existing design, explain what's unclear before building on it.
 4. Keep changes focused. Remove code your change makes obsolete, but leave unrelated cleanup and formatting for a separate task. When a broader refactor is requested, work within that scope.
 
@@ -38,7 +38,7 @@ Export icons through `components/ui/icons.tsx`.
 - Skeletons must use the real layout and match element dimensions, spacing, and responsive behavior. Check loading and loaded states for layout shifts.
 - Keep visual patterns consistent. Put actions near their content, keep headers uncluttered, and style buttons by priority.
 
-Keep gallery examples up to date. The build generates `componentInventory.ts`; don't edit it by hand.
+Keep gallery examples up to date. Don't edit `componentInventory.ts` by hand because the build generates it.
 
 ### Backend — `src/main/`
 
@@ -75,10 +75,10 @@ Keep `src/shared/` independent of React, Electron, Node, and main/renderer imple
 - Write the simplest code that meets the requirement. Don't add features or abstractions for hypothetical future use.
 - Follow existing conventions. If patterns conflict, use current callers and tests to choose one, explain the choice, and flag the inconsistency. Raise concerns about a convention instead of quietly inventing another.
 - Keep calculations separate from I/O. Pass in dependencies where needed so logic can be tested without Electron or live services.
-- Share repeated behavior. Avoid duplicate helpers, wrappers that only forward calls, and extra files that make code harder to follow.
+- Extract shared behavior when the callers should change together. Don't add forwarding wrappers or couple unrelated code just to save lines.
 - Put blank lines between logical steps and JSX sections. Avoid dense blocks and nested ternaries. Comments should explain a surprising decision or constraint, not narrate the code.
 - Use precise types and validate inputs at boundaries. Don't hide problems behind `any`, unchecked assertions, empty catches, or broad lint suppressions.
-- Keep libraries that already do the job. Use lazy loading and code splitting to reduce bundles; don't write homemade replacements or raise limits to hide growth.
+- Keep libraries that already do the job. Use lazy loading and code splitting to reduce bundles. Don't write homemade replacements or raise limits to hide growth.
 - Use scripts and tools when the answer is deterministic, including routing, retries, transformations, and checks. Use model judgment where interpretation is actually needed.
 
 ## Meaningful tests
@@ -101,7 +101,7 @@ Run focused tests as you work, then finish with the relevant checks:
 | Code               | `pnpm check` — formatting, types, lint, and tests. |
 | Renderer or build  | Also `pnpm build`, including bundle limits.        |
 | Desktop flows      | Build first, then `pnpm test:desktop <suite>`.     |
-| Documentation only | Review the text and diff; no full suite needed.    |
+| Documentation only | Review the text and diff. No full suite needed.    |
 
 Review the final diff for accidental edits, duplication, and unnecessary comments.
 Report what you actually checked, including failures, skipped checks, and unfinished
