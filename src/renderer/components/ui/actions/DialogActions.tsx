@@ -48,7 +48,7 @@ export function DialogActions({
 export interface ReviewActionsProps extends Omit<DialogActionsProps, "children"> {
   busy: boolean;
   preparing?: boolean;
-  onReview: () => void;
+  onReview?: (() => void) | undefined;
   confirmDisabled: boolean;
   reviewLabel?: string;
   reviewDisabled?: boolean;
@@ -64,9 +64,11 @@ export function ReviewActions({
 }: ReviewActionsProps) {
   return (
     <DialogActions {...props} busy={busy} confirming={busy && !preparing}>
-      <Button busy={preparing} disabled={busy || reviewDisabled} onClick={onReview}>
-        {reviewLabel}
-      </Button>
+      {onReview && (
+        <Button busy={preparing} disabled={busy || reviewDisabled} onClick={onReview}>
+          {reviewLabel}
+        </Button>
+      )}
     </DialogActions>
   );
 }

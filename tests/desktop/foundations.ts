@@ -1054,7 +1054,7 @@ try {
   const amendReview = rebasePage.getByRole("dialog", { name: "Amend paused commit", exact: true });
 
   await amendReview
-    .getByRole("textbox", { name: "Paused commit message" })
+    .getByRole("textbox", { name: "Commit title" })
     .fill("Reviewed edit after restart");
   await amendReview.getByRole("checkbox", { name: "I reviewed this rebase action" }).check();
   await amendReview.getByRole("button", { name: "Amend paused commit", exact: true }).click();

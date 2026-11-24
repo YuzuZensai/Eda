@@ -366,10 +366,12 @@ try {
   await headRow.click({ button: "right" });
   await page.getByRole("menuitem", { name: "Edit commit message" }).click();
   const edit = page.getByRole("dialog", { name: "Edit commit message" });
-  const message = edit.getByRole("textbox", { name: "Commit message" });
+  const message = edit.getByRole("textbox", { name: "Commit title" });
   await message.waitFor();
+  assert.equal(await edit.getByRole("button", { name: "Review current state" }).count(), 0);
   assert.equal((await message.inputValue()).split("\n")[0], subject);
-  await message.fill("Reword from history\n\nKeep the complete body");
+  await message.fill("Reword from history");
+  await edit.getByRole("textbox", { name: "Commit description" }).fill("Keep the complete body");
   await edit.getByRole("button", { name: "Save message" }).click();
   await edit.waitFor({ state: "hidden" });
   await graph.getByRole("button", { name: /Reword from history/ }).waitFor();

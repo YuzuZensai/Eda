@@ -1,13 +1,17 @@
 import { errorFixture } from "../../helpers/error";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { ok } from "@shared/errors";
+import { err, ok } from "@shared/errors";
 import { MergeStartDialog } from "@renderer/features/workflows/MergeStartDialog";
 import { MergeAbortDialog } from "@renderer/features/workflows/MergeAbortDialog";
 import { RebaseDialog } from "@renderer/features/workflows/RebaseDialog";
 import { ReplayDialog } from "@renderer/features/workflows/ReplayDialog";
 import { IdentityDialog } from "@renderer/features/profiles/IdentityDialog";
 import { useAppStore } from "@renderer/stores/app-store";
+import { usePreferencesStore } from "@renderer/stores/preferences-store";
+import { useRepositoryStore } from "@renderer/stores/repository-store";
+import { useSessionStore } from "@renderer/stores/session-store";
+import { emptySession } from "@shared/identity/profile-session";
 
 it.each(["merge", "merge-start", "replay"])(
   "ignores stale %s previews after the review target changes",
@@ -285,10 +289,10 @@ it("preserves a rebase draft through a failed refresh and requires acceptance of
     await act(async () =>
       root.render(<RebaseDialog repositoryId="repo" action="amend" onClose={() => {}} />),
     );
-    const message = document.querySelector("textarea")!;
+    const message = document.querySelector<HTMLInputElement>('[aria-label="Commit title"]')!;
     const confirm = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         message,
         "My draft",
       );
@@ -314,3 +318,128 @@ it("preserves a rebase draft through a failed refresh and requires acceptance of
     vi.unstubAllGlobals();
   }
 });
+
+it.each([0, 1])(
+  "hides manual review while rewording and retains the draft on retry (%s published commits)",
+  async (publishedCommits) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const preferences = usePreferencesStore.getState();
+    const repository = useRepositoryStore.getState();
+    const session = useSessionStore.getState();
+    const execute = vi.fn().mockResolvedValue(ok({ state: "completed" }));
+    const onClose = vi.fn();
+    vi.stubGlobal("eda", {
+      rebase: {
+        prepare: vi.fn().mockResolvedValue(
+          ok({
+            head: "head",
+            branch: "main",
+            token: "review",
+            action: "reword",
+            message: "feat(core)!: Original\n\nDetails\n\nMore details\n",
+            publishedCommits,
+            rewrittenCount: 2,
+          }),
+        ),
+        execute,
+      },
+    });
+    useRepositoryStore.setState({ repositoryId: null });
+    useSessionStore.setState({
+      snapshot: {
+        context: { profileId: "profile", windowId: "window", generation: 1 },
+        session: emptySession(),
+        recovery: null,
+        drafts: { repo: { version: 1, message: "Working tree draft", amend: false } },
+      },
+    });
+    const workingDraft = useSessionStore.getState().snapshot?.drafts["repo"];
+    usePreferencesStore.setState({
+      values: {
+        ...preferences.values,
+        conventionalCommitsEnabled: {
+          ...preferences.values.conventionalCommitsEnabled,
+          value: true,
+        },
+        commitPrefixes: { ...preferences.values.commitPrefixes, value: ["feat", "fix"] },
+      },
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    try {
+      await act(async () =>
+        root.render(
+          <RebaseDialog repositoryId="repo" action="reword" onto="target" onClose={onClose} />,
+        ),
+      );
+      const title = document.querySelector<HTMLInputElement>('[aria-label="Commit title"]')!;
+      const description = document.querySelector<HTMLTextAreaElement>(
+        '[aria-label="Commit description"]',
+      )!;
+      const save = [...document.querySelectorAll("button")].find(
+        (button) => button.textContent === "Save message",
+      )!;
+      const confirm = document.querySelector<HTMLInputElement>('input[type="checkbox"]');
+
+      expect(title.value).toBe("Original");
+      expect(description.value).toBe("Details\n\nMore details\n");
+      expect(save.disabled).toBe(true);
+      expect(document.body.textContent).not.toContain("Review current state");
+      expect(document.body.textContent).toContain("Commit IDs to rewrite: 2");
+      expect(!!confirm).toBe(publishedCommits > 0);
+
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('[aria-label="Commit prefix"]')!.click(),
+      );
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('[data-eda-select-value="fix"]')!.click(),
+      );
+      expect(save.disabled).toBe(publishedCommits > 0);
+
+      if (confirm) await act(async () => confirm.click());
+      expect(save.disabled).toBe(false);
+
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          title,
+          "Updated",
+        );
+        title.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      expect(save.disabled).toBe(publishedCommits > 0);
+      if (confirm) await act(async () => confirm.click());
+
+      execute.mockResolvedValueOnce(err(errorFixture({ message: "Repository changed" })));
+      await act(async () => save.click());
+      expect(save.disabled).toBe(true);
+      expect(title.value).toBe("Updated");
+
+      const refresh = [...document.querySelectorAll("button")].find(
+        (button) => button.textContent === "Review current state",
+      )!;
+      await act(async () => refresh.click());
+      expect(title.value).toBe("Updated");
+      expect(document.body.textContent).not.toContain("Review current state");
+      if (confirm) await act(async () => confirm.click());
+
+      await act(async () => save.click());
+      expect(execute).toHaveBeenCalledWith(
+        "repo",
+        "review",
+        undefined,
+        "fix(core)!: Updated\n\nDetails\n\nMore details\n",
+      );
+      expect(onClose).toHaveBeenCalledOnce();
+      expect(useSessionStore.getState().snapshot?.drafts["repo"]).toBe(workingDraft);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      usePreferencesStore.setState(preferences);
+      useRepositoryStore.setState(repository);
+      useSessionStore.setState(session);
+      vi.unstubAllGlobals();
+    }
+  },
+);

@@ -3,6 +3,7 @@ import { errorMessage } from "@shared/errors";
 import { getLocale, t, type MessageKey } from "@shared/i18n";
 import type { RebaseAction, RebasePlanEntry, RebaseReview } from "@shared/workflows/rebase";
 import { useEffect, useRef, useState } from "react";
+import { CommitMessageEditor } from "../../components/ui/forms/CommitMessageEditor";
 import {
   Button,
   NoticeBanner,
@@ -10,9 +11,9 @@ import {
   Dialog,
   ErrorDialog,
   ReviewActions,
-  Textarea,
 } from "../../components/ui/index";
 import { useRepositoryStore } from "../../stores/repository-store";
+import { usePreferencesStore } from "../../stores/preferences-store";
 import { RebasePlanEditor } from "./RebasePlanEditor";
 
 const labels: Record<RebaseAction, string> = {
@@ -30,8 +31,8 @@ const descriptions = {
   abort: "rebaseDialog.returnToTheBranchStateBeforeTheRebase",
   amend: "rebaseDialog.replaceThePausedCommitWithTheStagedChanges",
   continue: "rebaseDialog.commitTheStagedResolutionAndResumeTheRemaining",
-  reword: "reword.description",
-} satisfies Record<RebaseAction, MessageKey>;
+  reword: undefined,
+} satisfies Record<RebaseAction, MessageKey | undefined>;
 
 interface RebaseDialogProps {
   repositoryId: string;
@@ -47,8 +48,9 @@ export function RebaseDialog(props: RebaseDialogProps) {
 }
 
 function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) {
+  const preferences = usePreferencesStore((state) => state.values);
   const [review, setReview] = useState<RebaseReview | null>(null);
-  const [phase, setPhase] = useState<"prepare" | "execute" | null>(null);
+  const [phase, setPhase] = useState<"prepare" | "execute" | null>("prepare");
   const busy = phase !== null;
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +65,7 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
   const [replacement, setReplacement] = useState<RebaseReview | null>(null);
 
   const reword = action === "reword";
+  const description = descriptions[action];
   const editsMessage = reword || action === "amend";
   const needsConfirmation = !reword || (review?.publishedCommits ?? 0) > 0;
   const canExecute =
@@ -170,17 +173,21 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
       title={labels[action]}
       busy={busy}
       onClose={onClose}
-      description={t(descriptions[action])}
+      description={description ? t(description) : ""}
       footer={
         <ReviewActions
           preparing={phase === "prepare"}
           busy={busy}
           onClose={onClose}
-          onReview={() => void prepare()}
+          onReview={
+            reword && (busy || fresh || replacement || rewritten || recoveryWarning)
+              ? undefined
+              : () => void prepare()
+          }
           onConfirm={() => void execute()}
           confirmLabel={reword ? t("reword.save") : labels[action]}
           confirmDisabled={!canExecute || rewritten > 0 || !!recoveryWarning}
-          confirmVariant="secondary"
+          confirmVariant={reword ? "primary" : "secondary"}
           closeLabel={rewritten || recoveryWarning ? t("common.close") : t("common.cancel")}
           closeVariant="secondary"
           reviewDisabled={rewritten > 0 || !!recoveryWarning}
@@ -226,7 +233,7 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
 
         {review && !rewritten && (
           <>
-            {review.publishedCommits > 0 && !rewritten && (
+            {!reword && review.publishedCommits > 0 && !rewritten && (
               <p role="note">
                 {t("rebaseDialog.thisRangeIncludesCommitsReachableFromLocallyKnown", {
                   publishedCommits: review.publishedCommits,
@@ -235,7 +242,7 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
             )}
 
             {reword ? (
-              <p>
+              <p className="text-text-secondary">
                 {t("reword.target", {
                   oid: onto?.slice(0, 10) ?? "",
                   count: review.rewrittenCount ?? 1,
@@ -250,7 +257,7 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
               </p>
             )}
 
-            {review.branch && (
+            {!reword && review.branch && (
               <p>
                 <Localized
                   id="rebaseDialog.originalBranch"
@@ -268,9 +275,11 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
               </p>
             )}
 
-            <p>
-              {t("rebaseDialog.committerDetails", { author: review.author, email: review.email })}
-            </p>
+            {!reword && (
+              <p>
+                {t("rebaseDialog.committerDetails", { author: review.author, email: review.email })}
+              </p>
+            )}
 
             {action === "amend" && (
               <p>
@@ -283,19 +292,17 @@ function RebaseForm({ repositoryId, action, onto, onClose }: RebaseDialogProps) 
             )}
 
             {editsMessage && (
-              <Textarea
-                aria-label={
-                  reword ? t("historySearch.message") : t("rebaseDialog.pausedCommitMessage")
-                }
-                autoFocus={reword}
-                rows={5}
-                value={message}
-                disabled={busy}
-                surface="surface"
-                onChange={(event) => {
-                  setMessage(event.target.value);
+              <CommitMessageEditor
+                message={message}
+                onChange={(value) => {
+                  setMessage(value);
                   setConfirmed(false);
                 }}
+                conventional={preferences.conventionalCommitsEnabled.value}
+                prefixes={preferences.commitPrefixes.value}
+                summaryLimit={preferences.commitSummaryLimit.value}
+                disabled={busy}
+                autoFocus={reword}
               />
             )}
 
