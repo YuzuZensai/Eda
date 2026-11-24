@@ -516,6 +516,9 @@ try {
   await page.getByRole("button", { name: "Expand diff for pnpm-lock.yaml", exact: true }).waitFor();
   await page.getByRole("button", { name: "View commit diff for large.txt", exact: true }).click();
 
+  const largeDiff = page.getByRole("button", { name: "Expand diff for large.txt", exact: true });
+  await largeDiff.waitFor();
+
   const diffBounds = await page
     .getByRole("button", { name: "Back to history", exact: true })
     .evaluate((element) => element.closest("section")!.getBoundingClientRect().toJSON());
@@ -527,10 +530,6 @@ try {
     0,
     "Only the selected file is displayed",
   );
-
-  const largeDiff = page.getByRole("button", { name: "Expand diff for large.txt", exact: true });
-
-  await largeDiff.waitFor();
 
   assert.equal(
     await page.getByRole("button", { name: /Expand diff for image file.bin/ }).count(),
