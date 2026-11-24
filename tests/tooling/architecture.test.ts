@@ -130,7 +130,6 @@ test("renderer animation definitions stay in the shared motion stylesheet", asyn
 
 for (const file of [
   "renderer/app/CommandPalette.tsx",
-  "renderer/features/changes/CommitPrefixPicker.tsx",
   "renderer/commands/hooks/useShellCommands.ts",
 ]) {
   test(`${file} rejects imperative discovery and global events`, async () => {

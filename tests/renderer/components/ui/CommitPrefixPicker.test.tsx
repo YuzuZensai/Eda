@@ -1,6 +1,6 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { CommitPrefixPicker } from "@renderer/features/changes/CommitPrefixPicker";
+import { CommitPrefixPicker } from "@renderer/components/ui/forms/CommitPrefixPicker";
 
 it("moves focus through visible prefix options and restores the trigger on Escape", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

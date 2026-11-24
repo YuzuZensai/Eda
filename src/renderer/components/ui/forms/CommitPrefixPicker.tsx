@@ -1,8 +1,10 @@
 import { t } from "@shared/i18n";
 import { useId, useRef, useState } from "react";
-import { CheckIcon as Check, ChevronDownIcon as ChevronDown } from "../../components/ui/icons";
-import { Button, ListItemButton, SearchField } from "../../components/ui/index";
-import { AnchoredPopover } from "../../components/ui/overlays/PopoverSurface";
+import { CheckIcon as Check, ChevronDownIcon as ChevronDown } from "../icons";
+import { Button } from "../actions/Button";
+import { ListItemButton } from "../actions/ListItemButton";
+import { SearchField } from "./SearchField";
+import { AnchoredPopover } from "../overlays/PopoverSurface";
 
 export function CommitPrefixPicker({
   value,

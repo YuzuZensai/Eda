@@ -38,18 +38,7 @@ export function useCommitDraft(pending: boolean) {
 
   const { amend } = draft;
   const recognized = conventional ? matchCommitPrefix(title, prefixes) : null;
-  const selectedPrefix = recognized?.[1] ?? "";
   const subject = recognized ? title.slice(recognized[0].length) : title;
-
-  const composeTitle = (value: string) => {
-    const typed = conventional ? matchCommitPrefix(value, prefixes) : null;
-    if (typed)
-      return `${typed[1]}${typed[2] ?? ""}${typed[3] ?? ""}: ${value.slice(typed[0].length)}`;
-
-    return selectedPrefix
-      ? `${selectedPrefix}${recognized?.[2] ?? ""}${recognized?.[3] ?? ""}: ${value}`
-      : value;
-  };
 
   const setAmend = async (amend: boolean) => {
     if (pending || !repositoryId || transitioning || snapshot?.recovery) return;
@@ -178,10 +167,6 @@ export function useCommitDraft(pending: boolean) {
   return {
     ...messageEditor,
     amend,
-    recognized,
-    selectedPrefix,
-    subject,
-    composeTitle,
     setAmend,
     amendLoading,
     amendError,
@@ -189,8 +174,6 @@ export function useCommitDraft(pending: boolean) {
     canCommit,
     submit,
     commitShortcut,
-    conventional,
-    prefixes,
     pushRequest,
   };
 }

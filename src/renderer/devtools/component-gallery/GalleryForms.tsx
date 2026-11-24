@@ -1,5 +1,7 @@
 import { t } from "@shared/i18n";
 import { useState } from "react";
+import { DEFAULT_COMMIT_PREFIXES } from "@shared/preferences/commit-prefix";
+import { CommitMessageEditor } from "../../components/ui/forms/CommitMessageEditor";
 import {
   Checkbox,
   CheckboxControl,
@@ -18,6 +20,7 @@ import { Name, Sample } from "./GallerySample";
 
 export function GalleryForms() {
   const [text, setText] = useState("");
+  const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [choice, setChoice] = useState("first");
   const [checked, setChecked] = useState(true);
@@ -143,15 +146,13 @@ export function GalleryForms() {
               <option value="managed">{t("settings.componentGallery.managedSelection")}</option>
             </Select>
 
-            <label className="block space-y-1.5 text-xs text-text-secondary">
-              <span>{t("settings.componentGallery.notes")}</span>
-
-              <Textarea
-                aria-label={t("settings.componentGallery.exampleTextArea")}
-                rows={3}
-                placeholder={t("settings.componentGallery.textarea")}
-              />
-            </label>
+            <CommitMessageEditor
+              message={message}
+              onChange={setMessage}
+              conventional
+              prefixes={DEFAULT_COMMIT_PREFIXES}
+              summaryLimit={72}
+            />
 
             <Field
               label={t("settings.componentGallery.notesWithError")}

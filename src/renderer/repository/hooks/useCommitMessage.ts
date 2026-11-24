@@ -1,4 +1,5 @@
 import { emptyDraft } from "@shared/identity/profile-session";
+import { splitCommitMessage } from "@shared/repository/commit-message";
 import { useAppStore } from "../../stores/app-store";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { useSessionStore } from "../../stores/session-store";
@@ -11,10 +12,7 @@ export function useCommitMessage(pending: boolean) {
 
   const draft = (selectedId && snapshot?.drafts[selectedId]) || emptyDraft();
   const { message } = draft;
-  const firstBreak = message.indexOf("\n");
-  const title = firstBreak < 0 ? message : message.slice(0, firstBreak).replace(/\r$/, "");
-  const messageTail = firstBreak < 0 ? "" : message.slice(firstBreak);
-  const description = messageTail.replace(/^\r?\n(?:\r?\n)?/, "");
+  const { title, messageTail } = splitCommitMessage(message);
   const disabled =
     pending ||
     !repositoryId ||
@@ -35,7 +33,6 @@ export function useCommitMessage(pending: boolean) {
     message,
     title,
     messageTail,
-    description,
     setMessage,
     disabled,
   };

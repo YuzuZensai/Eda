@@ -20,7 +20,6 @@ import {
   Input,
   Select,
   TextButton,
-  Textarea,
 } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
 import { usePreferencesStore } from "../../stores/preferences-store";
@@ -28,9 +27,8 @@ import { useRepositoryStore } from "../../stores/repository-store";
 import { useSessionStore } from "../../stores/session-store";
 import { DirectPush } from "../sync/DirectPush";
 import { HistorySearch } from "../history/HistorySearch";
-import { CommitPrefixPicker } from "./CommitPrefixPicker";
 import { useCommitDraft } from "./hooks/useCommitDraft";
-import { CommitTitleInput } from "../../components/ui/forms/CommitTitleInput";
+import { CommitMessageEditor } from "../../components/ui/forms/CommitMessageEditor";
 
 export function CommitBox({ pending = false }: { pending?: boolean }) {
   const [historyOwner, setHistoryOwner] = useState<string | null>(null);
@@ -73,13 +71,6 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
     draft,
     message,
     amend,
-    title,
-    recognized,
-    selectedPrefix,
-    subject,
-    composeTitle,
-    messageTail,
-    description,
     setMessage,
     setAmend,
     amendLoading,
@@ -88,15 +79,12 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
     canCommit,
     submit,
     commitShortcut,
-    conventional,
-    prefixes,
     pushRequest,
     disabled: messageDisabled,
   } = useCommitDraft(pending);
 
   const owner = JSON.stringify([snapshot?.context, repositoryId]);
   const limit = preferences.commitSummaryLimit.value;
-  const length = Array.from(title).length;
 
   return (
     <section
@@ -133,53 +121,16 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
         }
       >
         <div className="flex flex-col gap-2 pt-2">
-          <div className="space-y-1.5">
-            <div className="flex min-w-0 items-center gap-2">
-              {conventional && (
-                <CommitPrefixPicker
-                  key={`${snapshot?.context.profileId}:${repositoryId}`}
-                  value={selectedPrefix}
-                  prefixes={prefixes}
-                  disabled={pending || !!snapshot?.recovery || transitioning}
-                  onChange={(prefix) =>
-                    setMessage(
-                      `${prefix ? `${prefix}${recognized?.[2] ?? ""}${recognized?.[3] ?? ""}: ` : ""}${subject}${messageTail}`,
-                    )
-                  }
-                />
-              )}
-
-              <div className="min-w-0 flex-1">
-                <CommitTitleInput
-                  value={subject}
-                  onChange={(value) => setMessage(`${composeTitle(value)}${messageTail}`)}
-                  onKeyDown={commitShortcut}
-                  disabled={messageDisabled}
-                />
-              </div>
-            </div>
-
-            {limit > 0 && length > limit && (
-              <p role="status" className="text-xs text-text-secondary">
-                {t("commitBox.summaryGuidance", { length, limit })}
-              </p>
-            )}
-
-            <Textarea
-              spellCheck
-              rows={2}
-              value={description}
-              onChange={(event) =>
-                setMessage(event.target.value ? `${title}\n\n${event.target.value}` : title)
-              }
-              onKeyDown={commitShortcut}
-              placeholder={t("commitBox.descriptionOptional")}
-              aria-label={t("commitBox.commitDescription")}
-              disabled={messageDisabled}
-              surface="base"
-              className="leading-snug"
-            />
-          </div>
+          <CommitMessageEditor
+            key={`${snapshot?.context.profileId}:${repositoryId}`}
+            message={message}
+            onChange={setMessage}
+            conventional={preferences.conventionalCommitsEnabled.value}
+            prefixes={preferences.commitPrefixes.value}
+            summaryLimit={limit}
+            disabled={messageDisabled}
+            onKeyDown={commitShortcut}
+          />
 
           <Checkbox
             className="flex items-center gap-1.5 text-xs text-text-secondary"
