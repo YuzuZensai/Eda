@@ -46,7 +46,7 @@
   "terminal.unavailable": "This terminal is unavailable. Review repository trust, shell settings and open sessions.",
   "terminal.new": "New shell",
   "terminal.sessions": "Sessions",
-  "terminal.close": "Close shell and stop its process",
+  "terminal.close": "Close shell {number}",
   "terminal.previous": "Move shell earlier",
   "terminal.next": "Move shell later",
   "terminal.exit": "Process exited ({code})",

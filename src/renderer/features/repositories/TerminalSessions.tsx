@@ -19,7 +19,6 @@ import {
   BranchIcon,
   CloseIcon,
   CopyIcon,
-  MonitorIcon,
   PlusIcon,
   SearchIcon,
   TreeIcon,
@@ -30,10 +29,10 @@ import { useRepositoryStore } from "../../stores/repository-store";
 import { copyText } from "../../utils/clipboard";
 
 function shellKey(e: KeyboardEvent, applicationCursor: boolean) {
-  if (e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && /^[a-z@[\\\]^_]$/i.test(e.key))
-    return e.key.toLowerCase() === "v"
-      ? null
-      : String.fromCharCode(e.key.toUpperCase().charCodeAt(0) & 31);
+  if (e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && /^[a-z@[\\\]^_]$/i.test(e.key)) {
+    const key = e.key.toUpperCase();
+    return key === "V" ? null : String.fromCharCode(key.charCodeAt(0) & 31);
+  }
   if (e.key === "Tab" && e.shiftKey) return null;
   const prefix = applicationCursor ? "\x1bO" : "\x1b[";
   const keys: Record<string, string> = {
@@ -92,6 +91,7 @@ export default function TerminalSessions({
     (owner: string) => window.eda.settings.resolve("terminalOptions", { profileId: owner }),
     profileId,
   );
+  const ready = !!(tabs.value && settings.value);
   const options = settings.value?.value ?? defaultTerminalOptions;
   const [selected, setSelected] = useState("");
   const sessions = tabs.value ?? [];
@@ -103,47 +103,61 @@ export default function TerminalSessions({
   const [tool, setTool] = useState<"search" | "suggest" | null>(null);
   const [frame, setFrame] = useState<TerminalFrame | null>(null);
   const [filter, setFilter] = useState("");
-  const query = tool === "search" ? filter : "";
-  const suggest = tool === "suggest" ? filter : "";
+  const finding = tool === "search";
+  const completing = options.completion && tool === "suggest";
+  const query = finding ? filter : "";
+  const suggest = completing ? filter : "";
   const [offset, setOffset] = useState<number | null>(null);
   const [text, setText] = useState("");
   const [linkedPath, setLinkedPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const changing = useRef(false);
+  const handledOpening = useRef(false);
   const surface = useRef<HTMLDivElement>(null);
   const focusSession = useRef<string>(null);
   const measure = useRef<HTMLSpanElement>(null);
-  const branches = useRepositoryRead(
-    window.eda.repository.listBranches,
-    options.completion && suggest ? id : null,
-  );
+  const branches = useRepositoryRead(window.eda.repository.listBranches, suggest ? id : null);
   const head = useRepositoryStore((s) => s.status?.branch.oid);
+
+  const check = async <T,>(
+    work: () => Promise<Result<T>>,
+    onError: (message: string) => void = setError,
+  ) => {
+    try {
+      const result = await work();
+      if (result.ok) return result.value;
+      onError(errorMessage(result.error));
+    } catch (failure) {
+      onError(errorMessage(failure));
+    }
+    return undefined;
+  };
+
   useEffect(() => {
     setFrame(null);
     if (!active) return;
     let alive = true;
     let revision = -1;
     let timer: ReturnType<typeof setTimeout>;
+    const onError = (message: string) => {
+      if (alive) setError(message);
+    };
     const read = async () => {
-      try {
-        const result = await terminal.frame(id, active, offset, query, revision);
-        if (!alive) return;
-        if (!result.ok) {
-          setError(errorMessage(result.error));
-          return;
+      const result = await check(
+        () => terminal.frame(id, active, offset, query, revision),
+        onError,
+      );
+      if (!alive || result === undefined) return;
+      if (result) {
+        revision = result.revision;
+        setFrame(result);
+        if (active === focusSession.current) {
+          surface.current?.focus();
+          focusSession.current = null;
         }
-        if (result.value) {
-          revision = result.value.revision;
-          setFrame(result.value);
-          if (active === focusSession.current) {
-            surface.current?.focus();
-            focusSession.current = null;
-          }
-        }
-        timer = setTimeout(() => void read(), document.hidden ? 600 : 120);
-      } catch (failure) {
-        if (alive) setError(errorMessage(failure));
       }
+      timer = setTimeout(() => void read(), document.hidden ? 600 : 120);
     };
     void read();
     return () => {
@@ -152,17 +166,6 @@ export default function TerminalSessions({
     };
   }, [id, active, offset, query, terminal]);
 
-  const check = async <T,>(work: Promise<Result<T>>) => {
-    try {
-      const result = await work;
-      if (!result.ok) setError(errorMessage(result.error));
-      else return result.value;
-    } catch (failure) {
-      setError(errorMessage(failure));
-    }
-    return undefined;
-  };
-
   useEffect(() => {
     const element = surface.current;
     const glyph = measure.current;
@@ -170,7 +173,7 @@ export default function TerminalSessions({
     const resize = new ResizeObserver(() => {
       const box = glyph.getBoundingClientRect();
       if (!box.width || !box.height) return;
-      void check(
+      void check(() =>
         terminal.resize(
           id,
           active,
@@ -189,31 +192,52 @@ export default function TerminalSessions({
     setFilter("");
     setText("");
   };
-  const change = async (kind: "new" | "close" | "up" | "down") => {
+  const change = async (kind: "new" | "close" | -1 | 1, target = active) => {
+    if (changing.current) return;
+    changing.current = true;
+    handledOpening.current = true;
     setBusy(true);
     setError("");
-    try {
-      if (kind === "new") {
-        const created = await check(terminal.start(id));
-        if (created) {
-          focusSession.current = created;
-          setSelected(created);
-        }
-      } else if (active) {
-        if (kind === "close") await check(terminal.close(id, active));
-        else await check(terminal.move(id, active, kind === "up" ? -1 : 1));
+
+    if (kind === "new") {
+      const created = await check(() => terminal.start(id));
+      if (created) {
+        focusSession.current = created;
+        setSelected(created);
       }
-      tabs.retry();
-      resetView();
-    } finally {
-      setBusy(false);
+    } else if (target) {
+      await check(() =>
+        kind === "close" ? terminal.close(id, target) : terminal.move(id, target, kind),
+      );
     }
+
+    tabs.retry();
+    if (target === active) resetView();
+    changing.current = false;
+    setBusy(false);
   };
+  const newShell = () => void change("new");
+
+  // React Activity runs this cleanup each time the drawer hides.
+  useEffect(
+    () => () => {
+      handledOpening.current = false;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (handledOpening.current || busy || !ready) return;
+
+    if (active) handledOpening.current = true;
+    else newShell();
+  }, [active, busy, ready]);
+
   const input = (data: string, paste = false) => {
     if (active && data && frame?.exit === null) {
       setOffset(null);
       if (query) setFilter("");
-      void check(terminal.input(id, active, data, paste));
+      void check(() => terminal.input(id, active, data, paste));
     }
   };
   const path = text
@@ -221,25 +245,17 @@ export default function TerminalSessions({
     .replace(/:\d+(?::\d+)?$/, "")
     .replace(/^\.\//, "");
   const loadError = tabs.error ?? settings.error;
-  const loading = !loadError && (!tabs.value || !settings.value);
   const failure = error || loadError;
+  const pending = busy || (!loadError && !ready);
 
-  const finding = tool === "search";
-  const completing = options.completion && tool === "suggest";
-  const live = () => {
-    setTool(null);
+  const toggleTool = (next: typeof tool) => {
+    const selectedTool = tool === next ? null : next;
+    setTool(selectedTool);
     setFilter("");
-    setOffset(null);
-    surface.current?.focus();
+    if (!selectedTool || finding) setOffset(null);
+    if (!selectedTool) surface.current?.focus();
   };
-  const toggleTool = (next: "search" | "suggest") => {
-    if (tool === next) live();
-    else {
-      setTool(next);
-      setFilter("");
-      if (finding) setOffset(null);
-    }
-  };
+  const live = () => toggleTool(null);
   const searchLabel = t("terminal.search");
   const completionLabel = t("terminal.suggest");
   const toolLabel = finding ? searchLabel : completionLabel;
@@ -300,7 +316,7 @@ export default function TerminalSessions({
             )}
           </div>
         )}
-        {completing && suggest && (
+        {suggest && (
           <div className="terminal-suggestions">
             {[
               "git status",
@@ -337,8 +353,8 @@ export default function TerminalSessions({
         {!active && !failure && (
           <StateMessage
             className="grow"
-            tone={loading ? "loading" : "empty"}
-            title={t(loading ? "terminal.loading" : "terminal.empty")}
+            tone={pending ? "loading" : "empty"}
+            title={t(pending ? "terminal.loading" : "terminal.empty")}
           />
         )}
         {active && (
@@ -417,12 +433,7 @@ export default function TerminalSessions({
       <aside className="terminal-sidebar">
         <div className="terminal-session-tools">
           <span>{sessionsLabel}</span>
-          {toolButton(
-            t("terminal.new"),
-            PlusIcon,
-            () => void change("new"),
-            busy || loading || !!loadError,
-          )}
+          {toolButton(t("terminal.new"), PlusIcon, newShell, pending || !!loadError)}
         </div>
         {sessions.length > 0 && (
           <div
@@ -433,23 +444,29 @@ export default function TerminalSessions({
             onKeyDown={navigateTabList}
           >
             {sessions.map((session, index) => (
-              <TabTrigger
-                key={session.id}
-                id={`${panel}-${session.id}`}
-                aria-controls={panel}
-                selected={active === session.id}
-                indicator={false}
-                tabIndex={active === session.id ? 0 : -1}
-                onClick={() => {
-                  setSelected(session.id);
-                  resetView();
-                }}
-              >
-                <MonitorIcon aria-hidden="true" />
-                <span>
-                  {index + 1} · {session.title}
-                </span>
-              </TabTrigger>
+              <div key={session.id} role="presentation">
+                <TabTrigger
+                  id={`${panel}-${session.id}`}
+                  aria-controls={panel}
+                  selected={active === session.id}
+                  indicator={false}
+                  tabIndex={active === session.id ? 0 : -1}
+                  onClick={() => {
+                    setSelected(session.id);
+                    resetView();
+                  }}
+                >
+                  <span>
+                    {index + 1} · {session.title}
+                  </span>
+                </TabTrigger>
+                {toolButton(
+                  t("terminal.close", { number: index + 1 }),
+                  CloseIcon,
+                  () => void change("close", session.id),
+                  busy,
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -458,16 +475,15 @@ export default function TerminalSessions({
             {toolButton(
               t("terminal.previous"),
               ArrowUpIcon,
-              () => void change("up"),
+              () => void change(-1),
               busy || activeIndex === 0,
             )}
             {toolButton(
               t("terminal.next"),
               ArrowDownIcon,
-              () => void change("down"),
+              () => void change(1),
               busy || activeIndex === sessions.length - 1,
             )}
-            {toolButton(t("terminal.close"), CloseIcon, () => void change("close"), busy)}
           </div>
         )}
       </aside>

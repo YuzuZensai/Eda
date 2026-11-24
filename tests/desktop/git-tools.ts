@@ -233,6 +233,10 @@ try {
   await expect(drawerToggle).toHaveAttribute("aria-expanded", "true");
   await expect(terminalTab).toHaveAttribute("aria-selected", "true");
   await expect(activity).toBeHidden();
+  const sessions = terminal.getByRole("tablist", { name: "Sessions" });
+  const surface = terminal.getByRole("textbox", { name: "Shell input and output" });
+  await expect(sessions.getByRole("tab")).toHaveCount(1);
+  await expect(surface).toBeFocused();
 
   const terminalBackground = terminal.locator(".terminal-sessions");
   const sessionSidebar = terminal.getByRole("complementary");
@@ -250,16 +254,10 @@ try {
     `data:image/jpeg;base64,${wallpaper.toString("base64")}`,
   );
   assert.ok(backgroundSaved.ok, JSON.stringify(backgroundSaved));
-  await expect(terminalBackground).toHaveCSS("background-color", transparent);
-  await expect(sessionSidebar).toHaveCSS("background-color", transparent);
-
-  const sessions = terminal.getByRole("tablist", { name: "Sessions" });
-  await button(terminal, "New shell").click();
-  const surface = terminal.getByRole("textbox", { name: "Shell input and output" });
-  await expect(surface).toBeFocused();
   await expect(surface).toHaveCSS("background-color", transparent);
   await expect(terminalBackground).toHaveCSS("background-color", transparent);
   await expect(sessionSidebar).toHaveCSS("background-color", transparent);
+
   const backgroundReset = await page.evaluate(() =>
     window.eda.settings.reset("background", { kind: "application" }),
   );
@@ -349,6 +347,7 @@ try {
   await expect(drawerToggle).toHaveAttribute("aria-expanded", "false");
   await expect(surface).toBeHidden();
   await drawerToggle.click();
+  await expect(sessions.getByRole("tab")).toHaveCount(2);
   await expect(selectedShell).toHaveText(/^2 · /);
   await button(terminal, "Move shell earlier").click();
   await expect(selectedShell).toHaveText(/^1 · /);
@@ -381,9 +380,24 @@ try {
   await page.getByRole("tab", { name: "git-tools-fixture", exact: true }).click();
   await terminalTab.click();
   await expect(sessions.getByRole("tab")).toHaveCount(2);
-  await button(terminal, "Close shell and stop its process").click();
-  await button(terminal, "Close shell and stop its process").click();
+  await expect(selectedShell).toHaveText(/^1 · /);
+  const keptShellId = await selectedShell.getAttribute("id");
+  assert.ok(keptShellId);
+  await button(sessions, "Close shell 2").click();
+  await expect(sessions.getByRole("tab")).toHaveCount(1);
+  await expect(selectedShell).toHaveAttribute("id", keptShellId);
+  await button(sessions, "Close shell 1").click();
   await expect(surface).toHaveCount(0);
+  await expect(button(terminal, "New shell")).toBeEnabled();
+  await expect(
+    terminal.getByText("Start a shell in this repository to run commands."),
+  ).toBeVisible();
+  await drawerToggle.click();
+  await expect(terminal).toBeHidden();
+  await terminalTab.click();
+  await expect(sessions.getByRole("tab")).toHaveCount(1);
+  await expect(surface).toBeFocused();
+  await button(sessions, "Close shell 1").click();
   await expect(button(terminal, "New shell")).toBeEnabled();
   await drawerToggle.click();
 
