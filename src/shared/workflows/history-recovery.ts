@@ -29,7 +29,7 @@ export interface HistoryReversal {
   branch?: string;
 }
 
-export type RecoverySource = "reflog" | "saved" | "unreachable" | "rewrites";
+export type RecoverySource = "reflog" | "saved" | "unreachable" | "rewrites" | "dangling";
 
 export interface RecoveryEntry {
   oid: string;
@@ -38,6 +38,7 @@ export interface RecoveryEntry {
 }
 
 export interface RecoveryPage {
+  cleanup?: { token: string; count: number };
   entries: RecoveryEntry[];
   nextOffset: number | null;
 }

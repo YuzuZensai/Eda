@@ -198,6 +198,10 @@ function setup() {
   const mocks = {
     browser: { open: vi.fn((url: string, _profileId: string) => electron.openExternal(url)) },
     git: { history: vi.fn(async () => ({ commits: [], nextOffset: null })) },
+    historyRecovery: {
+      list: vi.fn(async () => ({ entries: [], nextOffset: null })),
+      clearDangling: vi.fn(async () => {}),
+    },
     repositoryReader: {
       referenceUrl: vi.fn(async () => null),
       compareRevisions: vi.fn(),
@@ -1279,4 +1283,26 @@ it("keeps the application window open during a Homebrew upgrade and restores nor
   mocks.updates.blocksQuit = false;
   window.emit("close", { preventDefault });
   expect(electron.send).toHaveBeenCalledWith(IPC_EVENTS.flushRequested, expect.any(String));
+});
+
+it("validates dangling cleanup tokens and notifies repository views after cleanup", async () => {
+  const mocks = setup();
+  const id = "00000000-0000-4000-8000-000000000001";
+  const token = "00000000-0000-4000-8000-000000000002";
+  expect(await invoke(IPC_CHANNELS.historyRecoveryList, id, "dangling", 0)).toMatchObject({
+    ok: true,
+  });
+  expect(mocks.historyRecovery.list).toHaveBeenCalledWith(id, "dangling", 0);
+
+  for (const invalid of ["", null, 7]) {
+    expect(await invoke(IPC_CHANNELS.historyRecoveryClearDangling, id, invalid)).toMatchObject({
+      ok: false,
+    });
+  }
+  expect(mocks.historyRecovery.clearDangling).not.toHaveBeenCalled();
+  expect(await invoke(IPC_CHANNELS.historyRecoveryClearDangling, id, token)).toMatchObject({
+    ok: true,
+  });
+  expect(mocks.historyRecovery.clearDangling).toHaveBeenCalledWith(id, token);
+  expect(electron.send).toHaveBeenCalledWith(IPC_EVENTS.repositoryChanged, id);
 });

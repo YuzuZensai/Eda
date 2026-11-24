@@ -848,3 +848,196 @@ it("resumes the original reset intent before Git runs or after Git reached the t
     expect(await readFile(join(repo.path, "file.txt"), "utf8")).toBe("same-head working\n");
   }
 }, 60_000);
+
+it("clears loose and packed dangling commits while preserving refs, reflogs, linked worktrees and staged work", async () => {
+  repo = await createTempRepo();
+  const context = services();
+  const profile = context.identities.create({
+    name: "Eda",
+    gitName: "Eda",
+    gitEmail: "test@eda.invalid",
+    hue: 0,
+    signing: { format: "none", signCommits: false },
+  });
+  context.identities.setActiveId(profile.id);
+  const repository = await context.repositories.open(repo.path);
+  await repo.writeFile("file.txt", "base\n");
+  await repo.commit("base");
+  const base = (await repo.run(["rev-parse", "HEAD"])).trim();
+  const orphan = async (message: string) =>
+    (await repo.run(["commit-tree", `${base}^{tree}`, "-p", base, "-m", message])).trim();
+
+  await repo.writeFile("file.txt", "reflog work\n");
+  await repo.commit("reflog only");
+  const reflog = (await repo.run(["rev-parse", "HEAD"])).trim();
+  await repo.run(["reset", "--hard", base]);
+  const saved = await orphan("saved recovery");
+  await repo.run(["update-ref", "refs/eda/recovery/keep", saved]);
+  const linked = await orphan("linked worktree");
+  await repo.run(["worktree", "add", "--detach", join(repo.home, "linked"), linked]);
+  const packed = await orphan("packed dangling");
+  await repo.run(["tag", "temporary", packed]);
+  await repo.run(["repack", "-a", "-d"]);
+  await repo.run(["tag", "-d", "temporary"]);
+  const loose = await orphan("loose dangling");
+  await repo.writeFile("file.txt", "staged\n");
+  await repo.run(["add", "file.txt"]);
+  await repo.writeFile("file.txt", "working\n");
+  const status = await repo.run(["status", "--porcelain=v2"]);
+  const index = await repo.run(["ls-files", "--stage"]);
+  const refs = await repo.run(["show-ref"]);
+  const logs = await repo.run(["reflog", "--all", "--format=%H %gs"]);
+
+  const review = await context.historyRecovery.list(repository.id, "dangling");
+  expect(review.entries.map((entry) => entry.oid).sort()).toEqual([loose, packed].sort());
+  expect(review.entries.map((entry) => entry.label).sort()).toEqual([
+    "loose dangling",
+    "packed dangling",
+  ]);
+  expect(review.cleanup?.count).toBe(2);
+  await context.historyRecovery.clearDangling(repository.id, review.cleanup!.token);
+
+  for (const oid of [packed, loose])
+    await expect(repo.run(["cat-file", "-e", oid])).rejects.toThrow();
+  for (const oid of [base, reflog, saved, linked])
+    await repo.run(["cat-file", "-e", `${oid}^{commit}`]);
+  expect(await repo.run(["status", "--porcelain=v2"])).toBe(status);
+  expect(await repo.run(["ls-files", "--stage"])).toBe(index);
+  expect(await repo.run(["show-ref"])).toBe(refs);
+  expect(await repo.run(["reflog", "--all", "--format=%H %gs"])).toBe(logs);
+  expect(await readFile(join(repo.path, "file.txt"), "utf8")).toBe("working\n");
+  expect((await context.historyRecovery.list(repository.id, "dangling")).entries).toEqual([]);
+  await expect(async () =>
+    context.historyRecovery.clearDangling(repository.id, review.cleanup!.token),
+  ).rejects.toThrow();
+});
+
+it("requires a fresh dangling-object review after objects change or the profile switches", async () => {
+  repo = await createTempRepo();
+  const context = services();
+  const profile = context.identities.create({
+    name: "Eda",
+    gitName: "Eda",
+    gitEmail: "test@eda.invalid",
+    hue: 0,
+    signing: { format: "none", signCommits: false },
+  });
+  context.identities.setActiveId(profile.id);
+  const repository = await context.repositories.open(repo.path);
+  await repo.writeFile("file.txt", "base\n");
+  await repo.commit("base");
+  const orphan = async (message: string) =>
+    (await repo.run(["commit-tree", "HEAD^{tree}", "-m", message])).trim();
+  const first = await orphan("first");
+  const review = await context.historyRecovery.list(repository.id, "dangling");
+  const second = await orphan("second");
+  await expect(
+    context.historyRecovery.clearDangling(repository.id, review.cleanup!.token),
+  ).rejects.toThrow("Refresh");
+  for (const oid of [first, second]) await repo.run(["cat-file", "-e", oid]);
+
+  const fresh = await context.historyRecovery.list(repository.id, "dangling");
+  const other = context.identities.create({
+    name: "Other",
+    gitName: "Other",
+    gitEmail: "other@eda.invalid",
+    hue: 0,
+    signing: { format: "none", signCommits: false },
+  });
+  context.identities.setActiveId(other.id);
+  const membership = await context.repositories.open(repo.path);
+  await expect(async () =>
+    context.historyRecovery.clearDangling(membership.id, fresh.cleanup!.token),
+  ).rejects.toThrow();
+  context.identities.setActiveId(profile.id);
+  await repo.run(["update-ref", "refs/heads/rescued", first]);
+  await expect(
+    context.historyRecovery.clearDangling(repository.id, fresh.cleanup!.token),
+  ).rejects.toThrow("Refresh");
+
+  const latest = await context.historyRecovery.list(repository.id, "dangling");
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 6 * 60_000);
+  try {
+    await expect(async () =>
+      context.historyRecovery.clearDangling(repository.id, latest.cleanup!.token),
+    ).rejects.toThrow("Refresh");
+  } finally {
+    clock.mockRestore();
+  }
+  for (const oid of [first, second]) await repo.run(["cat-file", "-e", oid]);
+});
+
+it("blocks dangling cleanup during a Git workflow and paginates every scanned commit", async () => {
+  repo = await createTempRepo();
+  const context = services();
+  const profile = context.identities.create({
+    name: "Eda",
+    gitName: "Eda",
+    gitEmail: "test@eda.invalid",
+    hue: 0,
+    signing: { format: "none", signCommits: false },
+  });
+  context.identities.setActiveId(profile.id);
+  const repository = await context.repositories.open(repo.path);
+  await repo.writeFile("file.txt", "base\n");
+  await repo.commit("base");
+  const oids: string[] = [];
+  for (let index = 0; index < 201; index++) {
+    oids.push((await repo.run(["commit-tree", "HEAD^{tree}", "-m", `orphan ${index}`])).trim());
+  }
+  const first = await context.historyRecovery.list(repository.id, "dangling");
+  const last = await context.historyRecovery.list(repository.id, "dangling", first.nextOffset!);
+  expect(first.cleanup?.count).toBe(201);
+  expect(first.entries).toHaveLength(200);
+  expect(last.entries).toHaveLength(1);
+  expect(last.nextOffset).toBeNull();
+  expect([...first.entries, ...last.entries].map((entry) => entry.oid).sort()).toEqual(oids.sort());
+
+  await repo.writeFile(".git/MERGE_HEAD", (await repo.run(["rev-parse", "HEAD"])).trim() + "\n");
+  await expect(
+    context.historyRecovery.clearDangling(repository.id, first.cleanup!.token),
+  ).rejects.toThrow("Finish");
+  for (const oid of [oids[0]!, oids.at(-1)!]) await repo.run(["cat-file", "-e", oid]);
+});
+
+it("scans objects despite a stale commit-graph cache and still rejects damaged Git objects", async () => {
+  repo = await createTempRepo();
+  const context = services();
+  const profile = context.identities.create({
+    name: "Eda",
+    gitName: "Eda",
+    gitEmail: "test@eda.invalid",
+    hue: 0,
+    signing: { format: "none", signCommits: false },
+  });
+  context.identities.setActiveId(profile.id);
+  const repository = await context.repositories.open(repo.path);
+  await repo.writeFile("file.txt", "base\n");
+  await repo.commit("base");
+  const base = (await repo.run(["rev-parse", "HEAD"])).trim();
+  const stale = (await repo.run(["commit-tree", "HEAD^{tree}", "-m", "stale cache entry"])).trim();
+  await repo.git.exec(["commit-graph", "write", "--stdin-commits"], {
+    cwd: repo.path,
+    operation: "test setup",
+    stdin: `${base}\n${stale}\n`,
+  });
+  await repo.run(["-c", "core.commitGraph=false", "prune", "--expire=now"]);
+  await expect(repo.run(["fsck", "--unreachable", "--no-progress"])).rejects.toThrow();
+  const dangling = (await repo.run(["commit-tree", "HEAD^{tree}", "-m", "available work"])).trim();
+  const cachePath = join(repo.path, ".git/objects/info/commit-graph");
+  const cache = await readFile(cachePath);
+  const review = await context.historyRecovery.list(repository.id, "dangling");
+  expect(review.entries).toEqual([
+    expect.objectContaining({ oid: dangling, label: "available work" }),
+  ]);
+  expect(await readFile(cachePath)).toEqual(cache);
+  await context.historyRecovery.clearDangling(repository.id, review.cleanup!.token);
+  await expect(repo.run(["cat-file", "-e", dangling])).rejects.toThrow();
+  await repo.run(["cat-file", "-e", base]);
+
+  const damaged = (await repo.run(["commit-tree", "HEAD^{tree}", "-m", "damaged work"])).trim();
+  const damagedPath = `.git/objects/${damaged.slice(0, 2)}/${damaged.slice(2)}`;
+  await unlink(join(repo.path, damagedPath));
+  await repo.writeFile(damagedPath, "invalid object");
+  await expect(context.historyRecovery.list(repository.id, "dangling")).rejects.toThrow();
+});

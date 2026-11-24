@@ -143,6 +143,8 @@ const api: EdaApi = {
     inspect: (id, oid) => ipcRenderer.invoke(IPC_CHANNELS.historyRecoveryInspect, id, oid),
     restore: (id, token, name) =>
       ipcRenderer.invoke(IPC_CHANNELS.historyRecoveryRestore, id, token, name),
+    clearDangling: (id, token) =>
+      ipcRenderer.invoke(IPC_CHANNELS.historyRecoveryClearDangling, id, token),
   },
   stashes: {
     prepareBranch: (id, token, name) =>

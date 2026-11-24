@@ -262,6 +262,7 @@ export interface EdaApi {
     list(id: string, source: RecoverySource, offset?: number): Promise<Result<RecoveryPage>>;
     inspect(id: string, oid: string): Promise<Result<RecoveryInspection>>;
     restore(id: string, token: string, name: string): Promise<Result<string>>;
+    clearDangling(id: string, token: string): Promise<Result<void>>;
   };
 
   stashes: {
@@ -705,6 +706,7 @@ export const IPC_CHANNELS = {
   historyRecoveryList: "history-recovery:list",
   historyRecoveryInspect: "history-recovery:inspect",
   historyRecoveryRestore: "history-recovery:restore",
+  historyRecoveryClearDangling: "history-recovery:clear-dangling",
   resetExecute: "reset:execute",
   stashesList: "stashes:list",
   stashesCreate: "stashes:create",

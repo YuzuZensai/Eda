@@ -10,7 +10,8 @@ import {
   type RecoveryPage,
   type RecoverySource,
 } from "@shared/workflows/history-recovery";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { readWorkflowState } from "../../git/operations/workflow-state";
 
 import type { GitService } from "../../git/git-service";
 import { assertFullObjectId, assertValidRefName } from "../../git/validation";
@@ -30,6 +31,13 @@ export class HistoryRecoveryService {
     oid: string;
   }>();
 
+  private readonly cleanups = new PreviewStore<{
+    repositoryId: string;
+    profileId: string;
+    root: string;
+    fingerprint: string;
+  }>();
+
   constructor(
     private readonly git: GitService,
     private readonly repositories: RepositoryManager,
@@ -41,9 +49,10 @@ export class HistoryRecoveryService {
     const { path, identityId } = this.repositories.resolveActiveRepository(repositoryId);
 
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100_000)
-      throw invalid(errorText("main.historyRecoveryService.chooseAValidRecoveryPage"));
+      throw invalid(errorText("main.historyRecoveryService.invalidPage"));
 
     let entries: RecoveryEntry[];
+    let cleanup: RecoveryPage["cleanup"];
 
     if (source === "rewrites") {
       entries = this.journal
@@ -51,7 +60,7 @@ export class HistoryRecoveryService {
         .map((record) => ({
           oid: record.head || record.publishedReversal!.fromHead,
           label: record.message,
-          description: t("main.historyRecoveryService.publishedCommitsInTheOriginalActionResult", {
+          description: t("main.historyRecoveryService.publishedAction", {
             updatedAt: record.updatedAt,
             value2: record.branch ?? t("main.historyRecoveryService.detachedHead"),
             state: stateLabel(record.state),
@@ -64,7 +73,7 @@ export class HistoryRecoveryService {
               record.resultHead ??
               t("main.historyRecoveryService.notRecorded"),
             value7: record.publishedReversal
-              ? t("main.historyRecoveryService.latestPublishedReversalAtPublishedCommitsTo", {
+              ? t("main.historyRecoveryService.latestReversal", {
                   direction: stateLabel(record.publishedReversal.direction),
                   recordedAt: record.publishedReversal.recordedAt,
                   count: record.publishedReversal.count,
@@ -100,9 +109,7 @@ export class HistoryRecoveryService {
       for (let i = 0; i + 2 < fields.length; i += 3) {
         const oid = fields[i]!.trim();
         if (!isFullObjectId(oid))
-          throw invalid(
-            errorText("main.historyRecoveryService.gitReturnedAnUnreadableReflogEntry"),
-          );
+          throw invalid(errorText("main.historyRecoveryService.invalidReflog"));
         entries.push({ oid, label: fields[i + 1]!, description: fields[i + 2]! });
       }
     } else if (source === "saved") {
@@ -131,46 +138,128 @@ export class HistoryRecoveryService {
             : [];
         })
         .slice(offset, offset + RECOVERY_PAGE_SIZE + 1);
-    } else if (source === "unreachable") {
-      const result = await this.git.exec(
-        ["fsck", "--unreachable", "--no-reflogs", "--no-progress"],
-        {
-          cwd: path,
-          operation: t("operations.scanUnreachableCommits"),
-          maxStdoutBytes: 4 * 1024 * 1024,
-        },
-      );
+    } else if (source === "unreachable" || source === "dangling") {
+      const scan = await this.scanUnreachable(path, source === "unreachable");
+      entries = scan.oids.slice(offset, offset + RECOVERY_PAGE_SIZE + 1).map((oid) => ({
+        oid,
+        label: t("main.historyRecoveryService.unreachableCommit"),
+        description: t("main.historyRecoveryService.inspectHint"),
+      }));
 
-      entries = result.stdout
-        .split("\n")
-        .flatMap((line) => {
-          const match = /^unreachable commit (\S+)$/.exec(line.trim());
+      if (source === "dangling") {
+        const token = randomUUID();
+        this.cleanups.set(token, {
+          repositoryId,
+          profileId: identityId,
+          root: path,
+          fingerprint: scan.fingerprint,
+        });
+        cleanup = { token, count: scan.oids.length };
 
-          return match && isFullObjectId(match[1])
-            ? [
-                {
-                  oid: match[1]!,
-                  label: t("main.historyRecoveryService.unreachableCommit"),
-                  description: t(
-                    "main.historyRecoveryService.inspectToIdentifyThisCommitBeforeRestoring",
-                  ),
-                },
-              ]
-            : [];
-        })
-        .sort((a, b) => a.oid.localeCompare(b.oid))
-        .slice(offset, offset + RECOVERY_PAGE_SIZE + 1);
-    } else
-      throw invalid(
-        errorText("main.historyRecoveryService.chooseReflogsSavedRefsSharedHistoryActionsOr"),
-      );
+        if (entries.length) {
+          const subjects = await this.git.exec(
+            ["log", "--no-walk=unsorted", "--format=%H%x00%s", "--stdin"],
+            {
+              cwd: path,
+              operation: t("operations.scanUnreachableCommits"),
+              stdin: entries.map((entry) => entry.oid).join("\n") + "\n",
+              maxStdoutBytes: 4 * 1024 * 1024,
+            },
+          );
+          const labels = new Map(
+            subjects.stdout
+              .trimEnd()
+              .split("\n")
+              .map((line) => {
+                const separator = line.indexOf("\0");
+                return [line.slice(0, separator), line.slice(separator + 1)];
+              }),
+          );
+          entries = entries.map((entry) => ({
+            ...entry,
+            label: labels.get(entry.oid) ?? entry.label,
+            description: "",
+          }));
+        }
+      }
+    } else throw invalid(errorText("main.historyRecoveryService.invalidSource"));
 
     const hasMore = entries.length > RECOVERY_PAGE_SIZE;
 
     return {
+      ...(cleanup && { cleanup }),
       entries: entries.slice(0, RECOVERY_PAGE_SIZE),
       nextOffset: hasMore ? offset + RECOVERY_PAGE_SIZE : null,
     };
+  }
+
+  private async scanUnreachable(root: string, ignoreReflogs = false) {
+    // A stale commit-graph cache can reference pruned commits; scan the actual objects.
+    const result = await this.git.exec(
+      [
+        "-c",
+        "core.commitGraph=false",
+        "fsck",
+        "--unreachable",
+        "--no-progress",
+        ...(ignoreReflogs ? ["--no-reflogs"] : []),
+      ],
+      {
+        cwd: root,
+        operation: t("operations.scanUnreachableCommits"),
+        maxStdoutBytes: 4 * 1024 * 1024,
+      },
+    );
+    const lines = result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .sort();
+    const oids = lines.flatMap((line) => {
+      const match = /^unreachable commit (\S+)$/.exec(line);
+      return match && isFullObjectId(match[1]) ? [match[1]!] : [];
+    });
+
+    return { oids, fingerprint: createHash("sha256").update(lines.join("\n")).digest("hex") };
+  }
+
+  clearDangling(repositoryId: string, token: string): Promise<void> {
+    const repository = this.repositories.resolveActiveRepository(repositoryId);
+    const review = this.cleanups.get(token);
+    const stale = () => invalid(errorText("main.historyRecoveryService.cleanupChanged"));
+
+    if (
+      !review ||
+      review.repositoryId !== repositoryId ||
+      review.profileId !== repository.identityId ||
+      review.root !== repository.path
+    )
+      throw stale();
+
+    return this.writer.remoteOperation(
+      repositoryId,
+      t("operations.clearDanglingCommits"),
+      async (root, identity) => {
+        if (root !== review.root || identity.id !== review.profileId || !this.cleanups.get(token))
+          throw stale();
+        if (await readWorkflowState(this.git, root, await this.git.status(root)))
+          throw invalid(errorText("main.historyRecoveryService.cleanupWorkflow"));
+
+        const current = await this.scanUnreachable(root);
+        if (current.fingerprint !== review.fingerprint) throw stale();
+        this.cleanups.delete(token);
+
+        if (!current.oids.length) return;
+        await this.git.exec(["repack", "-A", "-d", "-l"], {
+          cwd: root,
+          operation: t("operations.clearDanglingCommits"),
+        });
+        await this.git.exec(["prune", "--expire=now"], {
+          cwd: root,
+          operation: t("operations.clearDanglingCommits"),
+        });
+      },
+    );
   }
 
   async inspect(repositoryId: string, oid: string): Promise<RecoveryInspection> {
@@ -180,9 +269,7 @@ export class HistoryRecoveryService {
     const inspection = await this.git.inspectCommit(repository.path, oid);
 
     if (inspection.commit.oid !== oid)
-      throw invalid(
-        errorText("main.historyRecoveryService.chooseACommitObjectNotATagOrAnotherObjectType"),
-      );
+      throw invalid(errorText("main.historyRecoveryService.invalidCommit"));
 
     let diff: RecoveryInspection["diff"] = { files: [] };
     let diffNotice: string | undefined;
@@ -191,7 +278,7 @@ export class HistoryRecoveryService {
       diff = await this.git.commitDiff(repository.path, oid);
     } catch (error) {
       if (!(error instanceof GitError) || error.kind !== "output-too-large") throw error;
-      diffNotice = t("main.historyRecoveryService.theDiffExceedsThePreviewLimitCommitMetadata");
+      diffNotice = t("main.historyRecoveryService.largeDiff");
     }
 
     const token = randomUUID();
@@ -216,9 +303,7 @@ export class HistoryRecoveryService {
       review.profileId !== repository.identityId ||
       review.root !== repository.path
     )
-      throw invalid(
-        errorText("main.historyRecoveryService.thisRecoveryInspectionExpiredOrBelongsToAnother"),
-      );
+      throw invalid(errorText("main.historyRecoveryService.expiredInspection"));
 
     assertValidRefName(name, t("operations.restoreRecoveredBranch"));
 
@@ -237,9 +322,7 @@ export class HistoryRecoveryService {
         });
 
         if (resolved.stdout.trim() !== review.oid)
-          throw invalid(
-            errorText("main.historyRecoveryService.theInspectedCommitIsNoLongerAvailable"),
-          );
+          throw invalid(errorText("main.historyRecoveryService.missingCommit"));
 
         await this.git.exec(
           [

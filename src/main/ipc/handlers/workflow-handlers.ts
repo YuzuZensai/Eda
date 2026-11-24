@@ -113,6 +113,7 @@ export function registerWorkflowHandlers({
 
   handle(IPC_CHANNELS.historyRecoveryList, async (_event, id, source, offset) => {
     if (
+      source !== "dangling" &&
       source !== "reflog" &&
       source !== "saved" &&
       source !== "unreachable" &&
@@ -124,6 +125,15 @@ export function registerWorkflowHandlers({
       throw invalidRequest(errorText("main.workflowHandlers.chooseARecoveryPage"));
 
     return ok(await historyRecovery.list(requireId(id), source, offset));
+  });
+
+  handle(IPC_CHANNELS.historyRecoveryClearDangling, async (_event, rawId, token) => {
+    const id = requireId(rawId);
+
+    return withRepositoryChange(id, async () => {
+      await historyRecovery.clearDangling(id, requireId(token));
+      return ok(undefined);
+    });
   });
 
   handle(IPC_CHANNELS.historyRecoveryInspect, async (_event, id, oid) =>
