@@ -263,7 +263,43 @@ try {
   await page.getByRole("region", { name: "GitHub connection", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Connect", exact: true }).count(), 0);
   assert.equal(await page.locator('details[aria-label="SSH setup"]').getAttribute("open"), null);
-  await page.getByText("Additional Git hosts", { exact: true }).waitFor();
+  for (const name of [
+    "GitHub Enterprise Server",
+    "Bitbucket Cloud",
+    "Bitbucket Data Center",
+    "Azure DevOps Services",
+  ]) {
+    await page
+      .getByRole("region", { name, exact: true })
+      .getByRole("button", { name: "Add host", exact: true })
+      .waitFor();
+  }
+
+  const bitbucket = page.getByRole("region", { name: "Bitbucket Cloud", exact: true });
+  await bitbucket.getByRole("button", { name: "Add host", exact: true }).click();
+  const bitbucketSetup = bitbucket.getByRole("region", { name: "Bitbucket Cloud setup" });
+  const workspaceUrl = bitbucketSetup.getByLabel("Bitbucket workspace URL", { exact: true });
+  const accessToken = bitbucketSetup.getByLabel("Access token", { exact: true });
+  const next = bitbucketSetup.getByRole("button", { name: "Next", exact: true });
+  const workspace = "https://bitbucket.org/example";
+
+  await expect(workspaceUrl).toBeFocused();
+  await expect(accessToken).toHaveCount(0);
+  await workspaceUrl.fill("http://bitbucket.org/example");
+  await expect(next).toBeDisabled();
+  await workspaceUrl.fill(workspace);
+  await workspaceUrl.press("Enter");
+  await expect(workspaceUrl).toHaveCount(0);
+  await expect(bitbucketSetup.getByText(workspace, { exact: true })).toBeVisible();
+  await expect(bitbucketSetup.getByLabel("Atlassian email", { exact: true })).toBeFocused();
+  await accessToken.fill("fixture-token");
+  await bitbucketSetup.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(workspaceUrl).toHaveValue(workspace);
+  await next.click();
+  await expect(accessToken).toHaveValue("");
+  await bitbucketSetup.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(bitbucketSetup).toHaveCount(0);
+
   assert.equal(await page.locator("summary").getByText("Coming soon", { exact: true }).count(), 0);
 
   assert.equal(

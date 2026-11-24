@@ -1,5 +1,6 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { deferred } from "../../../helpers/deferred";
 import { errorFixture } from "../../../helpers/error";
 import { err, ok } from "@shared/errors";
 import { GitLabConnection } from "@renderer/features/connections/GitLabConnection";
@@ -15,6 +16,7 @@ const gitlab = {
   openProfile: vi.fn(),
   disconnect: vi.fn(),
 };
+const gitHosts = { accounts: vi.fn() };
 
 const empty = { secureStorage: true, account: null };
 
@@ -30,6 +32,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   for (const method of Object.values(gitlab)) method.mockReset();
+  gitHosts.accounts.mockReset().mockResolvedValue(ok([]));
   gitlab.status.mockResolvedValue(ok(empty));
   gitlab.profile.mockResolvedValue(
     ok({
@@ -55,6 +58,7 @@ beforeEach(() => {
     gitlab,
     gitlabSelfHosted: { status: vi.fn(async () => ok({ secureStorage: true, accounts: [] })) },
     github: { status: vi.fn(async () => ok(empty)) },
+    gitHosts,
   });
 
   container = document.createElement("div");
@@ -69,8 +73,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const button = (text: string) =>
-  [...document.querySelectorAll("button")].find(
+const button = (text: string, scope: ParentNode = document) =>
+  [...scope.querySelectorAll("button")].find(
     (item) => item.textContent === text || item.getAttribute("aria-label") === text,
   )!;
 
@@ -160,8 +164,59 @@ it("offers self-hosted PAT setup alongside GitLab.com browser sign-in", async ()
   expect(selfHosted.textContent).toContain("Connect instance");
   expect(selfHosted.querySelector("input")).toBeNull();
   expect(selfHosted.textContent).not.toContain("Coming soon");
-  expect(container.querySelectorAll('section[aria-label$=" connection"]')).toHaveLength(3);
-  expect(container.textContent).toContain("Additional Git hosts");
+});
+
+it("shows each additional Git service as its own card with its own accounts and setup", async () => {
+  const enterpriseAccount = {
+    kind: "github-enterprise",
+    username: "team.user",
+    base: "https://git.example.test",
+  };
+  const bitbucketAccount = {
+    kind: "bitbucket-cloud",
+    username: "team@example.test",
+    base: "https://bitbucket.org/team",
+  };
+  const savedAccounts = ok([enterpriseAccount, bitbucketAccount]);
+  const pending = deferred<typeof savedAccounts>();
+  gitHosts.accounts.mockReturnValue(pending.promise);
+
+  await act(async () => root.render(<ProviderConnections profileId="work" />));
+
+  const card = (title: string) => container.querySelector(`section[aria-label="${title}"]`)!;
+  const enterprise = card("GitHub Enterprise Server");
+  const bitbucketCloud = card("Bitbucket Cloud");
+  const bitbucketDataCenter = card("Bitbucket Data Center");
+  const azure = card("Azure DevOps Services");
+
+  const providers = [enterprise, bitbucketCloud, bitbucketDataCenter, azure];
+  for (const provider of providers) {
+    expect(button("Add host", provider).disabled).toBe(true);
+  }
+
+  await act(async () => pending.resolve(savedAccounts));
+
+  for (const provider of providers) {
+    expect(button("Add host", provider).disabled).toBe(false);
+    expect(provider.querySelector('input[type="password"]')).toBeNull();
+  }
+
+  expect(gitHosts.accounts).toHaveBeenCalledWith("work");
+  expect(enterprise.textContent).toContain(enterpriseAccount.base);
+  expect(enterprise.textContent).not.toContain(bitbucketAccount.base);
+  expect(bitbucketCloud.textContent).toContain(bitbucketAccount.base);
+  expect(bitbucketDataCenter.textContent).not.toContain(bitbucketAccount.base);
+
+  await act(async () => button("Add host", bitbucketCloud).click());
+  expect(bitbucketCloud.querySelectorAll("input")).toHaveLength(1);
+  expect(bitbucketCloud.querySelector('input[type="password"]')).toBeNull();
+  expect(bitbucketCloud.textContent).toContain("Bitbucket workspace URL");
+  expect(button("Next", bitbucketCloud).disabled).toBe(true);
+  expect(enterprise.querySelector("input")).toBeNull();
+
+  await act(async () => button("Cancel", bitbucketCloud).click());
+  expect(bitbucketCloud.querySelector("input")).toBeNull();
+  expect(bitbucketCloud.textContent).toContain(bitbucketAccount.base);
 });
 
 it("reveals the cached profile and avatar together without flashing initials during loading", async () => {

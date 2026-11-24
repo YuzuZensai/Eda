@@ -7,6 +7,7 @@ import { ActionIndicator, AnimatedSize, Button, Select } from "../../components/
 
 export function ServiceAccountCard({
   provider,
+  title,
   children,
   actions,
   actionsPlacement = "header",
@@ -22,6 +23,7 @@ export function ServiceAccountCard({
   bodySeparator = true,
 }: {
   provider: HostingProvider;
+  title?: string;
   children: ReactNode;
   actions?: ReactNode;
   actionsPlacement?: "header" | "body";
@@ -36,6 +38,7 @@ export function ServiceAccountCard({
   bodySeparator?: boolean;
   onOpenChange?: ((open: boolean) => void) | undefined;
 }) {
+  const icon = <ProviderIcon provider={provider} />;
   const indicator =
     status ??
     (pendingLabel && (
@@ -47,8 +50,8 @@ export function ServiceAccountCard({
   if (compact)
     return (
       <ConnectionCard
-        title={provider}
-        icon={<ProviderIcon provider={provider} />}
+        title={title ?? provider}
+        icon={icon}
         completedLabel={completedLabel}
         status={indicator}
         onOpenChange={onOpenChange}
@@ -61,14 +64,14 @@ export function ServiceAccountCard({
 
   return (
     <section
-      aria-label={t("settings.serviceAccountCard.connection", { provider: provider })}
+      aria-label={title ?? t("settings.serviceAccountCard.connection", { provider })}
       className="min-w-0 rounded-lg border border-border-subtle bg-bg-surface"
     >
       <AnimatedSize>
         <div className="flex min-h-12 flex-wrap items-center gap-2 px-3 py-2">
           <h2 className="flex min-h-8 min-w-0 flex-1 items-center gap-2 text-sm font-medium">
-            <ProviderIcon provider={provider} />
-            {provider}
+            {icon}
+            {title ?? provider}
           </h2>
 
           <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1">

@@ -4,8 +4,8 @@ import {
   type GitLabTokenForm,
 } from "@shared/integrations/gitlab-self-hosted";
 import { useState } from "react";
-import { Button, Checkbox } from "../../components/ui/index";
-import { GitLabSelfHostedSetupStep } from "./GitLabSelfHostedSetupStep";
+import { Checkbox, ExternalLinkButton } from "../../components/ui/index";
+import { ConnectionSetup } from "./ConnectionSetup";
 
 interface Props {
   initialBaseUrl: string;
@@ -30,113 +30,79 @@ export function GitLabSelfHostedSetup({
   onClose,
   onClearError,
 }: Props) {
-  const [step, setStep] = useState<1 | 2>(initialBaseUrl ? 2 : 1);
-  const [baseUrl, setBaseUrl] = useState(initialBaseUrl);
-  const [token, setToken] = useState("");
   const [ignoreTlsErrors, setIgnoreTlsErrors] = useState(initialIgnoreTlsErrors);
-  const instance = normalizeGitLabInstanceUrl(baseUrl);
-  const canContinue = !busy && !!instance && (step === 1 || (!!token.trim() && secureStorage));
-
-  const connect = async () => {
-    try {
-      await onConnect(baseUrl.trim(), token.trim(), ignoreTlsErrors);
-    } finally {
-      setToken("");
-    }
-  };
-
-  const next = () => {
-    if (!canContinue) return;
-
-    onClearError();
-
-    if (step === 1) setStep(2);
-    else void connect();
-  };
 
   return (
-    <section aria-label={t("settings.gitLabSelfHosted.setupTitle")} className="max-w-md space-y-3">
-      {step > 1 && (
-        <p className="truncate text-xs text-text-tertiary" title={instance ?? undefined}>
-          {instance}
-        </p>
-      )}
-
-      <div
-        className="space-y-3"
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" || !(event.target instanceof HTMLInputElement)) return;
-
-          event.preventDefault();
-          event.stopPropagation();
-          next();
-        }}
-      >
-        <GitLabSelfHostedSetupStep
-          key={step}
-          step={step}
-          baseUrl={baseUrl}
-          token={token}
-          busy={busy}
-          onBaseUrlChange={(value) => {
-            setBaseUrl(value);
-            setToken("");
-            setIgnoreTlsErrors(false);
-          }}
-          onTokenChange={setToken}
-          onOpenTokenSettings={(form, copyUrl) =>
-            onOpenTokenSettings(baseUrl.trim(), form, copyUrl)
-          }
-        />
-
-        <Checkbox
-          checked={ignoreTlsErrors}
-          disabled={busy}
-          onChange={(event) => {
-            setIgnoreTlsErrors(event.target.checked);
-            onClearError();
-          }}
-        >
-          {t("settings.gitLabSelfHosted.ignoreTlsErrors")}
-        </Checkbox>
-
-        {step === 2 && !secureStorage && (
-          <p className="text-xs text-git-modified">
-            {t("settings.gitLabConnection.unlockStorage")}
-          </p>
-        )}
-
-        {error && (
-          <p role="alert" className="text-xs text-git-deleted">
-            {error}
-          </p>
-        )}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="primary" busy={busy} disabled={!canContinue} onClick={next}>
-            {t(step === 1 ? "common.next" : "settings.gitLabSelfHosted.finishConnect")}
-          </Button>
-
-          {step > 1 && (
-            <Button
+    <ConnectionSetup
+      label={t("settings.gitLabSelfHosted.setupTitle")}
+      urlLabel={t("settings.gitLabSelfHosted.instanceUrl")}
+      urlPlaceholder={t("settings.gitLabSelfHosted.instancePlaceholder")}
+      initialUrl={initialBaseUrl}
+      normalizeUrl={normalizeGitLabInstanceUrl}
+      busy={busy}
+      error={error}
+      canConnect={secureStorage}
+      connectLabel={t("settings.gitLabSelfHosted.finishConnect")}
+      tokenLabel={t("settings.gitLabSelfHosted.token")}
+      onConnect={(_address, token, url) => onConnect(url, token.trim(), ignoreTlsErrors)}
+      onUrlChange={() => setIgnoreTlsErrors(false)}
+      onClearError={onClearError}
+      onClose={onClose}
+      renderTokenActions={(url) => (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <ExternalLinkButton
               size="sm"
               variant="ghost"
               disabled={busy}
-              onClick={() => {
-                setToken("");
-                setStep(1);
-                onClearError();
-              }}
+              onOpen={() => void onOpenTokenSettings(url, "legacy")}
+              onCopy={() => onOpenTokenSettings(url, "legacy", true)}
             >
-              {t("common.back")}
-            </Button>
-          )}
+              {t("settings.gitLabSelfHosted.legacyToken")}
+            </ExternalLinkButton>
 
-          <Button size="sm" variant="ghost" onClick={onClose}>
-            {t("common.cancel")}
-          </Button>
-        </div>
-      </div>
-    </section>
+            <ExternalLinkButton
+              size="sm"
+              variant="quiet"
+              disabled={busy}
+              onOpen={() => void onOpenTokenSettings(url, "granular")}
+              onCopy={() => onOpenTokenSettings(url, "granular", true)}
+            >
+              {t("settings.gitLabSelfHosted.chooseTokenType")}
+            </ExternalLinkButton>
+          </div>
+
+          <ExternalLinkButton
+            size="sm"
+            variant="quiet"
+            disabled={busy}
+            onOpen={() => void onOpenTokenSettings(url, "older")}
+            onCopy={() => onOpenTokenSettings(url, "older", true)}
+          >
+            {t("settings.gitLabSelfHosted.olderGitLab")}
+          </ExternalLinkButton>
+        </>
+      )}
+      renderOptions={(showCredentials) => (
+        <>
+          <Checkbox
+            checked={ignoreTlsErrors}
+            disabled={busy}
+            onChange={(event) => {
+              setIgnoreTlsErrors(event.target.checked);
+              onClearError();
+            }}
+          >
+            {t("settings.gitLabSelfHosted.ignoreTlsErrors")}
+          </Checkbox>
+
+          {showCredentials && !secureStorage && (
+            <p className="text-xs text-git-modified">
+              {t("settings.gitLabConnection.unlockStorage")}
+            </p>
+          )}
+        </>
+      )}
+    />
   );
 }
