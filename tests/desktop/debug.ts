@@ -41,6 +41,24 @@ try {
   await page.keyboard.press(`${modifier}+,`);
   await page.getByRole("button", { name: "About", exact: true }).click();
 
+  const maintainer = page.getByRole("region", { name: "Maintainer", exact: true });
+  const username = maintainer.getByRole("button", {
+    name: "View YuzuZensai on GitHub",
+    exact: true,
+  });
+  await expect(username).toBeEnabled();
+  const avatar = await maintainer.locator(".profile-avatar").boundingBox();
+  const displayName = await maintainer.getByText("Yuzu", { exact: true }).boundingBox();
+  const usernameButton = await username.boundingBox();
+  const usernameText = await username.getByText("@YuzuZensai", { exact: true }).boundingBox();
+  assert.ok(avatar && displayName && usernameButton && usernameText);
+  assert.equal(usernameText.x, displayName.x, "The profile username aligns with the display name");
+  assert.ok(
+    displayName.y >= avatar.y &&
+      usernameButton.y + usernameButton.height <= avatar.y + avatar.height,
+    "The display name and username fit within the avatar's height",
+  );
+
   const previousClipboard = await app.evaluate(({ clipboard }) => clipboard.readText());
   try {
     for (const [label, icon, url] of [

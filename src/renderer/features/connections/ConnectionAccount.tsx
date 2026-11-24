@@ -42,7 +42,7 @@ export function ConnectionAccount({
           <p
             title={name}
             className={cx(
-              "truncate text-sm font-medium text-text-primary",
+              "truncate text-sm leading-4 font-medium text-text-primary",
               loading && "ui-skeleton rounded-sm",
             )}
           >
@@ -57,7 +57,7 @@ export function ConnectionAccount({
             aria-label={profileLabel}
             disabled={disabled || loading}
             className={cx(
-              "min-h-6 max-w-full truncate border-0 p-0 text-left",
+              "min-h-6! max-w-full truncate border-0 p-0! text-left",
               loading && "ui-skeleton rounded-sm",
               !name && "text-sm font-medium text-text-primary",
             )}
