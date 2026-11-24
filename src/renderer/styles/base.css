@@ -285,6 +285,14 @@
 }
 
 @layer components {
+  .history > :is([role="row"], [role="status"], [data-virtual-list]) {
+    scrollbar-gutter: stable;
+  }
+
+  .history > [role="row"] {
+    overflow-y: hidden;
+  }
+
   .profile-avatar {
     color: oklch(0.82 var(--avatar-chroma, 0.1) var(--avatar-hue));
     background: var(--bg-raised);

@@ -122,6 +122,44 @@ try {
   const initialCommit = page
     .getByTestId("commit-graph")
     .getByRole("button", { name: /^Initial\./ });
+  const graph = page.getByTestId("commit-graph");
+  const expectAlignedColumns = async () => {
+    await expect
+      .poll(() =>
+        graph.evaluate((element) => {
+          const headers = [...element.querySelectorAll('[draggable="true"]')];
+          const cells = element.querySelectorAll(
+            '[data-tour="history-commit"] > div > span[title]',
+          );
+
+          return headers.map((header, index) => {
+            const cell = cells[index];
+            if (!cell) throw new Error("Missing history column");
+
+            return Math.round(
+              header.getBoundingClientRect().left - cell.getBoundingClientRect().left,
+            );
+          });
+        }),
+      )
+      .toEqual([0, 0, 0]);
+  };
+
+  await expect(initialCommit).toBeVisible();
+  await expectAlignedColumns();
+  const overflowStyle = await page.addStyleTag({
+    content: '[data-testid="commit-graph"] [data-virtual-list] { max-height: 1px; }',
+  });
+  await expect
+    .poll(() =>
+      graph
+        .locator("[data-virtual-list]")
+        .evaluate((element) => element.scrollHeight > element.clientHeight),
+    )
+    .toBe(true);
+  await expectAlignedColumns();
+  await overflowStyle.evaluate((element) => element.parentNode?.removeChild(element));
+
   await initialCommit.click({ button: "right" });
   const commitMenu = page.getByRole("menu", { name: "Commit actions", exact: true });
   const copyTrigger = commitMenu.getByRole("menuitem", { name: "Copy", exact: true });

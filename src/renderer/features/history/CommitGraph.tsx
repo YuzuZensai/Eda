@@ -212,7 +212,7 @@ export function CommitGraph({
       ref={ref}
       data-tour="history"
       data-testid="commit-graph"
-      className="app-surface-panel @container flex h-full w-full min-h-0 min-w-0 flex-col"
+      className="history app-surface-panel @container flex h-full w-full min-h-0 min-w-0 flex-col"
       tabIndex={0}
       aria-label={t("commitGraph.commitHistoryUseUpAndDownToSelect")}
       onKeyDown={(event) => {
