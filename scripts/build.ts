@@ -1,6 +1,6 @@
 import { isFullObjectId } from "../src/shared/repository/object-id.ts";
-import type { PluralMessage } from "../src/shared/i18n/index.ts";
 import { execFileSync } from "node:child_process";
+import { gzipSync } from "node:zlib";
 import { readFileSync, realpathSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { StringDecoder } from "node:string_decoder";
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import type { BuildInfo } from "../src/shared/version.ts";
 
-// Store each namespace once in production, preserving the flat keys used by i18next and IPC.
+// Decode bundled catalogs before their importers run without network reads or runtime dependencies.
 export function compactMessageCatalogs(): Plugin {
   const suffix = ".eda-messages.js";
   return {
@@ -29,40 +29,14 @@ export function compactMessageCatalogs(): Plugin {
       if (!id.endsWith(suffix)) return;
       const file = id.slice(0, -suffix.length);
       this.addWatchFile(file);
-      const messages: Record<string, string | PluralMessage> = JSON.parse(
-        await readFile(file, "utf8"),
-      );
-      const entries = Object.entries(messages);
-      const counts = new Map<string, number>();
-      for (const [, value] of entries)
-        if (typeof value === "string") counts.set(value, (counts.get(value) ?? 0) + 1);
-
-      const repeated: string[] = [];
-      const indices = new Map<string, number>();
-      for (const [value, count] of counts) {
-        if (count === 1) continue;
-        const index = repeated.length;
-        const literalLength = JSON.stringify(value).length;
-        if ((count - 1) * literalLength <= count * String(index).length + 1) continue;
-        indices.set(value, index);
-        repeated.push(value);
-      }
-
-      const groups = new Map<string, Record<string, string | PluralMessage | number>>();
-      for (const [key, value] of entries) {
-        const end = key.lastIndexOf(".") + 1;
-        const prefix = key.slice(0, end);
-        const group = groups.get(prefix) ?? {};
-        group[key.slice(end)] = typeof value === "string" ? (indices.get(value) ?? value) : value;
-        groups.set(prefix, group);
-      }
-      return `const messages = {};
-        const repeated = ${JSON.stringify(repeated)};
-        for (const [prefix, group] of ${JSON.stringify([...groups])}) {
-          for (const [key, value] of Object.entries(group))
-            messages[prefix + key] = typeof value === "number" ? repeated[value] : value;
-        }
-        export default messages;`;
+      const source = JSON.stringify(JSON.parse(await readFile(file, "utf8")));
+      const compressed = gzipSync(source).toString("base64");
+      const plain = `export default ${source};`;
+      const packed = `const bytes = Uint8Array.from(atob(${JSON.stringify(compressed)}), c => c.charCodeAt(0));
+        export default await new Response(
+          new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))
+        ).json();`;
+      return Buffer.byteLength(packed) < Buffer.byteLength(plain) ? packed : plain;
     },
   };
 }

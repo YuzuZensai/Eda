@@ -6,7 +6,7 @@ test("catalogs preserve keys, parameters, plural forms, and externalized JSX cop
   assert.deepEqual(checkLocalization(process.cwd()), []);
 });
 
-test("production catalogs share repeated messages without changing keys or plural forms", async () => {
+test("production catalog compression preserves keys, Unicode and plural forms", async (context) => {
   const { mkdtemp, mkdir, writeFile, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -15,6 +15,12 @@ test("production catalogs share repeated messages without changing keys or plura
   const root = await mkdtemp(join(tmpdir(), "eda-localization-build-"));
   const repeated = "No repositories match this filter.";
   const catalog = {
+    ...Object.fromEntries(
+      Array.from({ length: 100 }, (_, index) => [
+        `sample.message${index}`,
+        `日本語 🌸 ${index}: ${repeated}`,
+      ]),
+    ),
     "sidebar.empty": repeated,
     "workspace.empty": repeated,
     "workspace.count": { one: "{count} repository", other: "{count} repositories" },
@@ -43,7 +49,32 @@ test("production catalogs share repeated messages without changing keys or plura
     );
 
     assert.deepEqual(module.default, catalog);
-    assert.equal(chunk.code.split(repeated).length - 1, 1);
+    assert.ok(
+      chunk.code.length < JSON.stringify(catalog).length,
+      "Catalog packing reduces bundle size",
+    );
+    await context.test("keeps small catalogs readable without decompression overhead", async () => {
+      const small = { "common.close": "Close" };
+      await writeFile(join(root, locales, "messages.json"), JSON.stringify(small));
+      const smallBuild = await build({
+        root,
+        configFile: false,
+        logLevel: "silent",
+        plugins: [compactMessageCatalogs()],
+        build: { lib: { entry, formats: ["es"] }, write: false, minify: false },
+      });
+      const smallBundle = Array.isArray(smallBuild) ? smallBuild[0] : smallBuild;
+      assert.ok(smallBundle && "output" in smallBundle);
+      const smallChunk = smallBundle.output.find(
+        (output) => output.type === "chunk" && output.isEntry,
+      );
+      assert.ok(smallChunk?.type === "chunk");
+      const smallModule = await import(
+        "data:text/javascript;base64," + Buffer.from(smallChunk.code).toString("base64")
+      );
+      assert.deepEqual(smallModule.default, small);
+      assert.ok(!smallChunk.code.includes("DecompressionStream"));
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }
