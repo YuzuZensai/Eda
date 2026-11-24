@@ -105,6 +105,8 @@ export default defineConfig(async ({ command }) => {
       outDir: resolve("./dist/renderer"),
       emptyOutDir: true,
       manifest: true,
+      // Electron loads chunks from disk, so dynamic imports can resolve their dependencies locally.
+      modulePreload: false,
       rolldownOptions: {
         output: {
           codeSplitting: {
