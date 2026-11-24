@@ -480,6 +480,10 @@ export function registerRepositoryHandlers(services: Services): void {
     );
   });
 
+  handle(IPC_CHANNELS.repositoryContributors, async (_e, id) =>
+    ok(await services.repositoryReader.contributors(requireId(id))),
+  );
+
   handle(IPC_CHANNELS.repositoryCommitMessage, async (_e, id, oid) =>
     ok(
       await services.repositoryReader.commitMessage(

@@ -131,6 +131,7 @@ it("rejects repositories outside the current profile before reading Git or provi
   );
   await expect(reader.ignoredFiles("other")).rejects.toThrow("not in this profile");
   await expect(reader.commitTemplate("other")).rejects.toThrow("not in this profile");
+  await expect(reader.contributors("other")).rejects.toThrow("not in this profile");
   await expect(
     reader.compareRevisions({
       repositoryId: "other",
@@ -172,3 +173,25 @@ it("drops a comparison file read if the repository was relocated before Git repl
     code: "main.repositoryManager.theRepositoryChangedRefreshAndTryAgain",
   });
 });
+
+it.each([
+  { identityId: "other-profile", path: "/repo" },
+  { identityId: "profile", path: "/moved" },
+])(
+  "drops contributor results if repository access changes while Git is running (%j)",
+  async (current) => {
+    const { reader, git, repositories } = setup();
+    git.exec.mockImplementation(async () => {
+      repositories.resolveActiveRepository.mockReturnValue({ id: "repo", ...current });
+      return {
+        stdout: "1\tAlice <alice@example.test>\n",
+        stdoutBytes: Buffer.from("1\tAlice <alice@example.test>\n"),
+        stderr: "",
+        exitCode: 0,
+      };
+    });
+    await expect(reader.contributors("repo")).rejects.toMatchObject({
+      code: "main.repositoryManager.theRepositoryChangedRefreshAndTryAgain",
+    });
+  },
+);

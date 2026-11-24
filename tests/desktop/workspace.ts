@@ -298,6 +298,35 @@ try {
     "History fills the main area",
   );
 
+  await graph.getByRole("button", { name: "Contributors", exact: true }).click();
+  const contributors = page.getByRole("dialog", { name: "Contributors", exact: true });
+  await expect(contributors.getByText("1 contributor", { exact: true })).toBeVisible();
+  await expect(contributors.getByText("fixture@example.com", { exact: true })).toBeVisible();
+  await expect(contributors.getByText("43 commits", { exact: true })).toBeVisible();
+  assert.equal(
+    await contributors
+      .getByRole("region", { name: "Contributors", exact: true })
+      .evaluate((element) => element.scrollHeight <= element.clientHeight),
+    true,
+    "A short contributor list fits without a scrollbar",
+  );
+  const contributorSort = contributors.getByRole("combobox", { name: "Sort contributors by" });
+  await expect(contributorSort).toHaveText("Commits");
+  await contributorSort.click();
+  await page.getByRole("option", { name: "Name", exact: true }).click();
+  await expect(contributorSort).toHaveText("Name");
+  await contributors.getByRole("button", { name: "Sort descending", exact: true }).click();
+  await expect(
+    contributors.getByRole("button", { name: "Sort ascending", exact: true }),
+  ).toBeVisible();
+  await mkdir("screenshots", { recursive: true });
+  await page.screenshot({ path: resolve("screenshots/contributors.png") });
+  await contributors.getByRole("searchbox", { name: "Search name or email" }).fill("missing");
+  await expect(contributors.getByText("No matching contributors", { exact: true })).toBeVisible();
+  await contributors.getByRole("searchbox", { name: "Search name or email" }).fill("FIXTURE");
+  await expect(contributors.getByText("fixture@example.com", { exact: true })).toBeVisible();
+  await contributors.getByRole("button", { name: "Close", exact: true }).click();
+
   await page.getByRole("textbox", { name: "Commit title" }).fill("Preserve this draft");
   assert.equal(await page.getByRole("heading", { name: "Diff viewer", exact: true }).count(), 0);
 

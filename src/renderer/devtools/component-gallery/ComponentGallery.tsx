@@ -1,4 +1,5 @@
 import { t } from "@shared/i18n";
+import { ContributorRow } from "../../features/history/ContributorsDialog";
 import type { AccentColor } from "@shared/preferences/accent";
 import { useState } from "react";
 import { ProfileAvatar } from "../../components/ui/display/ProfileAvatar";
@@ -120,6 +121,15 @@ export function ComponentGallery() {
       >
         <RepositoryRowsPreview />
         <Name>{t("settings.componentGallery.directoryRowChangeRowCommitRowCommitDetails")}</Name>
+        <div className="mt-4 rounded-md border border-border-subtle">
+          <ContributorRow
+            contributor={{ name: "Eda Example", email: "eda@example.com", commits: 42 }}
+          />
+          <ContributorRow
+            contributor={{ name: "Another Author", email: "author@example.com", commits: 1 }}
+          />
+        </div>
+        <Name>{t("contributors.title")}</Name>
       </Sample>
 
       <Sample id="gallery-layout" title={t("settings.componentGallery.panelControls")}>

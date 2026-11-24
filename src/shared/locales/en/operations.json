@@ -1,4 +1,5 @@
 {
+  "operations.readContributors": "read contributors",
   "operations.clearDanglingCommits": "clear dangling commits",
   "operations.abortMerge": "abort merge",
   "operations.accessRepository": "access repository",

@@ -7,6 +7,7 @@ import {
   DiffIcon,
   SearchIcon,
   CircleDashedIcon,
+  UsersRoundIcon,
   GitCommitHorizontalIcon as GitCommitHorizontal,
 } from "../../components/ui/icons";
 import {
@@ -38,6 +39,7 @@ import { GraphVisibilityMenu } from "./GraphVisibilityMenu";
 import { useCommitMessage } from "../../repository/hooks/useCommitMessage";
 
 const HistorySearch = lazyRepositoryDialog("HistorySearch");
+const ContributorsDialog = lazyRepositoryDialog("ContributorsDialog");
 const HistoryRecoveryDialog = lazyRepositoryDialog("HistoryRecoveryDialog");
 const CommitMenu = lazyRepositoryDialog("CommitMenu");
 
@@ -86,6 +88,7 @@ export function CommitGraph({
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [contributorsOpen, setContributorsOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
 
   const dagBoundary = useRepositoryStore((state) => state.dagBoundary);
@@ -328,6 +331,14 @@ export function CommitGraph({
           title={t("historySearch.title")}
           disabled={pending || !repositoryId}
           onClick={() => setSearchOpen(true)}
+        />
+        <IconButton
+          size="xs"
+          icon={<UsersRoundIcon />}
+          aria-label={t("contributors.title")}
+          title={t("contributors.title")}
+          disabled={pending || !repositoryId}
+          onClick={() => setContributorsOpen(true)}
         />
         <IconButton
           size="xs"
@@ -598,6 +609,15 @@ export function CommitGraph({
             </Suspense>
           )}
 
+          {contributorsOpen && repositoryId && (
+            <Suspense fallback={null}>
+              <ContributorsDialog
+                key={repositoryId}
+                repositoryId={repositoryId}
+                onClose={() => setContributorsOpen(false)}
+              />
+            </Suspense>
+          )}
           {recoveryOpen && repositoryId && (
             <Suspense fallback={null}>
               <HistoryRecoveryDialog

@@ -296,6 +296,7 @@ export const COMPONENT_GROUPS: {
       "CommitMenu",
       "CommitMessage",
       ["CommitRow", ["CommitRow", "WorkingTreeRow"]],
+      ["ContributorsDialog", ["ContributorRow", "ContributorsDialog"]],
       "GraphFilterDialog",
       "GraphVisibilityMenu",
       "HistorySearch",

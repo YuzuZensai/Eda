@@ -1,4 +1,5 @@
 export const PREVIEW_ANCHORS: Record<string, string> = {
+  "features/history/ContributorsDialog.tsx": "gallery-repository",
   "components/ui/actions/DialogActions.tsx": "gallery-feedback",
   "components/ui/display/Collapse.tsx": "gallery-repository",
   "components/layout/PanelHeader.tsx": "gallery-layout",

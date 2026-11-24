@@ -75,6 +75,12 @@ export interface HistoryCommit {
   decorations: CommitDecoration[];
 }
 
+export interface Contributor {
+  name: string;
+  email: string;
+  commits: number;
+}
+
 export interface HistoryPage {
   commits: HistoryCommit[];
   nextOffset: number | null;

@@ -10,3 +10,4 @@ export { MergeContinueDialog } from "./workflows/MergeContinueDialog";
 export { RebaseDialog } from "./workflows/RebaseDialog";
 export { ReplayDialog } from "./workflows/ReplayDialog";
 export { HistorySearch } from "./history/HistorySearch";
+export { ContributorsDialog } from "./history/ContributorsDialog";

@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { isOneOf } from "@shared/validation";
 import { submoduleUpdateModes, type WorktreeSummary } from "@shared/repository/repository-read";
 import { readBlame, readRevisionPath } from "../git/operations/revision-path";
+import { readContributors } from "../git/operations/contributors";
 import { readRevisionComparison } from "../git/operations/revision-comparison";
 import type { RepositoryManager } from "./lifecycle/repository-manager";
 
@@ -97,6 +98,14 @@ export class RepositoryReader {
     const repository = this.repositories.resolveActiveRepository(repositoryId);
 
     return this.git.commitTemplate(repository.path);
+  }
+
+  contributors(repositoryId: string) {
+    return this.readRepository(
+      repositoryId,
+      (root) => readContributors(this.git, root),
+      t("operations.readContributors"),
+    );
   }
 
   commitMessage(repositoryId: string, oid: string) {

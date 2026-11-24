@@ -109,6 +109,7 @@ import type {
   BlameLine,
   RevisionPath,
   RevisionPathRequest,
+  Contributor,
   HistoryPage,
   HistoryPageRequest,
   RepositoryStatus,
@@ -505,6 +506,7 @@ export interface EdaApi {
     remove(id: string): Promise<Result<void>>;
     status(id: string): Promise<Result<RepositoryStatus>>;
     history(request: HistoryPageRequest): Promise<Result<HistoryPage>>;
+    contributors(id: string): Promise<Result<Contributor[]>>;
     workingDiff(request: WorkingDiffRequest): Promise<Result<UnifiedDiff>>;
     commitDiff(request: CommitDiffRequest): Promise<Result<UnifiedDiff>>;
     compareRevisions(request: RevisionComparisonRequest): Promise<Result<RevisionComparison>>;
@@ -799,6 +801,7 @@ export const IPC_CHANNELS = {
   repositoryRemove: "repository:remove",
   repositoryStatus: "repository:status",
   repositoryHistory: "repository:history",
+  repositoryContributors: "repository:contributors",
   repositoryReferenceUrl: "repository:referenceUrl",
   repositoryPreviewCommit: "repository:previewCommit",
   repositoryForgetRecovery: "repository:forgetRecovery",

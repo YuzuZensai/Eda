@@ -275,6 +275,7 @@ const api: EdaApi = {
     remove: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositoryRemove, id),
     status: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositoryStatus, id),
     history: (request) => ipcRenderer.invoke(IPC_CHANNELS.repositoryHistory, request),
+    contributors: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositoryContributors, id),
     referenceUrl: (id, kind, name) =>
       ipcRenderer.invoke(IPC_CHANNELS.repositoryReferenceUrl, id, kind, name),
     previewCommit: (id) => ipcRenderer.invoke(IPC_CHANNELS.repositoryPreviewCommit, id),

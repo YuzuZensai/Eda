@@ -206,6 +206,7 @@ function setup() {
       referenceUrl: vi.fn(async () => null),
       compareRevisions: vi.fn(),
       comparisonDiff: vi.fn(),
+      contributors: vi.fn(async () => []),
       ignoredFiles: vi.fn(async () => ({ paths: [], truncated: false })),
       commitTemplate: vi.fn(async () => null),
     },
@@ -1305,4 +1306,16 @@ it("validates dangling cleanup tokens and notifies repository views after cleanu
   });
   expect(mocks.historyRecovery.clearDangling).toHaveBeenCalledWith(id, token);
   expect(electron.send).toHaveBeenCalledWith(IPC_EVENTS.repositoryChanged, id);
+});
+
+it("validates contributor requests before reading the repository", async () => {
+  const mocks = setup();
+  for (const id of [null, "", 7, "not-a-repository-id"])
+    expect(await invoke(IPC_CHANNELS.repositoryContributors, id)).toMatchObject({ ok: false });
+  expect(mocks.repositoryReader.contributors).not.toHaveBeenCalled();
+  expect(await invoke(IPC_CHANNELS.repositoryContributors, repositoryId)).toEqual({
+    ok: true,
+    value: [],
+  });
+  expect(mocks.repositoryReader.contributors).toHaveBeenCalledWith(repositoryId);
 });
