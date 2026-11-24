@@ -60,6 +60,14 @@ const checkpoint = git(
   "Internal checkpoint",
 ).trim();
 git("update-ref", "refs/t3/checkpoints/desktop", checkpoint);
+const dangling = git(
+  "commit-tree",
+  `${head}^{tree}`,
+  "-p",
+  head,
+  "-m",
+  "Dangling desktop work",
+).trim();
 
 let app: ElectronApplication | undefined;
 const errors: string[] = [];
@@ -159,6 +167,26 @@ try {
     .toBe(true);
   await expectAlignedColumns();
   await overflowStyle.evaluate((element) => element.parentNode?.removeChild(element));
+
+  await graph.getByRole("button", { name: "Dangling commits", exact: true }).click();
+  const danglingDialog = page.getByRole("dialog", { name: "Dangling commits", exact: true });
+  await danglingDialog
+    .getByRole("button", { name: `Inspect ${dangling} Dangling desktop work`, exact: true })
+    .click();
+  await expect(
+    danglingDialog.getByRole("heading", { name: "Dangling desktop work" }),
+  ).toBeVisible();
+  const clearDangling = danglingDialog.getByRole("button", { name: /^Clear \d+ commits?$/ });
+  await danglingDialog.getByRole("button", { name: "Back", exact: true }).click();
+  await clearDangling.click();
+  const cleanupDialog = page.getByRole("dialog", { name: /^Clear \d+ commits?$/ });
+  await expect(cleanupDialog.getByText(/^Permanently delete/)).toBeVisible();
+  await cleanupDialog.getByRole("button", { name: /^Clear \d+ commits?$/ }).click();
+  await expect(danglingDialog.getByText("No dangling commits", { exact: true })).toBeVisible();
+  assert.throws(() => git("cat-file", "-e", dangling));
+  git("cat-file", "-e", head);
+  git("cat-file", "-e", checkpoint);
+  await danglingDialog.getByRole("button", { name: "Close", exact: true }).click();
 
   await initialCommit.click({ button: "right" });
   const commitMenu = page.getByRole("menu", { name: "Commit actions", exact: true });

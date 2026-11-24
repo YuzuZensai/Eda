@@ -6,6 +6,7 @@ import {
   ArrowRightIcon as ArrowRight,
   DiffIcon,
   SearchIcon,
+  CircleDashedIcon,
   GitCommitHorizontalIcon as GitCommitHorizontal,
 } from "../../components/ui/icons";
 import {
@@ -37,6 +38,7 @@ import { GraphVisibilityMenu } from "./GraphVisibilityMenu";
 import { useCommitMessage } from "../../repository/hooks/useCommitMessage";
 
 const HistorySearch = lazyRepositoryDialog("HistorySearch");
+const HistoryRecoveryDialog = lazyRepositoryDialog("HistoryRecoveryDialog");
 const CommitMenu = lazyRepositoryDialog("CommitMenu");
 
 const GraphFilterDialog = lazyRepositoryDialog("GraphFilterDialog");
@@ -83,6 +85,7 @@ export function CommitGraph({
   }, [vigilantMode, shaColumnShown]);
 
   const [searchOpen, setSearchOpen] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
 
   const dagBoundary = useRepositoryStore((state) => state.dagBoundary);
@@ -306,23 +309,6 @@ export function CommitGraph({
           />
         )}
 
-        <IconButton
-          size="xs"
-          icon={<SearchIcon />}
-          aria-label={t("historySearch.title")}
-          title={t("historySearch.title")}
-          disabled={pending || !repositoryId}
-          onClick={() => setSearchOpen(true)}
-        />
-        <IconButton
-          size="xs"
-          icon={<DiffIcon />}
-          aria-label={t("comparison.title")}
-          title={t("comparison.title")}
-          disabled={pending || !repositoryId}
-          onClick={() => useRepositoryStore.getState().compareRevisions()}
-        />
-
         <span className="mono ml-auto text-xs text-text-tertiary">
           {pending ? (
             <Skeleton className="w-16" />
@@ -334,6 +320,31 @@ export function CommitGraph({
 
           {pending || nextOffset === null ? "" : "+"}
         </span>
+
+        <IconButton
+          size="xs"
+          icon={<SearchIcon />}
+          aria-label={t("historySearch.title")}
+          title={t("historySearch.title")}
+          disabled={pending || !repositoryId}
+          onClick={() => setSearchOpen(true)}
+        />
+        <IconButton
+          size="xs"
+          icon={<CircleDashedIcon />}
+          aria-label={t("dangling.title")}
+          title={t("dangling.title")}
+          disabled={pending || !repositoryId}
+          onClick={() => setRecoveryOpen(true)}
+        />
+        <IconButton
+          size="xs"
+          icon={<DiffIcon />}
+          aria-label={t("comparison.title")}
+          title={t("comparison.title")}
+          disabled={pending || !repositoryId}
+          onClick={() => useRepositoryStore.getState().compareRevisions()}
+        />
       </PanelHeader>
 
       <div
@@ -587,6 +598,16 @@ export function CommitGraph({
             </Suspense>
           )}
 
+          {recoveryOpen && repositoryId && (
+            <Suspense fallback={null}>
+              <HistoryRecoveryDialog
+                key={repositoryId}
+                repositoryId={repositoryId}
+                dangling
+                onClose={() => setRecoveryOpen(false)}
+              />
+            </Suspense>
+          )}
           {searchOpen && repositoryId && (
             <Suspense fallback={null}>
               <HistorySearch repositoryId={repositoryId} onClose={() => setSearchOpen(false)} />
