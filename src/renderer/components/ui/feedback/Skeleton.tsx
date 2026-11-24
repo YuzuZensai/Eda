@@ -1,4 +1,5 @@
-import type { HTMLAttributes } from "react";
+import { useEffect, useState, type HTMLAttributes, type ReactNode } from "react";
+import { ACTION_FEEDBACK } from "../../../motion";
 import { cx } from "../cx";
 
 export function Skeleton({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
@@ -24,10 +25,31 @@ export function SkeletonRows({ rows = 6 }: { rows?: number }) {
   );
 }
 
-export function LoadingContent({ label, rows = 8 }: { label: string; rows?: number }) {
+function DelayedSkeleton({ children }: { children: ReactNode }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setVisible(true), ACTION_FEEDBACK.spinnerDelay);
+    return () => window.clearTimeout(timer);
+  }, []);
+  return visible ? children : null;
+}
+
+export function LoadingContent({
+  label,
+  rows = 8,
+  delayed = false,
+  children,
+}: {
+  label: string;
+  rows?: number;
+  delayed?: boolean;
+  children?: ReactNode;
+}) {
+  const skeleton = children ?? <SkeletonRows rows={rows} />;
+
   return (
     <div role="status" aria-label={label} className="min-h-0 flex-1 overflow-hidden">
-      <SkeletonRows rows={rows} />
+      {delayed ? <DelayedSkeleton>{skeleton}</DelayedSkeleton> : skeleton}
     </div>
   );
 }

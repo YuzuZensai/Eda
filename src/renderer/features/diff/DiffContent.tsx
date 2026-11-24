@@ -12,7 +12,6 @@ import {
 } from "../../repository/diff-model";
 import { diffSearchPattern } from "../../repository/diff-search";
 
-import { useRepositoryStore } from "../../stores/repository-store";
 import { VirtualRows } from "../../components/ui/display/VirtualRows";
 import { PartialStageProvider } from "../changes/PartialStageControls";
 import { DIFF_ROW_HEIGHT, SplitDiffRow, DiffSummaryRow, UnifiedDiffRow } from "./DiffRows";
@@ -22,19 +21,17 @@ export function DiffContent({
   diff,
   mode,
   readOnly = false,
+  scrollKey,
   wrap = false,
   groupContext = false,
 }: {
   diff: UnifiedDiff;
   mode: DiffMode;
   readOnly?: boolean;
+  scrollKey?: string;
   wrap?: boolean;
   groupContext?: boolean;
 }) {
-  const selectionKey = useRepositoryStore(
-    (state) =>
-      `${state.identityId}:${state.repositoryId}:${JSON.stringify(state.selection)}:${mode}`,
-  );
   const [query, setQuery] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<ReadonlyMap<number, boolean>>(() => new Map());
@@ -196,7 +193,7 @@ export function DiffContent({
         ariaLabel={t(
           mode === "unified" ? "diff.diffContent.unifiedDiff" : "diff.diffContent.sideBySideDiff",
         )}
-        scrollKey={readOnly ? undefined : selectionKey}
+        scrollKey={readOnly ? undefined : scrollKey}
         items={visible}
         revealIndex={position >= 0 ? position : undefined}
         rowHeight={DIFF_ROW_HEIGHT}

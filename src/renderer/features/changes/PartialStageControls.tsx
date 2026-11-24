@@ -12,10 +12,12 @@ import {
   TextButton,
 } from "../../components/ui/index";
 import type { UnifiedRow } from "../../repository/diff-model";
+import type { RepositorySelection } from "../../stores/repository-state";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { DiscardDialog } from "./DiscardDialog";
 
 const Context = createContext<{
+  selection: Extract<RepositorySelection, { kind: "change" }>;
   selected: ReadonlySet<string>;
   toggle: (key: string) => void;
   hunk: (index: number) => void;
@@ -31,12 +33,15 @@ const Context = createContext<{
 export function PartialStageProvider({
   children,
   disabled = false,
+  inactive = false,
+  selection,
 }: {
   children: ReactNode;
   disabled?: boolean;
+  inactive?: boolean;
+  selection?: RepositorySelection;
 }) {
   const repositoryId = useRepositoryStore((state) => state.repositoryId);
-  const selection = useRepositoryStore((state) => state.selection);
   const writing = useRepositoryStore((state) => state.writing);
   const diff = useRepositoryStore((state) => state.diff);
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
@@ -63,6 +68,14 @@ export function PartialStageProvider({
   useEffect(() => {
     setSelected((current) => (current.size ? new Set() : current));
   }, [diff]);
+
+  useEffect(() => {
+    if (inactive) {
+      setPreview(null);
+      setDiscard(null);
+      setError(null);
+    }
+  }, [inactive]);
 
   if (disabled || !repositoryId || selection?.kind !== "change" || selection.area === "conflicted")
     return <Context.Provider value={null}>{children}</Context.Provider>;
@@ -157,6 +170,7 @@ export function PartialStageProvider({
   return (
     <Context.Provider
       value={{
+        selection,
         selected,
         busy: busy || writing,
         verb,
@@ -177,7 +191,7 @@ export function PartialStageProvider({
     >
       {children}
 
-      {discard && (
+      {!inactive && discard && (
         <DiscardDialog
           repositoryId={repositoryId}
           paths={discard.paths}
@@ -186,7 +200,7 @@ export function PartialStageProvider({
         />
       )}
 
-      {preview && (
+      {!inactive && preview && (
         <Dialog
           title={t("partialStageControls.selectedChanges", { verb: verb })}
           description={t("partialStageControls.reviewTheExactPatchThatWillUpdateThe")}
@@ -216,12 +230,13 @@ export function PartialStageProvider({
 
 export function PartialStageToolbar({ fileOnly = false }: { fileOnly?: boolean }) {
   const context = useContext(Context);
-  const selection = useRepositoryStore((state) => state.selection);
   const status = useRepositoryStore((state) => state.status);
   const stage = useRepositoryStore((state) => state.stage);
   const unstage = useRepositoryStore((state) => state.unstage);
 
-  if (!context || selection?.kind !== "change") return null;
+  if (!context) return null;
+
+  const { selection } = context;
 
   const staged = selection.area === "staged";
   const fileLabel = staged ? t("diffViewer.unstageFile") : t("diffViewer.stageFile");

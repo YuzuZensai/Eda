@@ -1,3 +1,4 @@
+import { deferred } from "../../../helpers/deferred";
 import { errorFixture } from "../../../helpers/error";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -9,7 +10,6 @@ import { useAppStore } from "@renderer/stores/app-store";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
 import { DiffViewer } from "@renderer/features/diff/DiffViewer";
 import { SplitDiffRow } from "@renderer/features/diff/DiffRows";
-import { ImageDiff } from "@renderer/features/diff/ImageDiff";
 import type { ImagePreview } from "@shared/repository/image-preview";
 
 it("emphasizes changed words and highlights literal search matches on the visible split row", () => {
@@ -157,8 +157,70 @@ it("keeps a partial-discard review through a diff refresh and closes it when the
   }
 });
 
+it("keeps the rendered file and header in place until the requested diff is ready", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("eda", { repository: {} });
+  const previous = useRepositoryStore.getState();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const select = (path: string) =>
+    useRepositoryStore.setState({
+      selection: { kind: "change", area: "unstaged", path },
+      diff: null,
+      diffLoading: true,
+      error: null,
+    });
+  const finish = (path: string) =>
+    useRepositoryStore.setState({
+      diff: { files: [{ newPath: path, status: "modified", binary: false, hunks: [] }] },
+      diffLoading: false,
+    });
+  const skeleton = () => container.querySelector('[aria-label="Loading diff"] .ui-skeleton');
+  try {
+    await act(async () => {
+      select("fast.txt");
+      root.render(<DiffViewer />);
+    });
+    expect(skeleton()).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(skeleton()).not.toBeNull();
+    await act(async () => finish("fast.txt"));
+    const header = container.querySelector("header");
+    const rows = container.querySelector("[data-virtual-list]");
+    expect(rows?.textContent).toContain("fast.txt");
+
+    await act(async () => select("slow.txt"));
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    expect(container.querySelector("[data-virtual-list]")).toBe(rows);
+    expect(header?.textContent).toContain("fast.txt");
+    expect(rows?.closest("[inert]")).not.toBeNull();
+    expect(skeleton()).toBeNull();
+
+    await act(async () => select("latest.txt"));
+    expect(container.querySelector("[data-virtual-list]")).toBe(rows);
+    await act(async () => finish("latest.txt"));
+    expect(container.querySelector("header")).toBe(header);
+    expect(header?.textContent).toContain("latest.txt");
+    expect(container.querySelector("[data-virtual-list]")?.textContent).toContain("latest.txt");
+    expect(container.querySelector("[data-virtual-list]")?.closest("[inert]")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    useRepositoryStore.setState(previous, true);
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  }
+});
+
 it("rejects stale image responses after file switches and retains a retry after a preview failure", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const decoded = deferred<void>();
+  vi.stubGlobal(
+    "Image",
+    class {
+      decode = () => decoded.promise;
+    },
+  );
   const requests: ((result: Result<ImagePreview>) => void)[] = [];
   const imagePreview = vi.fn(
     () => new Promise<Result<ImagePreview>>((finish) => requests.push(finish)),
@@ -189,15 +251,16 @@ it("rejects stale image responses after file switches and retains a retry after 
         repositoryId: "repo",
         identityId: "profile",
         generation: 1,
+        diff: first,
         selection: { kind: "change", area: "unstaged", path: "first.png" },
       });
-      root.render(<ImageDiff file={first.files[0]!} revision={first} />);
+      root.render(<DiffViewer />);
     });
     await act(async () => {
       useRepositoryStore.setState({
         selection: { kind: "change", area: "unstaged", path: "second.png" },
+        diff: second,
       });
-      root.render(<ImageDiff file={second.files[0]!} revision={second} />);
     });
     await act(async () => requests[0]!(ok(preview("first.png"))));
     expect(container.querySelector("img")).toBeNull();
@@ -224,6 +287,8 @@ it("rejects stale image responses after file switches and retains a retry after 
     );
     await act(async () => retry()!.click());
     await act(async () => requests[2]!(ok(preview("second.png"))));
+    expect(container.querySelector("img")).toBeNull();
+    await act(async () => decoded.resolve());
     expect(container.querySelector("img")?.getAttribute("alt")).toBe(
       "Working tree image: second.png",
     );

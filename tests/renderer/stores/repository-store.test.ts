@@ -94,12 +94,47 @@ describe("repository read store", () => {
     });
   });
 
+  it("switches directly between complete commit patches while a truncated file is still loading", async () => {
+    const bridge = api(async () => ok({ commits: [], nextOffset: null }));
+    const files = ["first.txt", "second.txt", "large.txt"].map((newPath) => ({
+      newPath,
+      status: "modified" as const,
+      binary: false,
+      hunks: [],
+      truncated: newPath === "large.txt",
+    }));
+    const slow = deferred<Result<UnifiedDiff>>();
+    const read = vi
+      .spyOn(bridge.repository, "commitDiff")
+      .mockResolvedValueOnce(ok({ files }))
+      .mockReturnValue(slow.promise);
+    vi.stubGlobal("eda", bridge);
+    const store = useRepositoryStore.getState();
+    await store.open("repo", "profile", true);
+    await store.selectCommit("commit-a");
+    const loading = store.selectCommitFile("large.txt");
+    for (const path of ["first.txt", "second.txt"]) {
+      void store.selectCommitFile(path);
+      expect(useRepositoryStore.getState()).toMatchObject({
+        commitFilePath: path,
+        commitFileLoading: false,
+        commitFileDiff: { files: [{ newPath: path }] },
+      });
+    }
+    slow.resolve(ok({ files: [files[2]!] }));
+    await loading;
+    expect(useRepositoryStore.getState().commitFileDiff?.files.map((file) => file.newPath)).toEqual(
+      ["second.txt"],
+    );
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it("retries a rejected commit-file read on the same selected commit and path", async () => {
     const bridge = api(async () => ok({ commits: [makeCommit(0)], nextOffset: null }));
     const file = { newPath: "file.txt", status: "added" as const, binary: false, hunks: [] };
     const read = vi
       .fn()
-      .mockResolvedValueOnce(ok({ files: [file] }))
+      .mockResolvedValueOnce(ok({ files: [{ ...file, truncated: true }] }))
       .mockRejectedValueOnce(new Error("Disconnected"))
       .mockResolvedValueOnce(ok({ files: [file] }));
     bridge.repository.commitDiff = read;
@@ -411,7 +446,14 @@ describe("repository read store", () => {
     const summaries: UnifiedDiff = {
       files: [
         { newPath: "late.ts", status: "added", binary: false, hunks: [], truncated: true },
-        { oldPath: "old.ts", newPath: "new.ts", status: "renamed", binary: false, hunks: [] },
+        {
+          oldPath: "old.ts",
+          newPath: "new.ts",
+          status: "renamed",
+          binary: false,
+          hunks: [],
+        },
+        { newPath: "old.ts/child", status: "added", binary: false, hunks: [] },
       ],
     };
 

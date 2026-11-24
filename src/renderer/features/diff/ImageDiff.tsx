@@ -1,69 +1,23 @@
-import { errorMessage } from "@shared/errors";
 import { getLocale, t } from "@shared/i18n";
-import {
-  isImagePath,
-  type ImagePreview,
-  type ImagePreviewVersion,
+import type {
+  ImagePreview,
+  ImagePreviewRequest,
+  ImagePreviewVersion,
 } from "@shared/repository/image-preview";
-import type { FileDiff, UnifiedDiff } from "@shared/repository/repository-read";
-import { useEffect, useState } from "react";
-import { LoadingContent } from "../../components/ui/feedback/Skeleton";
+import { useState } from "react";
 import { SegmentedControl, StateMessage, TextButton } from "../../components/ui/index";
-import { useRepositoryStore } from "../../stores/repository-store";
 
-export function ImageDiff({ file, revision }: { file: FileDiff; revision: UnifiedDiff }) {
-  const repositoryId = useRepositoryStore((state) => state.repositoryId);
-  const identityId = useRepositoryStore((state) => state.identityId);
-  const generation = useRepositoryStore((state) => state.generation);
-  const selection = useRepositoryStore((state) => state.selection);
-  const kind =
-    selection?.kind === "commit" ? "commit" : selection?.area === "staged" ? "staged" : "working";
-  const oid = selection?.kind === "commit" ? selection.oid : null;
-  const path = file.newPath ?? file.oldPath!;
-  const imagePath = isImagePath(path);
-  const oldPath = file.oldPath;
-  const owner = JSON.stringify([identityId, generation, repositoryId, kind, oid, oldPath, path]);
-  const [result, setResult] = useState<{
-    owner: string;
-    value?: ImagePreview;
-    error?: string;
-  } | null>(null);
-  const [retry, setRetry] = useState(0);
+export function ImageDiff({
+  preview,
+  kind,
+  imagePath,
+}: {
+  preview: ImagePreview;
+  kind: ImagePreviewRequest["kind"];
+  imagePath: boolean;
+}) {
   const [view, setView] = useState<"compare" | "before" | "after">("compare");
   const [actualSize, setActualSize] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-
-    setResult(null);
-
-    if (!repositoryId) return;
-
-    const request = { repositoryId, path, ...(oldPath && { oldPath }) };
-
-    void window.eda.repository
-      .imagePreview(
-        kind === "commit" && oid
-          ? { ...request, kind, oid }
-          : { ...request, kind: kind === "staged" ? "staged" : "working" },
-      )
-      .then((result) => {
-        if (!alive) return;
-        setResult(
-          result.ok ? { owner, value: result.value } : { owner, error: errorMessage(result.error) },
-        );
-      })
-      .catch((error) => {
-        if (alive) setResult({ owner, error: errorMessage(error) });
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [repositoryId, path, oldPath, kind, oid, owner, revision, retry]);
-
-  const current = result?.owner === owner ? result : null;
-  const preview = current?.value;
   const beforeLabel =
     kind === "working"
       ? t("diff.imageDiff.index")
@@ -76,28 +30,6 @@ export function ImageDiff({ file, revision }: { file: FileDiff; revision: Unifie
       : kind === "staged"
         ? t("diff.imageDiff.index")
         : t("diff.imageDiff.commit");
-
-  if (!current)
-    return (
-      <LoadingContent
-        label={t(imagePath ? "diff.imageDiff.loadingImagePreview" : "diff.binary.loading")}
-      />
-    );
-
-  if (!preview)
-    return (
-      <StateMessage
-        className="min-h-0 flex-1"
-        tone="error"
-        description={current.error}
-        title={t(imagePath ? "diff.imageDiff.couldNotLoadImage" : "diff.binary.failed")}
-        action={
-          <TextButton onClick={() => setRetry((value) => value + 1)}>
-            {t(imagePath ? "diff.imageDiff.retryImagePreview" : "common.retry")}
-          </TextButton>
-        }
-      />
-    );
 
   const before =
     view === "before" ||
@@ -134,20 +66,10 @@ export function ImageDiff({ file, revision }: { file: FileDiff; revision: Unifie
         className={`grid min-h-0 flex-1 overflow-auto ${before && after ? "grid-cols-1 @2xl:grid-cols-2" : "grid-cols-1"}`}
       >
         {before && (
-          <ImageVersion
-            key={`${owner}:before`}
-            version={preview.before}
-            label={beforeLabel}
-            actualSize={actualSize}
-          />
+          <ImageVersion version={preview.before} label={beforeLabel} actualSize={actualSize} />
         )}
         {after && (
-          <ImageVersion
-            key={`${owner}:after`}
-            version={preview.after}
-            label={afterLabel}
-            actualSize={actualSize}
-          />
+          <ImageVersion version={preview.after} label={afterLabel} actualSize={actualSize} />
         )}
       </div>
     </section>

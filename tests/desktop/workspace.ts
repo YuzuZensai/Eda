@@ -650,7 +650,38 @@ try {
 
   assert.match((await photo.getAttribute("src")) ?? "", /^data:image\/jpeg;base64,/);
   await page.screenshot({ path: resolve("screenshots/image-preview-working.png") });
-  await page.getByRole("button", { name: "Unstaged main.txt, status M", exact: true }).click();
+  const stableDiff = await page
+    .getByRole("button", { name: "Unstaged main.txt, status M", exact: true })
+    .evaluate(async (button) => {
+      const panel = document.querySelector('[data-tour="diff"]')!;
+      const header = panel.querySelector("header")!;
+      const photo = panel.querySelector<HTMLImageElement>(
+        'img[alt="Working tree image: photo.jpg"]',
+      )!;
+      const started = performance.now();
+      (button as HTMLButtonElement).click();
+
+      while (performance.now() - started < 5000) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (!header.isConnected || !header.checkVisibility({ checkOpacity: true })) return false;
+        const text = panel.querySelector("[data-virtual-list]");
+        if (text?.textContent?.includes("working change") && text.checkVisibility()) {
+          return header.querySelector("h3")?.textContent === "main.txt";
+        }
+        if (
+          !photo.checkVisibility() ||
+          !photo.naturalWidth ||
+          !header.textContent?.includes("photo.jpg")
+        )
+          return false;
+      }
+      return false;
+    });
+  assert.ok(
+    stableDiff,
+    "Every frame keeps the previous preview or shows the newly selected file with its header",
+  );
+
   await page.getByTitle("Working tree: main.txt", { exact: true }).waitFor();
 
   assert.equal(

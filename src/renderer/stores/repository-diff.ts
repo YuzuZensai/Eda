@@ -97,30 +97,38 @@ export function createRepositoryDiff(
   const selectFile = async (path: string) => {
     const { repositoryId, generation, selection, diff, diffLoading } = get();
 
-    if (!repositoryId || selection?.kind !== "commit" || diffLoading) return;
+    if (!repositoryId || selection?.kind !== "commit" || !diff || diffLoading) return;
 
-    const file = diff?.files.find((file) => (file.newPath ?? file.oldPath) === path);
+    const file = diff.files.find((file) => (file.newPath ?? file.oldPath) === path);
 
     if (!file) return;
 
     const revision = ++commitFileRevision;
+    const paths = [...new Set([path, ...(file.oldPath ? [file.oldPath] : [])])];
+    // Git also matches descendants when a file was replaced by a directory.
+    const matchesPath = (candidate?: string) =>
+      paths.some((path) => candidate === path || candidate?.startsWith(path + "/"));
+    const complete =
+      !file.truncated &&
+      !diff.omittedFiles &&
+      !diff.files.some(
+        (other) => other !== file && (matchesPath(other.oldPath) || matchesPath(other.newPath)),
+      );
 
     set({
       contentView: "diff",
       commitFilePath: path,
-      commitFileDiff: null,
-      commitFileLoading: true,
+      commitFileDiff: complete ? { files: [file] } : null,
+      commitFileLoading: !complete,
       commitFileError: null,
     });
 
     useLayoutStore.getState().reveal("diff");
 
+    if (complete) return;
+
     const result = await window.eda.repository
-      .commitDiff({
-        repositoryId,
-        oid: selection.oid,
-        paths: [...new Set([path, ...(file.oldPath ? [file.oldPath] : [])])],
-      })
+      .commitDiff({ repositoryId, oid: selection.oid, paths })
       .catch(() => readFailure("commit"));
 
     const current = get();
