@@ -198,6 +198,34 @@ try {
     "section",
   );
 
+  const secondPath = join(root, "second-project");
+  execFileSync("git", ["init", "-b", "main", secondPath], { env: fixtureEnv, stdio: "pipe" });
+  await writeFile(join(secondPath, "second.txt"), "second project\n");
+  const opened = await page.evaluate((path) => window.eda.repository.open(path), secondPath);
+  assert.ok(opened.ok);
+  await expectEntry(
+    () => page.getByRole("button", { name: "Open a repository", exact: true }).click(),
+    "section",
+  );
+  await expectEntry(
+    () => page.getByRole("button", { name: "Open second-project", exact: true }).click(),
+    "section",
+  );
+  await page.getByRole("button", { name: /second\.txt, status/ }).waitFor();
+
+  const entriesBeforeTabSwitch = await page.evaluate(() => window.__navigationEntries.length);
+  await page.getByRole("tab", { name: "navigation-repository", exact: true }).click();
+  await page.getByRole("button", { name: "Unstaged file.txt, status M", exact: true }).waitFor();
+  await page.evaluate(
+    () =>
+      new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))),
+  );
+  assert.equal(
+    await page.evaluate(() => window.__navigationEntries.length),
+    entriesBeforeTabSwitch,
+    "Switching project tabs should display the selected project without a panel transition.",
+  );
+
   const backgroundBytes = await readFile(
     new URL("../fixtures/backgrounds/sakura.jpg", import.meta.url),
   );

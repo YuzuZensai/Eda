@@ -47,11 +47,11 @@ const PANELS: readonly PanelId[] = ["graph", "diff", "rail"];
 
 export function Workspace() {
   const profileId = useAppStore((state) => state.activeIdentity?.id);
-  const repositoryId = useAppStore((state) => state.selectedRepositoryId);
+  const view = useAppStore((state) => (state.selectedRepositoryId ? "repository" : "home"));
 
   return (
     <LayoutTransition className="h-full min-h-0">
-      <ViewTransition viewKey={`${profileId}:${repositoryId}`} className="h-full min-h-0">
+      <ViewTransition viewKey={`${profileId}:${view}`} className="h-full min-h-0">
         <WorkspaceContent />
       </ViewTransition>
     </LayoutTransition>
