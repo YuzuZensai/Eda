@@ -43,7 +43,13 @@ await build({
 
 if (!appOutDir) throw new Error("electron-builder did not produce an application directory.");
 
-if (!args.includes("--dir")) {
+if (args.includes("--dir")) {
+  if (platform === "osx") {
+    const bundle = join(appOutDir, "Eda.app");
+    execFileSync("codesign", ["--force", "--deep", "--sign", "-", bundle], { stdio: "inherit" });
+    execFileSync("codesign", ["--verify", "--deep", "--strict", bundle], { stdio: "inherit" });
+  }
+} else {
   const { version: sdkVersion } = JSON.parse(
     await readFile("node_modules/velopack/package.json", "utf8"),
   ) as { version: string };

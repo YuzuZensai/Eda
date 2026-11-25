@@ -49,6 +49,7 @@
     "drizzle-orm": "1.0.0-rc.6",
     "electron": "^45.4.1",
     "electron-builder": "^26.18.1",
+    "electron-publish": "26.18.1",
     "eslint": "^10.15.0",
     "happy-dom": "^21.0.4",
     "i18next": "^27.2.3",
