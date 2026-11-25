@@ -1,4 +1,6 @@
-import type { GitErrorData } from "@shared/errors";
+import { err, type GitErrorData } from "@shared/errors";
+import { errorText } from "@shared/error-codes";
+import { t, type MessageKey } from "@shared/i18n";
 import type { SavedSelection } from "@shared/identity/profile-session";
 import {
   type ChangeArea,
@@ -9,6 +11,19 @@ import {
 import { type HistoryWindow } from "./history-pagination";
 
 export type RepositorySelection = SavedSelection;
+
+export function repositoryRequestFailure(operation: MessageKey) {
+  return err({ kind: "unknown", operation: t(operation), message: errorText("errors.unexpected") });
+}
+
+export function sameSelection(
+  current: RepositorySelection | undefined,
+  next: Exclude<RepositorySelection, null>,
+): boolean {
+  return next.kind === "commit"
+    ? current?.kind === "commit" && current.oid === next.oid
+    : current?.kind === "change" && current.area === next.area && current.path === next.path;
+}
 
 export interface RepositoryReadState extends HistoryWindow {
   commandDialog: {

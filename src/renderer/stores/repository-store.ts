@@ -1,6 +1,5 @@
-import { err, ok, type GitErrorData } from "@shared/errors";
-import { errorText } from "@shared/error-codes";
-import { t } from "@shared/i18n";
+import { ok, type Result, type GitErrorData } from "@shared/errors";
+import { t, type MessageKey } from "@shared/i18n";
 import {
   HISTORY_PAGE_SIZE,
   type HistoryPage,
@@ -9,7 +8,7 @@ import {
 import { create } from "zustand";
 import type { DagBoundary } from "../repository/dag-layout";
 import { categorizeChanges, successorPaths } from "../repository/working-changes";
-import { createHistoryPagination } from "./history-pagination";
+import { createHistoryPagination, readHistory } from "./history-pagination";
 import { createRepositoryDiff } from "./repository-diff";
 
 import { useLayoutStore } from "./layout-store";
@@ -22,10 +21,14 @@ export const MAX_STATUS_CHANGES = 5_000;
 export type { ChangeArea } from "@shared/repository/repository-read";
 export type { RepositorySelection } from "./repository-state";
 
-import type { RepositoryReadState, RepositorySelection } from "./repository-state";
+import {
+  sameSelection,
+  repositoryRequestFailure,
+  type RepositoryReadState,
+  type RepositorySelection,
+} from "./repository-state";
 
 let openRequest: Promise<void> | null = null;
-let openRequestKey: string | null = null;
 
 const emptyState = {
   commandDialog: null,
@@ -87,8 +90,10 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
 
   const readFirstPage = (repositoryId: string, resetHistory = false) =>
     Promise.all([
-      window.eda.repository.status(repositoryId),
-      window.eda.repository.history({
+      window.eda.repository
+        .status(repositoryId)
+        .catch(() => repositoryRequestFailure("operations.readStatus")),
+      readHistory({
         repositoryId,
         offset: 0,
         limit: HISTORY_PAGE_SIZE,
@@ -102,20 +107,18 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     available: boolean,
     force = false,
   ): Promise<void> => {
-    const key = `${identityId}:${repositoryId}`;
-
     if (
       !force &&
       get().repositoryId === repositoryId &&
       get().identityId === identityId &&
       get().phase !== "idle" &&
-      !(available && get().phase === "missing")
+      available === (get().phase !== "missing")
     ) {
-      if (openRequestKey === key && openRequest) await openRequest;
+      if (openRequest) await openRequest;
       return;
     }
 
-    if (!force && openRequestKey === key && openRequest) return openRequest;
+    openRequest = null;
 
     history.invalidate();
     history.replaceFirst();
@@ -198,13 +201,9 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     })();
 
     openRequest = request;
-    openRequestKey = key;
 
     await request.finally(() => {
-      if (openRequest === request) {
-        openRequest = null;
-        openRequestKey = null;
-      }
+      if (openRequest === request) openRequest = null;
     });
   };
 
@@ -271,7 +270,7 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
 
     set({ historyLoading: true });
 
-    const result = await window.eda.repository.history({
+    const result = await readHistory({
       repositoryId,
       refs: [oid],
       offset: 0,
@@ -304,11 +303,12 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
   };
 
   const runWrite = async (
-    call: (repositoryId: string) => Promise<{ ok: boolean; error?: GitErrorData }>,
+    operation: MessageKey,
+    call: (repositoryId: string) => Promise<Result<unknown>>,
   ) => {
     const { repositoryId, identityId, generation } = get();
 
-    if (!repositoryId || !identityId) return false;
+    if (!repositoryId || !identityId || get().writing) return false;
 
     const before = get().selection;
     const successors =
@@ -317,12 +317,12 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     set({ writing: true, writeError: null });
 
     try {
-      const result = await call(repositoryId);
+      const result = await call(repositoryId).catch(() => repositoryRequestFailure(operation));
 
       if (get().generation !== generation) return result.ok;
 
       if (!result.ok) {
-        set({ writeError: result.error ?? null });
+        set({ writeError: result.error });
         return false;
       }
 
@@ -358,14 +358,13 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     const next = successors.find((path) => remaining.has(path));
 
     if (next !== undefined) return loadDiff({ kind: "change", path: next, area: previous.area });
-    set({ selection: null, diff: null, diffLoading: false, contentView: "history" });
-    useLayoutStore.getState().reveal("graph");
+    get().showWorkingTree();
   };
 
   const remember = (selection: Exclude<RepositorySelection, null>) => {
     const { navigation, navigationIndex } = get();
     const previous = navigation[navigationIndex];
-    if (JSON.stringify(previous) === JSON.stringify(selection)) return;
+    if (sameSelection(previous, selection)) return;
     const next = [...navigation.slice(0, navigationIndex + 1), selection].slice(-100);
     set({ navigation: next, navigationIndex: next.length - 1 });
   };
@@ -377,59 +376,47 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
 
     set({ stashNotice: null });
 
-    await runWrite(async (repositoryId) => {
-      try {
-        if (!pop)
-          return await window.eda.stashes.create(
-            repositoryId,
-            t("stashActions.defaultName", {
-              branch: status?.branch.head ?? status?.branch.oid?.slice(0, 7),
-            }),
-            "untracked",
-            paths ? { paths } : undefined,
-          );
-
-        const list = await window.eda.stashes.list(repositoryId);
-        if (!list.ok) return list;
-        if (get().generation !== generation) return ok(undefined);
-
-        const latest = list.value.entries[0];
-
-        if (!latest) {
-          set({ stashNotice: t("stashActions.noSavedStashes") });
-          return ok(undefined);
-        }
-
-        const inspected = await window.eda.stashes.inspect(
+    await runWrite(pop ? "stashActions.pop" : "stashActions.stash", async (repositoryId) => {
+      if (!pop)
+        return await window.eda.stashes.create(
           repositoryId,
-          latest.selector,
-          latest.oid,
-        );
-        if (!inspected.ok) return inspected;
-        if (get().generation !== generation) return ok(undefined);
-
-        const result = await window.eda.stashes.apply(
-          repositoryId,
-          inspected.value.token,
-          true,
-          false,
+          t("stashActions.defaultName", {
+            branch: status?.branch.head ?? status?.branch.oid?.slice(0, 7),
+          }),
+          "untracked",
+          paths ? { paths } : undefined,
         );
 
-        if (result.ok && get().generation === generation) {
-          let notice = t("stashActions.popped");
-          if (!result.value.applied) notice = t("stashActions.conflictsKept");
-          else if (result.value.kept) notice = t("stashActions.appliedKept");
-          set({ stashNotice: notice });
-        }
+      const list = await window.eda.stashes.list(repositoryId);
+      if (!list.ok) return list;
+      if (get().generation !== generation) return ok(undefined);
 
-        return result;
-      } catch {
-        return err({
-          kind: "unknown",
-          operation: t(pop ? "stashActions.pop" : "stashActions.stash"),
-          message: errorText("errors.unexpected"),
-        });
+      const latest = list.value.entries[0];
+
+      if (!latest) {
+        set({ stashNotice: t("stashActions.noSavedStashes") });
+        return ok(undefined);
       }
+
+      const inspected = await window.eda.stashes.inspect(repositoryId, latest.selector, latest.oid);
+      if (!inspected.ok) return inspected;
+      if (get().generation !== generation) return ok(undefined);
+
+      const result = await window.eda.stashes.apply(
+        repositoryId,
+        inspected.value.token,
+        true,
+        false,
+      );
+
+      if (result.ok && get().generation === generation) {
+        let notice = t("stashActions.popped");
+        if (!result.value.applied) notice = t("stashActions.conflictsKept");
+        else if (result.value.kept) notice = t("stashActions.appliedKept");
+        set({ stashNotice: notice });
+      }
+
+      return result;
     });
   };
 
@@ -528,16 +515,18 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     },
 
     applyPartial(token) {
-      return runWrite((repositoryId) => window.eda.repository.applyPartial(repositoryId, token));
+      return runWrite("operations.partialStaging", (repositoryId) =>
+        window.eda.repository.applyPartial(repositoryId, token),
+      );
     },
     async stage(paths) {
-      await runWrite((repositoryId) =>
+      await runWrite("operations.stageChanges", (repositoryId) =>
         window.eda.repository.stage({ repositoryId, ...(paths ? { paths } : {}) }),
       );
     },
 
     async unstage(paths) {
-      await runWrite((repositoryId) =>
+      await runWrite("operations.unstageChanges", (repositoryId) =>
         window.eda.repository.unstage({ repositoryId, ...(paths ? { paths } : {}) }),
       );
     },
@@ -550,7 +539,7 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
 
       set({ commitNotice: null });
 
-      return runWrite(async (repositoryId) => {
+      return runWrite("operations.commit", async (repositoryId) => {
         const result = await window.eda.repository.commit({
           repositoryId,
           message,

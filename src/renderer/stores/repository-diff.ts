@@ -1,27 +1,20 @@
-import { err } from "@shared/errors";
-import { errorText } from "@shared/error-codes";
-import { t } from "@shared/i18n";
 import { boundDiff } from "../repository/diff-model";
 import { useLayoutStore } from "./layout-store";
 import { useSessionStore } from "./session-store";
 
 import type { StoreApi } from "zustand";
-import type { RepositoryReadState, RepositorySelection } from "./repository-state";
-
-function readFailure(kind: "commit" | "change") {
-  return err({
-    kind: "unknown",
-    operation: t(kind === "commit" ? "operations.readCommitDiff" : "operations.readWorkingDiff"),
-    message: errorText("errors.unexpected"),
-  });
-}
+import {
+  sameSelection,
+  repositoryRequestFailure,
+  type RepositoryReadState,
+  type RepositorySelection,
+} from "./repository-state";
 
 export function createRepositoryDiff(
   get: StoreApi<RepositoryReadState>["getState"],
   set: StoreApi<RepositoryReadState>["setState"],
 ) {
   let diffRequest: Promise<void> | null = null;
-  let diffRequestKey: string | null = null;
   let commitFileRevision = 0;
 
   const loadDiff = async (
@@ -32,11 +25,9 @@ export function createRepositoryDiff(
 
     if (!repositoryId) return;
 
-    const key = `${generation}:${selection.kind}:${selection.kind === "commit" ? selection.oid : `${selection.area}:${selection.path}`}`;
+    const changed = !sameSelection(get().selection, selection);
+    if (!changed && diffRequest) return diffRequest;
 
-    if (diffRequestKey === key && diffRequest) return diffRequest;
-
-    const changed = JSON.stringify(get().selection) !== JSON.stringify(selection);
     const conflict = selection.kind === "change" && selection.area === "conflicted";
     const focused = selection.kind === "change" && (!conflict || openConflict);
     const keepDiff = background && !changed && get().diff !== null;
@@ -59,38 +50,42 @@ export function createRepositoryDiff(
     if (get().identityId === useSessionStore.getState().snapshot?.context.profileId)
       useSessionStore.getState().setView(repositoryId, { selection });
 
-    if (conflict) return;
+    if (conflict) {
+      diffRequest = null;
+      return;
+    }
 
-    const request = (async () => {
-      const result = await (
-        selection.kind === "commit"
-          ? window.eda.repository.commitDiff({ repositoryId, oid: selection.oid })
-          : window.eda.repository.workingDiff({
-              repositoryId,
-              paths: [selection.path],
-              area: selection.area === "staged" ? "staged" : "unstaged",
-            })
-      ).catch(() => readFailure(selection.kind));
-
-      if (
-        get().generation !== generation ||
-        get().repositoryId !== repositoryId ||
-        get().selection !== selection
+    const request: Promise<void> = (
+      selection.kind === "commit"
+        ? window.eda.repository.commitDiff({ repositoryId, oid: selection.oid })
+        : window.eda.repository.workingDiff({
+            repositoryId,
+            paths: [selection.path],
+            area: selection.area === "staged" ? "staged" : "unstaged",
+          })
+    )
+      .catch(() =>
+        repositoryRequestFailure(
+          selection.kind === "commit" ? "operations.readCommitDiff" : "operations.readWorkingDiff",
+        ),
       )
-        return;
+      .then((result) => {
+        if (
+          diffRequest !== request ||
+          get().generation !== generation ||
+          get().repositoryId !== repositoryId ||
+          get().selection !== selection
+        )
+          return;
 
-      if (result.ok) set({ diff: boundDiff(result.value), diffLoading: false });
-      else set({ error: result.error, diffLoading: false });
-    })();
+        if (result.ok) set({ diff: boundDiff(result.value), diffLoading: false });
+        else set({ error: result.error, diffLoading: false });
+      });
 
     diffRequest = request;
-    diffRequestKey = key;
 
     await request.finally(() => {
-      if (diffRequest === request) {
-        diffRequest = null;
-        diffRequestKey = null;
-      }
+      if (diffRequest === request) diffRequest = null;
     });
   };
 
@@ -129,7 +124,7 @@ export function createRepositoryDiff(
 
     const result = await window.eda.repository
       .commitDiff({ repositoryId, oid: selection.oid, paths })
-      .catch(() => readFailure("commit"));
+      .catch(() => repositoryRequestFailure("operations.readCommitDiff"));
 
     const current = get();
 
@@ -155,7 +150,6 @@ export function createRepositoryDiff(
     selectFile,
     invalidate() {
       diffRequest = null;
-      diffRequestKey = null;
     },
   };
 }

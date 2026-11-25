@@ -94,6 +94,33 @@ describe("repository read store", () => {
     });
   });
 
+  it.each(["another commit", "a conflicted file"])(
+    "keeps the latest diff when navigating back via %s while the original diff is pending",
+    async (detour) => {
+      const bridge = api(async () => ok({ commits: [makeCommit(0)], nextOffset: null }));
+      const slow = deferred<Result<UnifiedDiff>>();
+      vi.spyOn(bridge.repository, "commitDiff").mockReturnValueOnce(slow.promise);
+      vi.stubGlobal("eda", bridge);
+      const store = useRepositoryStore.getState();
+      await store.open("repo", "profile", true);
+      const first = store.selectCommit("oid-0");
+      if (detour === "another commit") await store.selectCommit("oid-1");
+      else
+        await store.selectChange(
+          { kind: "unmerged", path: "conflict", index: "U", worktree: "U", submodule: "N..." },
+          "conflicted",
+        );
+      const back = store.navigate(-1);
+      slow.resolve(err(errorFixture({ message: "Obsolete diff failure" })));
+      await Promise.all([first, back]);
+      expect(useRepositoryStore.getState()).toMatchObject({
+        selection: { kind: "commit", oid: "oid-0" },
+        diff: { files: [] },
+        error: null,
+      });
+    },
+  );
+
   it("switches directly between complete commit patches while a truncated file is still loading", async () => {
     const bridge = api(async () => ok({ commits: [], nextOffset: null }));
     const files = ["first.txt", "second.txt", "large.txt"].map((newPath) => ({
@@ -228,6 +255,47 @@ describe("repository read store", () => {
     assertTopology();
     await useRepositoryStore.getState().loadPrevious();
     assertTopology();
+  });
+
+  it("recovers from a rejected status request and a rejected history page", async () => {
+    const bridge = api(async () => ok({ commits: [makeCommit(0)], nextOffset: HISTORY_PAGE_SIZE }));
+    vi.spyOn(bridge.repository, "status").mockRejectedValueOnce(new Error("Disconnected"));
+    vi.stubGlobal("eda", bridge);
+    const store = useRepositoryStore.getState();
+    await store.open("repo", "profile", true);
+    expect(useRepositoryStore.getState()).toMatchObject({
+      phase: "error",
+      error: { kind: "unknown" },
+    });
+    await store.refresh();
+    expect(useRepositoryStore.getState().phase).toBe("ready");
+    vi.spyOn(bridge.repository, "history").mockRejectedValueOnce(new Error("Disconnected"));
+    await store.loadMore();
+    expect(useRepositoryStore.getState()).toMatchObject({
+      historyLoading: false,
+      historyError: { kind: "unknown" },
+      error: null,
+    });
+    await store.loadMore();
+    expect(useRepositoryStore.getState().historyError).toBeNull();
+  });
+
+  it("shows a rejected staging request as a write error and allows retry", async () => {
+    const bridge = api(async () => ok({ commits: [], nextOffset: null }));
+    bridge.repository.stage = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Disconnected"))
+      .mockResolvedValue(ok(undefined));
+    vi.stubGlobal("eda", bridge);
+    const store = useRepositoryStore.getState();
+    await store.open("repo", "profile", true);
+    await store.stage();
+    expect(useRepositoryStore.getState()).toMatchObject({
+      writing: false,
+      writeError: { kind: "unknown" },
+    });
+    await store.stage();
+    expect(useRepositoryStore.getState().writeError).toBeNull();
   });
 
   it("keeps working changes available when only history fails", async () => {
@@ -548,6 +616,41 @@ describe("repository read store", () => {
       commitFileDiff: null,
       commitFileLoading: false,
     });
+  });
+
+  it("drops an in-flight read when a repository becomes unavailable and reopens it after recovery", async () => {
+    const bridge = api(async () => ok({ commits: [], nextOffset: null }));
+    const unavailable = deferred<Awaited<ReturnType<typeof bridge.repository.status>>>();
+    vi.spyOn(bridge.repository, "status").mockReturnValueOnce(unavailable.promise);
+    vi.stubGlobal("eda", bridge);
+    const store = useRepositoryStore.getState();
+    const opening = store.open("repo", "profile", true);
+    const missing = store.open("repo", "profile", false);
+    unavailable.resolve(err(errorFixture({ message: "Old repository read" })));
+    await Promise.all([opening, missing]);
+    expect(useRepositoryStore.getState()).toMatchObject({ phase: "missing", error: null });
+    await store.open("repo", "profile", true);
+    expect(useRepositoryStore.getState().phase).toBe("ready");
+  });
+
+  it("keeps the repository busy until its pending write has finished", async () => {
+    const bridge = api(async () => ok({ commits: [], nextOffset: null }));
+    const staged = deferred<Result<void>>();
+    bridge.repository.stage = () => staged.promise;
+    bridge.repository.commit = vi.fn(async () => ok({ oid: "abcd" }));
+    vi.stubGlobal("eda", bridge);
+    const store = useRepositoryStore.getState();
+    await store.open("repo", "profile", true);
+    const staging = store.stage();
+    try {
+      expect(await store.commit("message")).toBe(false);
+      expect(bridge.repository.commit).not.toHaveBeenCalled();
+      expect(useRepositoryStore.getState().writing).toBe(true);
+    } finally {
+      staged.resolve(ok(undefined));
+      await staging;
+    }
+    expect(useRepositoryStore.getState().writing).toBe(false);
   });
 
   it("discards stale repository results", async () => {

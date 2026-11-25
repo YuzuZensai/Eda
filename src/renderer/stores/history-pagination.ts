@@ -1,8 +1,13 @@
 import { errorText } from "@shared/error-codes";
 import { GitError, type GitErrorData } from "@shared/errors";
 import { t } from "@shared/i18n";
-import { HISTORY_PAGE_SIZE, type HistoryPage } from "@shared/repository/repository-read";
+import {
+  HISTORY_PAGE_SIZE,
+  type HistoryPage,
+  type HistoryPageRequest,
+} from "@shared/repository/repository-read";
 import { layoutCommitPage, type DagBoundary } from "../repository/dag-layout";
+import { repositoryRequestFailure } from "./repository-state";
 import { useSessionStore } from "./session-store";
 
 export const MAX_HISTORY_PAGES = 3;
@@ -15,6 +20,12 @@ export interface HistoryWindow {
   historyTip: string | null;
   historyError: GitErrorData | null;
   historyLoading: boolean;
+}
+
+export function readHistory(request: HistoryPageRequest) {
+  return window.eda.repository
+    .history(request)
+    .catch(() => repositoryRequestFailure("operations.readHistory"));
 }
 
 export function createHistoryPagination(
@@ -75,7 +86,7 @@ export function createHistoryPagination(
     const readRevision = revision;
     set({ historyLoading: true });
     const request: Promise<void> = Promise.resolve().then(async () => {
-      const result = await window.eda.repository.history({
+      const result = await readHistory({
         repositoryId,
         offset,
         limit: HISTORY_PAGE_SIZE,
