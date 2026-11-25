@@ -243,10 +243,8 @@ async function start(): Promise<void> {
         .catch((error: unknown) => console.error("[Eda Shutdown]", error));
     });
 
-    app.once("will-quit", () => {
-      services.terminals.dispose();
-      services.db.close();
-    });
+    // SQLite lives until native process teardown. Electron can still finish IPC reads during exit.
+    app.once("will-quit", () => services.terminals.dispose());
 
     createWindow(
       services,

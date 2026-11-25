@@ -757,6 +757,21 @@ try {
 
   await view(false);
   await page.getByRole("textbox", { name: "Commit title" }).fill("Saved at close without a delay");
+  await app.evaluate(
+    ({ app }) =>
+      new Promise<void>((resolve) => {
+        app.once("will-quit", (event) => {
+          event.preventDefault();
+          resolve();
+        });
+        app.quit();
+      }),
+  );
+  await app.evaluate(({ app }) => app.emit("activate"));
+  page = await app.firstWindow();
+  await draftIs("Saved at close without a delay");
+  assert.ok((await page.evaluate((id) => window.eda.repository.previewCommit(id), gamma.id)).ok);
+
   await app.close();
   app = undefined;
   execFileSync("git", [
