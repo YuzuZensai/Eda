@@ -104,7 +104,6 @@ try {
     .waitFor();
   assert.ok((await page.getByRole("button", { name: /^Inspect branch / }).count()) <= 200);
 
-  const initialHeap = await heapSize(page);
   const coldStart = performance.now();
   await page.evaluate(async (profileId) => {
     const result = await window.eda.settings.set(
@@ -114,8 +113,17 @@ try {
     );
     if (!result.ok) throw new Error(result.error.message);
   }, openedRepository.identityId);
-  await waitForSignatures(page);
+  await waitForSignatures(list);
   const coldVerificationMs = Math.round(performance.now() - coldStart);
+
+  const warmStart = performance.now();
+  await page.reload();
+  await list.waitFor({ state: "visible" });
+  await waitForSignatures(list);
+  const warmReopenMs = Math.round(performance.now() - warmStart);
+  assertBounds(await readMetrics(list));
+
+  const initialHeap = await heapSize(page);
   const targetOffset = Math.min(commitCount - PAGE_SIZE * MAX_PAGES, 1_000);
   const rowHeight = await list
     .locator('[data-tour="history-commit"]')
@@ -193,13 +201,7 @@ try {
 
   await assertThumbDragCoverage(page, list, rowHeight);
   await assertWheelScrollCoverage(page, list, rowHeight);
-  await waitForSignatures(page);
-  const warmStart = performance.now();
-  await page.reload();
-  await list.waitFor({ state: "visible" });
-  await waitForSignatures(page);
-  const warmReopenMs = Math.round(performance.now() - warmStart);
-  assertBounds(await readMetrics(list));
+  await waitForSignatures(list);
 
   console.log(
     `Large-repository gate passed with vigilant mode (${commitCount} commits): traversed to commit ${forwardOffset}, retained <= ${PAGE_SIZE * MAX_PAGES}, mounted <= ${MAX_MOUNTED_ROWS}, heap delta ${Math.round(heapGrowth / 1024 / 1024)} MiB, initial signatures ${coldVerificationMs} ms, warm app reload ${warmReopenMs} ms.`,
@@ -538,22 +540,24 @@ function assertScrollAnchor(
   assert.ok(Math.abs(shift) <= 1, `Loading a history page moved the visible commits by ${shift}px`);
 }
 
-async function waitForSignatures(page: Page) {
-  await page.waitForFunction(
-    () => {
-      const rows = [
-        ...document.querySelectorAll('[data-testid="commit-graph"] [data-tour="history-commit"]'),
-      ];
-      return (
-        rows.length > 0 &&
-        rows.every(
-          (row) => row.querySelector('[role="img"]')?.getAttribute("aria-label") === "Unsigned",
-        )
-      );
-    },
-    undefined,
-    { timeout: 15000 },
-  );
+async function waitForSignatures(list: Locator) {
+  const rows = list.locator('[data-tour="history-commit"]');
+  await expect
+    .poll(
+      () =>
+        rows.evaluateAll((rows) => {
+          const labels = rows.map((row) =>
+            row.querySelector('[role="img"]')?.getAttribute("aria-label"),
+          );
+          return [...new Set(labels)];
+        }),
+      {
+        message: "All mounted history rows should show their unsigned status",
+        intervals: [32],
+        timeout: 15000,
+      },
+    )
+    .toEqual(["Unsigned"]);
 }
 
 function assertBounds(metrics: Awaited<ReturnType<typeof readMetrics>>) {
