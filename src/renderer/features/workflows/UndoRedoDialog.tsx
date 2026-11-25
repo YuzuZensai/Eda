@@ -1,5 +1,5 @@
 import { Localized } from "@renderer/i18n/Localized";
-import { errorMessage } from "@shared/errors";
+import { errorMessage, type Result } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { stateLabel } from "@shared/i18n/labels";
 import type { HistoryReversal } from "@shared/workflows/history-recovery";
@@ -31,6 +31,7 @@ export function UndoRedoDialog({
 
   const refresh = async () => {
     setBusy(true);
+    setItems([]);
     setSelected(null);
     setConfirmed(false);
     setError(null);
@@ -40,6 +41,9 @@ export function UndoRedoDialog({
       if (response.ok) setItems(response.value);
       else setError(errorMessage(response.error));
       return response.ok;
+    } catch (failure) {
+      setError(errorMessage(failure));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -49,199 +53,102 @@ export function UndoRedoDialog({
     void refresh();
   }, [repositoryId]);
 
-  const resumeBranchCheckout = async (item: HistoryReversal) => {
-    if (!item.resumeBranchCheckout) return;
-
+  const run = async <Value,>(
+    action: () => Promise<Result<Value>>,
+    success: (value: Value) => string,
+    { syncRepository = false } = {},
+  ) => {
     setBusy(true);
     setError(null);
     setResult(null);
-
     try {
-      const response = await window.eda.historyRecovery.resumeBranchCheckout(
-        repositoryId,
-        item.id,
-        item.resumeBranchCheckout,
-      );
-
-      if (useRepositoryStore.getState().repositoryId === repositoryId)
-        await useRepositoryStore.getState().syncFromDisk();
-
+      const response = await action();
+      const repository = useRepositoryStore.getState();
+      if (syncRepository && repository.repositoryId === repositoryId)
+        await repository.syncFromDisk();
       if (!response.ok) {
         setError(errorMessage(response.error));
         return;
       }
 
-      setResult(
-        item.resumeBranchCheckout === "original"
+      setResult(success(response.value));
+      await refresh();
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const recovery = window.eda.historyRecovery;
+  const resumeBranchCheckout = (item: HistoryReversal) => {
+    const phase = item.resumeBranchCheckout;
+    if (!phase) return;
+    return run(
+      () => recovery.resumeBranchCheckout(repositoryId, item.id, phase),
+      () =>
+        phase === "original"
           ? t("undoRedoDialog.branchCheckoutCompletedTheExistingBranchWasRetained")
           : t("undoRedoDialog.interruptedCompletedPreviouslyCompletedStepsWereRetained", {
-              resumeBranchCheckout: item.resumeBranchCheckout,
+              resumeBranchCheckout: phase,
             }),
-      );
-
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
+      { syncRepository: true },
+    );
   };
 
-  const dismissUnstarted = async (item: HistoryReversal) => {
-    setBusy(true);
-    setError(null);
-    setResult(null);
+  const dismissUnstarted = (item: HistoryReversal) =>
+    run(
+      () => recovery.dismissUnstarted(repositoryId, item.id),
+      () => t("undoRedoDialog.unstartedActionDismissedBranchesIndexAndWorkingFiles"),
+    );
 
-    try {
-      const response = await window.eda.historyRecovery.dismissUnstarted(repositoryId, item.id);
-
-      if (!response.ok) {
-        setError(errorMessage(response.error));
-        return;
-      }
-
-      setResult(t("undoRedoDialog.unstartedActionDismissedBranchesIndexAndWorkingFiles"));
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
+  const reconcile = (item: HistoryReversal) => {
+    const state = item.reconciliation;
+    if (!state) return;
+    return run(
+      () => recovery.reconcile(repositoryId, item.id, state),
+      () => t("undoRedoDialog.recoveryRecordReconciledWithGitNoRefsIndex"),
+    );
   };
 
-  const reconcile = async (item: HistoryReversal) => {
-    if (!item.reconciliation) return;
+  const resumeIndex = (item: HistoryReversal) =>
+    run(
+      () => recovery.resumeIndex(repositoryId, item.id, item.direction),
+      ({ preservedNewerWork }) => {
+        const restored =
+          item.mode === "hard"
+            ? t("undoRedoDialog.indexAndSavedWorkingFileRestorationCompleted")
+            : t("undoRedoDialog.indexRestorationCompletedWorkingFilesWereRetained");
+        return preservedNewerWork
+          ? `${restored} ${t("undoRedoDialog.newerStatePreserved")}`
+          : restored;
+      },
+      { syncRepository: true },
+    );
 
-    setBusy(true);
-    setError(null);
-    setResult(null);
+  const resumeConfiguration = (item: HistoryReversal) =>
+    run(
+      () => recovery.resumeConfiguration(repositoryId, item.id, item.direction),
+      () => t("undoRedoDialog.branchConfigurationRecoveryCompletedNoRefsIndexEntries"),
+    );
 
-    try {
-      const response = await window.eda.historyRecovery.reconcile(
-        repositoryId,
-        item.id,
-        item.reconciliation,
-      );
-
-      if (!response.ok) {
-        setError(errorMessage(response.error));
-        return;
-      }
-
-      setResult(t("undoRedoDialog.recoveryRecordReconciledWithGitNoRefsIndex"));
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resumeIndex = async (item: HistoryReversal) => {
-    setBusy(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const response = await window.eda.historyRecovery.resumeIndex(
-        repositoryId,
-        item.id,
-        item.direction,
-      );
-
-      if (useRepositoryStore.getState().repositoryId === repositoryId)
-        await useRepositoryStore.getState().syncFromDisk();
-
-      if (!response.ok) {
-        setError(errorMessage(response.error));
-        return;
-      }
-
-      setResult(
-        `${item.mode === "hard" ? t("undoRedoDialog.indexAndSavedWorkingFileRestorationCompleted") : t("undoRedoDialog.indexRestorationCompletedWorkingFilesWereRetained")}${response.value.preservedNewerWork ? ` ${t("undoRedoDialog.newerStatePreserved")}` : ""}`,
-      );
-
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resumeConfiguration = async (item: HistoryReversal) => {
-    setBusy(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const response = await window.eda.historyRecovery.resumeConfiguration(
-        repositoryId,
-        item.id,
-        item.direction,
-      );
-
-      if (!response.ok) {
-        setError(errorMessage(response.error));
-        return;
-      }
-
-      setResult(t("undoRedoDialog.branchConfigurationRecoveryCompletedNoRefsIndexEntries"));
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resumeReset = async (item: HistoryReversal) => {
-    setBusy(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const response = await window.eda.historyRecovery.resumeReset(
-        repositoryId,
-        item.id,
-        item.publishedCommits,
-      );
-
-      if (useRepositoryStore.getState().repositoryId === repositoryId)
-        await useRepositoryStore.getState().syncFromDisk();
-
-      if (!response.ok) {
-        setError(errorMessage(response.error));
-        return;
-      }
-
-      setResult(
-        response.value.outcome === "reset"
+  const resumeReset = (item: HistoryReversal) =>
+    run(
+      () => recovery.resumeReset(repositoryId, item.id, item.publishedCommits),
+      ({ outcome }) =>
+        outcome === "reset"
           ? t("undoRedoDialog.theInterruptedResetReachedItsReviewedTargetAnd")
           : t("undoRedoDialog.gitHadAlreadyReachedTheReviewedResetTarget"),
-      );
+      { syncRepository: true },
+    );
 
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const execute = async () => {
+  const execute = () => {
     if (!selected) return;
-
-    setBusy(true);
-    setError(null);
-    setResult(null);
-
-    try {
-      const response = await window.eda.historyRecovery.reverse(
-        repositoryId,
-        selected.id,
-        selected.direction,
-        selected.publishedCommits,
-      );
-
-      if (useRepositoryStore.getState().repositoryId === repositoryId)
-        await useRepositoryStore.getState().syncFromDisk();
-
-      if (!response.ok) {
-        setError(errorMessage(response.error));
-        setConfirmed(false);
-        return;
-      }
-
-      setResult(
+    setConfirmed(false);
+    return run(
+      () =>
+        recovery.reverse(repositoryId, selected.id, selected.direction, selected.publishedCommits),
+      () =>
         t("undoRedoDialog.completed", {
           label: selected.label,
           value2: selected.publishedCommits
@@ -250,12 +157,8 @@ export function UndoRedoDialog({
               )
             : "",
         }),
-      );
-
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
+      { syncRepository: true },
+    );
   };
 
   return (

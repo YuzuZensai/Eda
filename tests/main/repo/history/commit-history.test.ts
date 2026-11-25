@@ -1,17 +1,10 @@
-import { RepositoryMemberships } from "@main/persistence/repository-memberships";
+import { activateTestProfile, workflowFixture } from "../../../helpers/workflow-fixture";
 import { afterEach, expect, it, vi } from "vitest";
 import { chmod, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 import { openDatabase } from "@main/persistence/database";
 import type { Database } from "@main/persistence/types";
-import { IdentityRepository } from "@main/persistence/identity-repository";
-import { IdentityManager } from "@main/identity/identity-manager";
-import { ContentRecoveryRepository } from "@main/persistence/content-recovery-repository";
-import { WorkflowJournal } from "@main/persistence/workflow-journal";
-import { RepositoryManager } from "@main/repo/lifecycle/repository-manager";
-import { RepositoryWriter } from "@main/repo/working-tree/repository-writer";
-import { WorkflowService } from "@main/repo/workflows/workflow-service";
 import { HistoryReversalService } from "@main/repo/history/history-reversal-service";
 import { HistoryRecoveryService } from "@main/repo/history/history-recovery-service";
 
@@ -27,33 +20,10 @@ afterEach(async () => {
 function services() {
   db = openDatabase(join(repo.home, "history.db"));
 
-  const identities = new IdentityRepository(db);
-  const identity = new IdentityManager(identities, repo.git);
-  const repositories = new RepositoryManager(
-    new RepositoryMemberships(db),
+  const { identities, repositories, writer, workflows, journal, recovery } = workflowFixture(
+    db,
     repo.git,
-    identity,
-    identities,
-  );
-  const journal = new WorkflowJournal(db);
-  const recovery = new ContentRecoveryRepository(db);
-  const writer = new RepositoryWriter(
-    repo.git,
-    repositories,
-    identity,
-    identities,
-    undefined,
-    recovery,
-    journal,
-  );
-
-  const workflows = new WorkflowService(
-    repo.git,
-    repositories,
-    writer,
-    identity,
-    journal,
-    recovery,
+    { recordWriterHistory: true },
   );
 
   return {
@@ -77,15 +47,7 @@ it("reverses first commits, ordinary commits and amendments across restart while
   repo = await createTempRepo();
 
   let context = services();
-  const profile = context.identities.create({
-    name: "Eda",
-    gitName: "Eda",
-    gitEmail: "test@eda.invalid",
-    hue: 0,
-    signing: { format: "none", signCommits: false },
-  });
-
-  context.identities.setActiveId(profile.id);
+  const profile = activateTestProfile(context.identities);
 
   const repository = await context.repositories.open(repo.path);
 

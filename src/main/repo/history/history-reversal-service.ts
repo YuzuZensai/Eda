@@ -33,6 +33,15 @@ import { publishedRangeCount } from "./shared-history";
 const invalid = (message: ErrorText) =>
   new GitError({ kind: "invalid-input", operation: t("operations.reverseLocalAction"), message });
 
+function assertRecordContext(
+  record: WorkflowJournalRecord | undefined,
+  repositoryId: string,
+  profileId: string,
+): asserts record is WorkflowJournalRecord {
+  if (!record || record.profileId !== profileId || record.repositoryId !== repositoryId)
+    throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
+}
+
 export class HistoryReversalService {
   private readonly recovery: DiscardService;
   private readonly inspection: HistoryRecoveryInspection;
@@ -72,13 +81,22 @@ export class HistoryReversalService {
     const unfinished = (record: WorkflowJournalRecord) =>
       record.state !== "completed" || ["undoing", "redoing"].includes(stateOf(record) ?? "");
 
-    return {
-      repository,
-      records: [
-        ...records.filter(unfinished),
-        ...records.filter((record) => !unfinished(record)).slice(0, 20),
-      ],
-    };
+    return [
+      ...records.filter(unfinished),
+      ...records.filter((record) => !unfinished(record)).slice(0, 20),
+    ];
+  }
+
+  private requireAvailable(repositoryId: string, id: string) {
+    if (!this.records(repositoryId).some((record) => record.id === id))
+      throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
+  }
+
+  private async requireIdle(root: string) {
+    if (await this.workflows.observe(root, await this.git.status(root)))
+      throw invalid(
+        errorText("main.historyReversalService.finishOrAbortTheCurrentGitOperationFirst"),
+      );
   }
 
   private async finalizeInterruptedReset(record: WorkflowJournalRecord) {
@@ -141,10 +159,7 @@ export class HistoryReversalService {
   }
 
   resumeReset(repositoryId: string, id: string, expectedPublishedCommits?: number) {
-    const { records } = this.records(repositoryId);
-
-    if (!records.some((record) => record.id === id))
-      throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
+    this.requireAvailable(repositoryId, id);
 
     return this.writer.remoteOperation(
       repositoryId,
@@ -152,8 +167,7 @@ export class HistoryReversalService {
       async (root, identity) => {
         const current = this.journal.historyActions(root).find((record) => record.id === id);
 
-        if (!current || current.profileId !== identity.id || current.repositoryId !== repositoryId)
-          throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
+        assertRecordContext(current, repositoryId, identity.id);
 
         const inspection = await this.inspection.inspectInterruptedReset(current);
         const publishedCommits = Math.max(
@@ -213,10 +227,7 @@ export class HistoryReversalService {
   }
 
   resumeBranchCheckout(repositoryId: string, id: string, phase: BranchCheckoutPhase = "original") {
-    const { records } = this.records(repositoryId);
-
-    if (!records.some((record) => record.id === id))
-      throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
+    this.requireAvailable(repositoryId, id);
 
     return this.writer.remoteOperation(
       repositoryId,
@@ -224,12 +235,8 @@ export class HistoryReversalService {
       async (root, identity) => {
         const current = this.findRecord(root, id);
 
-        if (!current || current.profileId !== identity.id || current.repositoryId !== repositoryId)
-          throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
-        if (await this.workflows.observe(root, await this.git.status(root)))
-          throw invalid(
-            errorText("main.historyReversalService.finishOrAbortTheCurrentGitOperationFirst"),
-          );
+        assertRecordContext(current, repositoryId, identity.id);
+        await this.requireIdle(root);
 
         const candidate =
           phase === "original"
@@ -243,10 +250,7 @@ export class HistoryReversalService {
   }
 
   dismissUnstarted(repositoryId: string, id: string) {
-    const { records } = this.records(repositoryId);
-
-    if (!records.some((record) => record.id === id))
-      throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
+    this.requireAvailable(repositoryId, id);
 
     return this.writer.remoteOperation(
       repositoryId,
@@ -254,12 +258,8 @@ export class HistoryReversalService {
       async (root, identity) => {
         const current = this.findRecord(root, id);
 
-        if (!current || current.profileId !== identity.id || current.repositoryId !== repositoryId)
-          throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
-        if (await this.workflows.observe(root, await this.git.status(root)))
-          throw invalid(
-            errorText("main.historyReversalService.finishOrAbortTheCurrentGitOperationFirst"),
-          );
+        assertRecordContext(current, repositoryId, identity.id);
+        await this.requireIdle(root);
 
         await validateUnstartedRefIntent(this.git, current);
         await releaseReferenceObjects(this.git, current);
@@ -269,10 +269,7 @@ export class HistoryReversalService {
   }
 
   reconcile(repositoryId: string, id: string, expectedState: "applied" | "undone") {
-    const { records } = this.records(repositoryId);
-
-    if (!records.some((record) => record.id === id))
-      throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
+    this.requireAvailable(repositoryId, id);
 
     return this.writer.remoteOperation(
       repositoryId,
@@ -280,8 +277,7 @@ export class HistoryReversalService {
       async (root, identity) => {
         const current = this.findRecord(root, id);
 
-        if (!current || current.profileId !== identity.id || current.repositoryId !== repositoryId)
-          throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
+        assertRecordContext(current, repositoryId, identity.id);
 
         const candidate = await this.inspection.reconciledRecord(current);
         const state = candidate.refOperation?.state ?? candidate.refChange?.reversal?.state;
@@ -300,10 +296,7 @@ export class HistoryReversalService {
   }
 
   resumeIndex(repositoryId: string, id: string, expectedDirection?: HistoryDirection) {
-    const { records } = this.records(repositoryId);
-
-    if (!records.some((record) => record.id === id))
-      throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
+    this.requireAvailable(repositoryId, id);
 
     return this.writer.remoteOperation(
       repositoryId,
@@ -312,14 +305,7 @@ export class HistoryReversalService {
         withLockedIndex(this.git, root, async (lockedIndex) => {
           const current = this.journal.historyActions(root).find((record) => record.id === id);
 
-          if (
-            !current ||
-            current.profileId !== identity.id ||
-            current.repositoryId !== repositoryId
-          )
-            throw invalid(
-              errorText("main.historyReversalService.thisActionBelongsToAnotherContext"),
-            );
+          assertRecordContext(current, repositoryId, identity.id);
 
           const { candidate, targetTree, targetFlags, atTarget, files } =
             await this.inspection.pendingIndex(current);
@@ -404,10 +390,7 @@ export class HistoryReversalService {
   }
 
   resumeConfiguration(repositoryId: string, id: string, direction: HistoryDirection) {
-    const { records } = this.records(repositoryId);
-
-    if (!records.some((record) => record.id === id))
-      throw invalid(errorText("main.historyReversalService.thisActionBelongsToAnotherContext"));
+    this.requireAvailable(repositoryId, id);
 
     return this.writer.remoteOperation(
       repositoryId,
@@ -416,14 +399,7 @@ export class HistoryReversalService {
         withLockedIndex(this.git, root, async () => {
           const current = this.findRecord(root, id);
 
-          if (
-            !current ||
-            current.profileId !== identity.id ||
-            current.repositoryId !== repositoryId
-          )
-            throw invalid(
-              errorText("main.historyReversalService.thisActionBelongsToAnotherContext"),
-            );
+          assertRecordContext(current, repositoryId, identity.id);
 
           if (current.refOperation?.state !== `${direction}ing`)
             throw invalid(
@@ -431,10 +407,7 @@ export class HistoryReversalService {
                 "main.historyReversalService.theInterruptedDirectionChangedAfterReviewRefreshUndoRedo",
               ),
             );
-          if (await this.workflows.observe(root, await this.git.status(root)))
-            throw invalid(
-              errorText("main.historyReversalService.finishOrAbortTheCurrentGitOperationFirst"),
-            );
+          await this.requireIdle(root);
 
           const candidate = await finishRefConfiguration(this.git, current);
 
@@ -445,7 +418,7 @@ export class HistoryReversalService {
   }
 
   async list(repositoryId: string): Promise<HistoryReversal[]> {
-    return this.inspection.list(this.records(repositoryId).records);
+    return this.inspection.list(this.records(repositoryId));
   }
 
   private findRecord(root: string, id: string) {
@@ -461,8 +434,7 @@ export class HistoryReversalService {
     direction: HistoryDirection,
     expectedPublishedCommits?: number,
   ): Promise<void> {
-    const { records } = this.records(repositoryId);
-    const record = records.find((item) => item.id === id);
+    const record = this.records(repositoryId).find((item) => item.id === id);
 
     if (!record)
       throw invalid(
@@ -478,11 +450,8 @@ export class HistoryReversalService {
         if (record.refOperation) {
           const current = this.findRecord(root, id);
 
-          if (
-            !current?.refOperation ||
-            current.profileId !== identity.id ||
-            current.repositoryId !== repositoryId
-          )
+          assertRecordContext(current, repositoryId, identity.id);
+          if (!current.refOperation)
             throw invalid(
               errorText("main.historyReversalService.thisActionBelongsToAnotherContext"),
             );
@@ -512,10 +481,7 @@ export class HistoryReversalService {
         return withLockedIndex(this.git, root, async (lockedIndex) => {
           const current = this.journal.historyActions(root).find((item) => item.id === id);
 
-          if (!current || current.profileId !== identity.id)
-            throw invalid(
-              errorText("main.historyReversalService.thisActionBelongsToAnotherContext"),
-            );
+          assertRecordContext(current, repositoryId, identity.id);
 
           const { undo, expectedHead, expectedRefs, snapshot } =
             await this.inspection.validate(current);

@@ -1,17 +1,10 @@
-import { RepositoryMemberships } from "@main/persistence/repository-memberships";
+import { activateTestProfile, workflowFixture } from "../../../helpers/workflow-fixture";
 import { afterEach, expect, it, vi } from "vitest";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 import { openDatabase } from "@main/persistence/database";
 import type { Database } from "@main/persistence/types";
-import { IdentityRepository } from "@main/persistence/identity-repository";
-import { IdentityManager } from "@main/identity/identity-manager";
-import { ContentRecoveryRepository } from "@main/persistence/content-recovery-repository";
-import { WorkflowJournal } from "@main/persistence/workflow-journal";
-import { RepositoryManager } from "@main/repo/lifecycle/repository-manager";
-import { RepositoryWriter } from "@main/repo/working-tree/repository-writer";
-import { WorkflowService } from "@main/repo/workflows/workflow-service";
 import { RebaseService } from "@main/repo/workflows/rebase-service";
 import { ReplayService } from "@main/repo/workflows/replay-service";
 import { HistoryReversalService } from "@main/repo/history/history-reversal-service";
@@ -28,44 +21,10 @@ async function setup() {
   repo = await createTempRepo();
   db = openDatabase(join(repo.home, "rewrites.db"));
 
-  const identities = new IdentityRepository(db);
-  const identity = new IdentityManager(identities, repo.git);
-  const repositories = new RepositoryManager(
-    new RepositoryMemberships(db),
-    repo.git,
-    identity,
-    identities,
-  );
-  const recovery = new ContentRecoveryRepository(db);
-  const journal = new WorkflowJournal(db);
-  const writer = new RepositoryWriter(
-    repo.git,
-    repositories,
-    identity,
-    identities,
-    undefined,
-    recovery,
-    journal,
-  );
+  const { identities, identity, repositories, writer, workflows, journal, recovery } =
+    workflowFixture(db, repo.git, { recordWriterHistory: true });
 
-  const workflows = new WorkflowService(
-    repo.git,
-    repositories,
-    writer,
-    identity,
-    journal,
-    recovery,
-  );
-
-  const profile = identities.create({
-    name: "Eda",
-    gitName: "Eda",
-    gitEmail: "test@eda.invalid",
-    hue: 0,
-    signing: { format: "none", signCommits: false },
-  });
-
-  identities.setActiveId(profile.id);
+  activateTestProfile(identities);
 
   const repository = await repositories.open(repo.path);
 
