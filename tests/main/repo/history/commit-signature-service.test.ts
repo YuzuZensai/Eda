@@ -91,6 +91,28 @@ it("shares verification work and reuses persisted results for history and detail
   expect(git.commitSignature).toHaveBeenCalledTimes(2);
 });
 
+it("rejects a cached signature if the repository moves before delivery", async () => {
+  const { service, cache, repository, memberships, profile } = setup();
+  cache.record(profile.id, repository.id, oid, verified);
+  const result = service.read(repository.id, oid);
+  memberships.relocate(repository.id, "/moved", "moved");
+  await expect(result).rejects.toMatchObject({
+    code: "main.repositoryManager.theRepositoryChangedRefreshAndTryAgain",
+  });
+});
+
+it("drops commit details if the repository moves during inspection", async () => {
+  const { service, git, repository, memberships } = setup();
+  const details = await git.inspectCommit(repository.path, oid, verified);
+  git.inspectCommit.mockImplementationOnce(async () => {
+    memberships.relocate(repository.id, "/moved", "moved");
+    return details;
+  });
+  await expect(service.inspect(repository.id, oid)).rejects.toMatchObject({
+    code: "main.repositoryManager.theRepositoryChangedRefreshAndTryAgain",
+  });
+});
+
 it.each(["background-first", "refresh-first"])(
   "returns the newer recheck to all readers (%s)",
   async (order) => {

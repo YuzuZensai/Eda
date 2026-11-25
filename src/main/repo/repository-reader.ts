@@ -1,3 +1,4 @@
+import { readActiveRepository } from "./lifecycle/repository-context";
 import type { GitHost } from "@shared/integrations/git-host";
 import { assertFullObjectId } from "../git/validation";
 import { errorText } from "@shared/error-codes";
@@ -46,62 +47,65 @@ export class RepositoryReader {
     private readonly additionalHosts?: (profileId: string) => Promise<GitHost[]>,
   ) {}
 
-  async referenceUrl(repositoryId: string, kind: ReferenceLinkKind, name: string) {
-    const repository = this.repositories.resolveActiveRepository(repositoryId);
-    const names = await this.git.remoteNames(repository.path);
-    let remote = names.includes("origin") ? "origin" : names[0];
+  referenceUrl(repositoryId: string, kind: ReferenceLinkKind, name: string) {
+    return readActiveRepository(this.repositories, repositoryId, async (root, identityId) => {
+      const names = await this.git.remoteNames(root);
+      let remote = names.includes("origin") ? "origin" : names[0];
 
-    let reference = name;
-    if (kind === "branch") {
-      const configured = await this.git.readConfig(`branch.${name}.remote`, {
-        cwd: repository.path,
-      });
-      if (configured && configured !== ".") {
-        if (!names.includes(configured)) return null;
-        remote = configured;
-        const merge = await this.git.readConfig(`branch.${name}.merge`, { cwd: repository.path });
-        if (merge?.startsWith("refs/heads/")) reference = merge.slice("refs/heads/".length);
+      let reference = name;
+      if (kind === "branch") {
+        const configured = await this.git.readConfig(`branch.${name}.remote`, {
+          cwd: root,
+        });
+        if (configured && configured !== ".") {
+          if (!names.includes(configured)) return null;
+          remote = configured;
+          const merge = await this.git.readConfig(`branch.${name}.merge`, { cwd: root });
+          if (merge?.startsWith("refs/heads/")) reference = merge.slice("refs/heads/".length);
+        }
       }
-    }
-    if (kind === "remote-branch")
-      remote = names
-        .sort((first, second) => second.length - first.length)
-        .find((candidate) => name.startsWith(`${candidate}/`));
+      if (kind === "remote-branch")
+        remote = names
+          .sort((first, second) => second.length - first.length)
+          .find((candidate) => name.startsWith(`${candidate}/`));
 
-    if (!remote) return null;
+      if (!remote) return null;
 
-    if (kind === "remote-branch") reference = name.slice(remote.length + 1);
-    const url = await this.git.readConfig(`remote.${remote}.url`, { cwd: repository.path });
+      if (kind === "remote-branch") reference = name.slice(remote.length + 1);
+      const url = await this.git.readConfig(`remote.${remote}.url`, { cwd: root });
 
-    if (!url) return null;
-    const instances = this.gitlabInstances(repository.identityId);
-    const direct = referenceLink(url, kind, reference, instances);
-    if (direct) return direct;
-    const hosts = (await this.additionalHosts?.(repository.identityId)) ?? [];
-    const hosted = referenceLink(url, kind, reference, instances, hosts);
-    if (hosted) return hosted;
-    const resolved = await resolveSshReferenceRemote(url);
-    return resolved ? referenceLink(resolved, kind, reference, instances, hosts) : null;
+      if (!url) return null;
+      const instances = this.gitlabInstances(identityId);
+      const direct = referenceLink(url, kind, reference, instances);
+      if (direct) return direct;
+      const hosts = (await this.additionalHosts?.(identityId)) ?? [];
+      const hosted = referenceLink(url, kind, reference, instances, hosts);
+      if (hosted) return hosted;
+      const resolved = await resolveSshReferenceRemote(url);
+      return resolved ? referenceLink(resolved, kind, reference, instances, hosts) : null;
+    });
   }
 
-  async ignoredFiles(repositoryId: string) {
-    const repository = this.repositories.resolveActiveRepository(repositoryId);
-    const paths = await this.git.ignoredFiles(repository.path);
+  ignoredFiles(repositoryId: string) {
+    return readActiveRepository(this.repositories, repositoryId, async (root) => {
+      const paths = await this.git.ignoredFiles(root);
 
-    return {
-      paths: paths.slice(0, MAX_IGNORED_FILES),
-      truncated: paths.length > MAX_IGNORED_FILES,
-    };
+      return {
+        paths: paths.slice(0, MAX_IGNORED_FILES),
+        truncated: paths.length > MAX_IGNORED_FILES,
+      };
+    });
   }
 
-  async commitTemplate(repositoryId: string) {
-    const repository = this.repositories.resolveActiveRepository(repositoryId);
-
-    return this.git.commitTemplate(repository.path);
+  commitTemplate(repositoryId: string) {
+    return readActiveRepository(this.repositories, repositoryId, (root) =>
+      this.git.commitTemplate(root),
+    );
   }
 
   contributors(repositoryId: string) {
-    return this.readRepository(
+    return readActiveRepository(
+      this.repositories,
       repositoryId,
       (root) => readContributors(this.git, root),
       t("operations.readContributors"),
@@ -109,7 +113,8 @@ export class RepositoryReader {
   }
 
   commitMessage(repositoryId: string, oid: string) {
-    return this.readRepository(
+    return readActiveRepository(
+      this.repositories,
       repositoryId,
       (root) => this.git.commitMessage(root, oid),
       t("operations.readCommitMessage"),
@@ -120,7 +125,7 @@ export class RepositoryReader {
     const operation = t("mailbox.export");
     assertFullObjectId(oid, operation);
     if (after) assertFullObjectId(after, operation);
-    return this.readRepository(id, async (cwd) => {
+    return readActiveRepository(this.repositories, id, async (cwd) => {
       const options = { cwd, operation, maxStdoutBytes: 32 * 1024 * 1024 };
       if (
         after &&
@@ -156,11 +161,13 @@ export class RepositoryReader {
   }
 
   filePatch(request: PatchExportRequest) {
-    return this.readRepository(request.repositoryId, (root) => this.git.filePatch(root, request));
+    return readActiveRepository(this.repositories, request.repositoryId, (root) =>
+      this.git.filePatch(root, request),
+    );
   }
 
   submodules(id: string) {
-    return this.readRepository(id, async (root) => {
+    return readActiveRepository(this.repositories, id, async (root) => {
       const opts = { cwd: root, scope: "local" } as const;
       const [listing, automatic, mode] = await Promise.all([
         listSubmodules(this.git, root),
@@ -174,11 +181,13 @@ export class RepositoryReader {
   }
 
   sparseCheckout(id: string) {
-    return this.readRepository(id, (root) => readSparseCheckout(this.git, root));
+    return readActiveRepository(this.repositories, id, (root) =>
+      readSparseCheckout(this.git, root),
+    );
   }
 
   worktrees(id: string, inspectChanges = true) {
-    return this.readRepository(id, async (root) => {
+    return readActiveRepository(this.repositories, id, async (root) => {
       const entries = await listWorktrees(this.git, root);
       const currentRoot = await realpath(root);
       const worktrees: WorktreeSummary[] = [];
@@ -216,17 +225,19 @@ export class RepositoryReader {
   }
 
   blame(request: BlameRequest) {
-    return this.readRepository(request.repositoryId, (root) => readBlame(this.git, root, request));
+    return readActiveRepository(this.repositories, request.repositoryId, (root) =>
+      readBlame(this.git, root, request),
+    );
   }
 
   revisionPath(request: RevisionPathRequest) {
-    return this.readRepository(request.repositoryId, (root) =>
+    return readActiveRepository(this.repositories, request.repositoryId, (root) =>
       readRevisionPath(this.git, root, request),
     );
   }
 
   compareRevisions(request: RevisionComparisonRequest) {
-    return this.readRepository(request.repositoryId, (root) =>
+    return readActiveRepository(this.repositories, request.repositoryId, (root) =>
       readRevisionComparison(this.git, root, request),
     );
   }
@@ -239,7 +250,7 @@ export class RepositoryReader {
     oldPath,
     ...options
   }: ComparisonDiffRequest) {
-    return this.readRepository(repositoryId, (root) =>
+    return readActiveRepository(this.repositories, repositoryId, (root) =>
       this.git.compareDiff(
         root,
         baseOid,
@@ -248,23 +259,5 @@ export class RepositoryReader {
         options,
       ),
     );
-  }
-
-  private async readRepository<T>(
-    repositoryId: string,
-    read: (root: string) => Promise<T>,
-    operation = t("operations.compareRevisions"),
-  ) {
-    const repository = this.repositories.resolveActiveRepository(repositoryId);
-    const result = await read(repository.path);
-    const current = this.repositories.resolveActiveRepository(repositoryId);
-
-    if (current.identityId !== repository.identityId || current.path !== repository.path)
-      throw new GitError({
-        kind: "invalid-input",
-        operation,
-        message: errorText("main.repositoryManager.theRepositoryChangedRefreshAndTryAgain"),
-      });
-    return result;
   }
 }

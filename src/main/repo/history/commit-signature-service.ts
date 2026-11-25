@@ -2,8 +2,11 @@ import type { SignerService } from "./signer-service";
 import type { PublicKeyRequest, SignerDecision } from "@shared/repository/repository-read";
 import { keyError } from "../../providers/public-signing-keys";
 import { t } from "@shared/i18n";
-import { errorText } from "@shared/error-codes";
-import { GitError } from "@shared/errors";
+import {
+  assertRepositoryContext,
+  readActiveRepository,
+  type RepositoryContext,
+} from "../lifecycle/repository-context";
 import type { CommitSignatureVerification } from "@shared/repository/repository-read";
 import type { GitService } from "../../git/git-service";
 import { assertFullObjectId } from "../../git/validation";
@@ -32,18 +35,18 @@ export class CommitSignatureService {
     oid: string,
     refresh = false,
   ): Promise<CommitSignatureVerification> {
-    const signature = await this.readRaw(repositoryId, oid, refresh);
     const repository = this.repositories.resolveActiveRepository(repositoryId);
+    const signature = await this.readRaw(repository, oid, refresh);
+    assertRepositoryContext(this.repositories, repository, t("operations.verifyCommitSignature"));
     return this.signers?.decorate(repository.identityId, repository.id, signature) ?? signature;
   }
 
   private async readRaw(
-    repositoryId: string,
+    repository: RepositoryContext,
     oid: string,
     refresh = false,
     discoverMissing = true,
   ): Promise<CommitSignatureVerification> {
-    const repository = this.repositories.resolveActiveRepository(repositoryId);
     assertFullObjectId(oid, t("operations.verifyCommitSignature"));
     const revision = this.revision;
     const key = JSON.stringify([repository.identityId, repository.id, oid, revision]);
@@ -56,15 +59,8 @@ export class CommitSignatureService {
       if (cached) return cached;
     }
 
-    const assertCurrent = () => {
-      const current = this.repositories.resolveActiveRepository(repositoryId);
-      if (current.identityId !== repository.identityId || current.path !== repository.path)
-        throw new GitError({
-          kind: "invalid-input",
-          operation: t("operations.verifyCommitSignature"),
-          message: errorText("main.repositoryManager.theRepositoryChangedRefreshAndTryAgain"),
-        });
-    };
+    const assertCurrent = () =>
+      assertRepositoryContext(this.repositories, repository, t("operations.verifyCommitSignature"));
     const signers = this.signers;
     const request: Promise<CommitSignatureVerification> = this.git
       .commitSignature(
@@ -81,13 +77,13 @@ export class CommitSignatureService {
       .then((signature) => {
         assertCurrent();
         return discoverMissing && revision === this.revision
-          ? this.findMissingKey(repositoryId, oid, signature, refresh)
+          ? this.findMissingKey(repository.id, oid, signature, refresh)
           : signature;
       })
       .then((signature) => {
         assertCurrent();
 
-        if (revision !== this.revision) return this.readRaw(repositoryId, oid);
+        if (revision !== this.revision) return this.readRaw(repository, oid);
 
         const latest = this.pending.get(key);
         if (latest === request) {
@@ -203,7 +199,7 @@ export class CommitSignatureService {
     this.discoveries.set(repositoryId, controller);
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
     try {
-      const signature = await this.readRaw(repositoryId, oid, true, false);
+      const signature = await this.readRaw(repository, oid, true, false);
       const candidate = await this.signers.discover(
         repository.identityId,
         repository.path,
@@ -258,10 +254,15 @@ export class CommitSignatureService {
     this.cache.clear(profileId);
   }
 
-  async inspect(repositoryId: string, oid: string, refresh = false) {
-    const signature = await this.read(repositoryId, oid, refresh);
-    const repository = this.repositories.resolveActiveRepository(repositoryId);
-
-    return this.git.inspectCommit(repository.path, oid, signature);
+  inspect(repositoryId: string, oid: string, refresh = false) {
+    return readActiveRepository(
+      this.repositories,
+      repositoryId,
+      async (path) => {
+        const signature = await this.read(repositoryId, oid, refresh);
+        return this.git.inspectCommit(path, oid, signature);
+      },
+      t("operations.inspectCommit"),
+    );
   }
 }

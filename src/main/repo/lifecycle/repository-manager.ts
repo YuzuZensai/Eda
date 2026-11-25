@@ -1,4 +1,4 @@
-import { invalidRequest } from "../../request-errors";
+import { assertRepositoryContext } from "./repository-context";
 import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -175,15 +175,7 @@ export class RepositoryManager {
     const captured = this.resolveActiveRepository(id);
 
     return this.identity.serialize(async () => {
-      const current = this.resolveActiveRepository(id);
-
-      if (current.identityId !== captured.identityId || current.path !== captured.path) {
-        throw new GitError({
-          kind: "invalid-input",
-          operation: t("operations.locateRepository"),
-          message: errorText("main.repositoryManager.theRepositoryChangedRefreshAndTryAgain"),
-        });
-      }
+      const current = assertRepositoryContext(this, captured, t("operations.locateRepository"));
 
       if (await this.git.isRepository(current.path)) {
         throw new GitError({
@@ -237,11 +229,7 @@ export class RepositoryManager {
   }
 
   assertCurrentRepository(expected: Pick<RepositorySummary, "id" | "path" | "identityId">) {
-    const current = this.resolveActiveRepository(expected.id);
-    if (current.identityId !== expected.identityId || current.path !== expected.path)
-      throw invalidRequest(
-        errorText("main.repositoryManager.theRepositoryChangedRefreshAndTryAgain"),
-      );
+    assertRepositoryContext(this, expected);
   }
 
   resolveActiveRepository(id: string): { id: string; identityId: string; path: string } {

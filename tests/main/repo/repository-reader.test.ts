@@ -116,6 +116,23 @@ it.each([5_000, 5_001])(
   },
 );
 
+it.each(["commitTemplate", "ignoredFiles", "referenceUrl"] as const)(
+  "drops %s results if the repository moves during the read",
+  async (method) => {
+    const { reader, repositories } = setup();
+    const pending =
+      method === "referenceUrl" ? reader.referenceUrl("repo", "tag", "v1") : reader[method]("repo");
+    repositories.resolveActiveRepository.mockReturnValue({
+      id: "repo",
+      path: "/moved",
+      identityId: "profile",
+    });
+    await expect(pending).rejects.toMatchObject({
+      code: "main.repositoryManager.theRepositoryChangedRefreshAndTryAgain",
+    });
+  },
+);
+
 it("reads the template for the resolved worktree without altering its contents", async () => {
   const { reader, git } = setup();
 
