@@ -1,3 +1,4 @@
+import { LocalReferenceFeedback } from "./LocalReferenceFeedback";
 import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { useEffect, useRef, useState } from "react";
@@ -12,7 +13,6 @@ import {
   CheckboxControl,
   Dialog,
   ErrorDialog,
-  StateMessage,
   Input,
 } from "../../components/ui/index";
 import { useLocalReferences } from "../../repository/hooks/useLocalReferences";
@@ -155,19 +155,12 @@ export function ManageReferencesDialog({
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t("manageReferencesDialog.branchTagOrFolder")}
         />
-        {!references && (
-          <StateMessage
-            tone={loadError ? "error" : "loading"}
-            title={
-              loadError
-                ? t("manageReferencesDialog.referencesCouldNotBeLoaded")
-                : t("references.loading")
-            }
-            description={loadError}
-            action={loadError && <Button onClick={retry}>{t("common.retry")}</Button>}
-          />
-        )}
-        {references && !matches.length && <p role="status">{t("references.noMatches")}</p>}
+        <LocalReferenceFeedback
+          loaded={!!references}
+          empty={!matches.length}
+          error={loadError}
+          retry={retry}
+        />
         <div className="max-h-64 overflow-auto">
           {[...groups].map(([group, rows]) => (
             <fieldset key={group} className="mb-3">

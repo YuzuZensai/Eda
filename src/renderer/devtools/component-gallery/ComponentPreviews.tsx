@@ -1,3 +1,4 @@
+import { LocalReferenceFeedback } from "../../features/references/LocalReferenceFeedback";
 import type {
   DiffMode,
   HistoryCommit,
@@ -641,7 +642,6 @@ export function StatesPreview() {
   const messages = {
     empty: t("settings.componentPreviews.noMatchingFiles"),
     loading: t("settings.componentPreviews.loadingChanges"),
-    error: t("settings.componentPreviews.couldNotLoadChanges"),
     success: t("settings.componentPreviews.everythingIsUpToDate"),
     info: t("settings.componentPreviews.chooseARepository"),
   };
@@ -661,26 +661,26 @@ export function StatesPreview() {
       </Select>
 
       <div className="rounded-md border border-border-subtle bg-bg-inset">
-        <StateMessage
-          tone={tone}
-          title={messages[tone]}
-          description={
-            tone === "empty"
-              ? t("settings.componentPreviews.tryADifferentNameOrClearYourFilters")
-              : tone === "error"
-                ? t(
-                    "settings.componentPreviews.theRepositoryIsTemporarilyUnavailableYourWorkingFilesAreUnchanged",
-                  )
+        {tone === "error" ? (
+          <LocalReferenceFeedback
+            loaded={false}
+            empty={false}
+            error={t(
+              "settings.componentPreviews.theRepositoryIsTemporarilyUnavailableYourWorkingFilesAreUnchanged",
+            )}
+            retry={() => setTone("success")}
+          />
+        ) : (
+          <StateMessage
+            tone={tone}
+            title={messages[tone]}
+            description={
+              tone === "empty"
+                ? t("settings.componentPreviews.tryADifferentNameOrClearYourFilters")
                 : undefined
-          }
-          action={
-            tone === "error" ? (
-              <Button onClick={() => setTone("success")}>
-                {t("settings.componentPreviews.tryAgain")}
-              </Button>
-            ) : undefined
-          }
-        />
+            }
+          />
+        )}
       </div>
     </div>
   );

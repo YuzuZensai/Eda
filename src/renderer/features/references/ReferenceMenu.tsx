@@ -1,7 +1,8 @@
+import { useReferenceAction } from "./hooks/useReferenceAction";
 import { commitSignatureLabel } from "../../components/ui/display/commit-signature-label";
 import { ERROR_CODE, errorText } from "@shared/error-codes";
 import type { Result } from "@shared/errors";
-import { AppError, errorAction, errorMessage, GitError } from "@shared/errors";
+import { AppError, GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { referenceLink } from "@shared/repository/reference-link";
 import type { TransportCredentials } from "@shared/integrations/remotes";
@@ -95,11 +96,19 @@ export function ReferenceMenu({
   >("menu");
 
   const [name, setName] = useState(target.ref.name);
-  const [error, setError] = useState<string | null>(null);
-  const [working, setBusy] = useState(false);
+  const {
+    busy: working,
+    running,
+    error,
+    setError,
+    run,
+    refresh,
+  } = useReferenceAction(context, {
+    onClose,
+    fallback: errorText("referenceMenu.theReferenceActionFailed"),
+  });
   const tagFetch = useDirectFetch(repositoryId);
   const busy = working || tagFetch.busy;
-  const running = useRef(false);
   const deleteRunning = useRef(false);
   const [verification, setVerification] = useState<TagVerification | null>(null);
   const review = useRef<HTMLDivElement>(null);
@@ -114,49 +123,12 @@ export function ReferenceMenu({
     if (!running.current && !deleteRunning.current && !tagFetch.busy) onClose();
   };
 
-  const assertContext = () => {
-    const reason = repositoryCommandReason(context);
-    if (reason) throw new AppError(errorText("errors.operationBlocked", { reason }));
-  };
-
   const requireResult = <T,>(result: Result<T>): T => {
     if (!result.ok) {
       throw new GitError(result.error);
     }
 
     return result.value;
-  };
-
-  const run = async (
-    work: () => Promise<void>,
-    options: { dismiss?: boolean; write?: boolean } = {},
-  ) => {
-    if (running.current) return;
-    running.current = true;
-    setBusy(true);
-    setError(null);
-
-    try {
-      if (options.write !== false) assertContext();
-      await work();
-      if (options.dismiss !== false) onClose();
-    } catch (failure) {
-      setError(
-        [
-          errorMessage(failure, errorText("referenceMenu.theReferenceActionFailed")),
-          errorAction(failure),
-        ]
-          .filter(Boolean)
-          .join(" "),
-      );
-    } finally {
-      running.current = false;
-      setBusy(false);
-    }
-  };
-
-  const refresh = async () => {
-    if (!repositoryCommandReason(context)) await useRepositoryStore.getState().refresh();
   };
 
   const fetchTag = async (credentials?: TransportCredentials) => {

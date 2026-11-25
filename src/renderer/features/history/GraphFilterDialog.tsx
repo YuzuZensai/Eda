@@ -1,3 +1,4 @@
+import { LocalReferenceFeedback } from "../references/LocalReferenceFeedback";
 import { t } from "@shared/i18n";
 import { useState } from "react";
 import { defaultGraphFilter, type GraphFilter } from "@shared/preferences/graph-view";
@@ -12,7 +13,6 @@ import {
   Radio,
   Checkbox,
   ErrorDialog,
-  StateMessage,
   TextButton,
   Select,
 } from "../../components/ui/index";
@@ -195,19 +195,12 @@ export function GraphFilterDialog({
         <p className="text-xs text-text-tertiary">
           {t("graphFilterDialog.soloReferencesIncludeTheirAncestorsSelectSeveralTo")}
         </p>
-        {!references && (
-          <StateMessage
-            tone={loadError ? "error" : "loading"}
-            title={
-              loadError
-                ? t("manageReferencesDialog.referencesCouldNotBeLoaded")
-                : t("references.loading")
-            }
-            description={loadError}
-            action={loadError && <Button onClick={retry}>{t("common.retry")}</Button>}
-          />
-        )}
-        {references && !matches.length && <p role="status">{t("references.noMatches")}</p>}
+        <LocalReferenceFeedback
+          loaded={!!references}
+          empty={!matches.length}
+          error={loadError}
+          retry={retry}
+        />
         <div className="max-h-72 overflow-auto">
           {matches.slice(0, 200).map((ref) => (
             <div

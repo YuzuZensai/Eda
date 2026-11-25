@@ -19,19 +19,21 @@ export function useTagReferences(
   revision: number,
   pending: boolean,
 ) {
+  const request = useMemo(
+    () => (pending ? null : { repositoryId, profileId, revision }),
+    [repositoryId, profileId, revision, pending],
+  );
   const [snapshot, setSnapshot] = useState<{
-    repositoryId: string;
-    profileId: string | undefined;
-    revision: number;
+    request: NonNullable<typeof request>;
     failed: boolean;
     remotes: { name: string; tags: RemoteTagSummary[] | null }[];
   } | null>(null);
 
   useEffect(() => {
-    if (pending) return;
+    if (!request) return;
+    const { repositoryId } = request;
 
     let cancelled = false;
-    const context = { repositoryId, profileId, revision };
 
     void (async () => {
       const state = await window.eda.remotes.inspect(repositoryId);
@@ -44,7 +46,7 @@ export function useTagReferences(
       );
 
       setSnapshot({
-        ...context,
+        request,
         failed: false,
         remotes: remotes.map((remote) => ({ name: remote.name, tags: null })),
       });
@@ -70,21 +72,15 @@ export function useTagReferences(
         }),
       );
     })().catch(() => {
-      if (!cancelled) setSnapshot({ ...context, failed: true, remotes: [] });
+      if (!cancelled) setSnapshot({ request, failed: true, remotes: [] });
     });
 
     return () => {
       cancelled = true;
     };
-  }, [repositoryId, profileId, revision, pending]);
+  }, [request]);
 
-  const current =
-    !pending &&
-    snapshot?.repositoryId === repositoryId &&
-    snapshot.profileId === profileId &&
-    snapshot.revision === revision
-      ? snapshot
-      : null;
+  const current = snapshot?.request === request ? snapshot : null;
   return useMemo(() => {
     const remoteStatusKnown = current !== null && !current.failed;
     const remoteStatusUnavailable = current?.failed === true;

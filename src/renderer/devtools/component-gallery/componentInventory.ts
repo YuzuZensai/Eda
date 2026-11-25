@@ -351,6 +351,7 @@ export const COMPONENT_GROUPS: {
     files: [
       "BranchDeletePanel",
       "BranchMenu",
+      "LocalReferenceFeedback",
       "ManageReferencesDialog",
       "ReferenceMenu",
       "ReferenceRow",

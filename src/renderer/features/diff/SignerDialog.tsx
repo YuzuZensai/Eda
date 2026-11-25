@@ -21,6 +21,7 @@ import {
   Disclosure,
 } from "../../components/ui/index";
 import { commitSignatureLabel } from "../../components/ui/display/commit-signature-label";
+import { useRepositoryRead } from "../../repository/hooks/useRepositoryRead";
 import { invalidateRepositorySignatures } from "../../repository/hooks/useCommitSignature";
 
 export function SignerDialog({
@@ -49,7 +50,11 @@ export function SignerDialog({
     signature.trustedIdentity ?? signature.signer?.match(/<([^>]+)>/)?.[1] ?? email,
   );
   const [scope, setScope] = useState<SignerDecision["scope"]>("repository");
-  const [decisions, setDecisions] = useState<SignerDecision[] | null>(null);
+  const {
+    value: decisions,
+    error: decisionsError,
+    retry: refreshDecisions,
+  } = useRepositoryRead(window.eda.repository.signerDecisions, repositoryId);
   const [busy, setBusy] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -59,20 +64,10 @@ export function SignerDialog({
 
   useEffect(() => {
     alive.current = true;
-    void window.eda.repository
-      .signerDecisions(repositoryId)
-      .then((result) => {
-        if (!alive.current) return;
-        if (result.ok) setDecisions(result.value);
-        else setError(errorMessage(result.error));
-      })
-      .catch(() => {
-        if (alive.current) setError(t("signature.failure"));
-      });
     return () => {
       alive.current = false;
     };
-  }, [repositoryId]);
+  }, []);
 
   const changed = () => {
     invalidateRepositorySignatures();
@@ -123,13 +118,10 @@ export function SignerDialog({
       const result = await window.eda.repository.decideSigner(repositoryId, decision, remove);
       if (!result.ok) throw result.error;
       changed();
-      const [list, verification] = await Promise.all([
-        window.eda.repository.signerDecisions(repositoryId),
-        window.eda.repository.commitSignature(repositoryId, oid),
-      ]);
       if (!alive.current) return;
-      if (list.ok) setDecisions(list.value);
-      else throw list.error;
+      refreshDecisions();
+      const verification = await window.eda.repository.commitSignature(repositoryId, oid);
+      if (!alive.current) return;
       if (verification.ok) setSignature(verification.value);
       else throw verification.error;
     });
@@ -361,8 +353,8 @@ export function SignerDialog({
         {(!githubWeb || Boolean(decisions?.length)) && (
           <Disclosure title={t("signature.decisions")}>
             <div className="mt-2 space-y-3 text-xs">
-              {decisions === null ? (
-                <p role="status">{error ?? t("signature.loading")}</p>
+              {!decisions ? (
+                <p role="status">{decisionsError ?? t("signature.loading")}</p>
               ) : decisions.length === 0 ? (
                 <p>{t("signature.none")}</p>
               ) : (
@@ -395,9 +387,9 @@ export function SignerDialog({
             {feedback}
           </p>
         )}
-        {error && (
+        {(error || decisionsError) && (
           <p role="alert" className="text-xs text-git-deleted">
-            {error}
+            {error ?? decisionsError}
           </p>
         )}
       </div>

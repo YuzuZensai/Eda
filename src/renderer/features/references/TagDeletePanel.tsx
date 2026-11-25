@@ -1,5 +1,5 @@
-import { errorText } from "@shared/error-codes";
-import { AppError, errorAction, errorMessage, GitError, type Result } from "@shared/errors";
+import { useReferenceAction } from "./hooks/useReferenceAction";
+import { errorAction, errorMessage, GitError, type Result } from "@shared/errors";
 import { t } from "@shared/i18n";
 import {
   preferredRemote,
@@ -47,16 +47,12 @@ export function TagDeletePanel({
   const [lookupError, setLookupError] = useState<string | null>(null);
   const lookupRevision = useRef(0);
   const [auth, setAuth] = useState<TransportCredentials>({ username: "", password: "" });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const running = useRef(false);
+  const { busy, assertContext, running, error, setError, run, refresh } = useReferenceAction(
+    context,
+    { onBusyChange },
+  );
   useRepositoryStore((state) => state.writing);
   const unavailable = repositoryCommandReason(context);
-
-  const assertContext = () => {
-    const reason = repositoryCommandReason(context);
-    if (reason) throw new AppError(errorText("errors.operationBlocked", { reason }));
-  };
 
   const requireResult = <T,>(result: Result<T>): T => {
     if (!result.ok) {
@@ -68,25 +64,6 @@ export function TagDeletePanel({
   };
 
   const credentials = auth.username || auth.password ? auth : undefined;
-
-  const run = async (work: () => Promise<void>) => {
-    if (running.current) return;
-    running.current = true;
-    setBusy(true);
-    onBusyChange(true);
-    setError(null);
-
-    try {
-      assertContext();
-      await work();
-    } catch (failure) {
-      setError([errorMessage(failure), errorAction(failure)].filter(Boolean).join(" "));
-    } finally {
-      running.current = false;
-      setBusy(false);
-      onBusyChange(false);
-    }
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -335,8 +312,7 @@ export function TagDeletePanel({
 
                   onClose();
                 } finally {
-                  if (!repositoryCommandReason(context))
-                    await useRepositoryStore.getState().refresh();
+                  await refresh();
                 }
               })
             }

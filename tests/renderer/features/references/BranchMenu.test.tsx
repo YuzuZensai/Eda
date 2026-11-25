@@ -1,5 +1,6 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { deferred } from "../../../helpers/deferred";
 import { ok } from "@shared/errors";
 import { emptySession } from "@shared/identity/profile-session";
 import { BranchMenu } from "@renderer/features/references/BranchMenu";
@@ -135,6 +136,46 @@ it("keeps keyboard checkout within rendered branches and opens repository settin
     useRepositoryStore.setState(repository, true);
     useSessionStore.setState(session, true);
     useShellStore.setState(shell, true);
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shows only the current branch list when reopening the menu during a read", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const previous = useAppStore.getState();
+  const listing = () => deferred<Awaited<ReturnType<typeof window.eda.repository.listBranches>>>();
+  const second = listing();
+  const third = listing();
+  const branch = { name: "old", oid: "a".repeat(40), isHead: false, remote: false };
+  const listBranches = vi
+    .fn<typeof window.eda.repository.listBranches>()
+    .mockResolvedValueOnce(ok([branch]))
+    .mockReturnValueOnce(second.promise)
+    .mockReturnValueOnce(third.promise);
+  vi.stubGlobal("eda", { repository: { listBranches } });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const toggle = () => act(async () => container.querySelector("button")!.click());
+
+  try {
+    useAppStore.setState({ selectedRepositoryId: "repo" });
+    await act(async () => root.render(<BranchMenu head="main" />));
+    await toggle();
+    expect(document.querySelector('button[title="old"]')).not.toBeNull();
+    await toggle();
+    await toggle();
+    expect(document.querySelector('button[title="old"]')).toBeNull();
+    await toggle();
+    await toggle();
+    await act(async () => third.resolve(ok([{ ...branch, name: "latest" }])));
+    await act(async () => second.resolve(ok([{ ...branch, name: "late" }])));
+    expect(document.querySelector('button[title="latest"]')).not.toBeNull();
+    expect(document.querySelector('button[title="late"]')).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    useAppStore.setState(previous, true);
     vi.unstubAllGlobals();
   }
 });

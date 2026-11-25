@@ -1,3 +1,4 @@
+import { deferred } from "../../../helpers/deferred";
 import { errorFixture } from "../../../helpers/error";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -1503,3 +1504,20 @@ it.each(["rejected", "reported"])(
     expect(container.querySelector("button")?.title).not.toContain("unavailable");
   },
 );
+
+it("waits for a fresh remote inspection before showing a remote-only tag after repository loading", async () => {
+  remoteTags.mockResolvedValue(ok([{ name: "previous-remote-tag", oid: local.oid }]));
+  await act(async () => root.render(<ReferenceSidebar repositoryId="repo" />));
+  const previousTag = () =>
+    container.querySelector('[aria-label="Inspect tag previous-remote-tag"]');
+  expect(previousTag()).not.toBeNull();
+
+  await act(async () => root.render(<ReferenceSidebar repositoryId="repo" pending />));
+  expect(previousTag()).toBeNull();
+  const inspection = deferred<Awaited<ReturnType<typeof window.eda.remotes.inspect>>>();
+  inspect.mockReturnValueOnce(inspection.promise);
+  await act(async () => root.render(<ReferenceSidebar repositoryId="repo" />));
+  expect(previousTag()).toBeNull();
+  await act(async () => inspection.resolve(ok({ branches: [], remotes: [] })));
+  expect(previousTag()).toBeNull();
+});

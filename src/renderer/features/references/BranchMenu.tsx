@@ -1,9 +1,8 @@
 import { errorText } from "@shared/error-codes";
 import { errorMessage, type Result } from "@shared/errors";
 import { t } from "@shared/i18n";
-import type { BranchSummary } from "@shared/repository/repository-write";
 import { CircleIcon as Circle } from "../../components/ui/icons";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   captureRepositoryCommand,
   repositoryCommandDispatcher,
@@ -21,6 +20,7 @@ import {
   ListItemButton,
   AnchoredPopover,
 } from "../../components/ui/index";
+import { useRepositoryRead } from "../../repository/hooks/useRepositoryRead";
 import { useAppStore } from "../../stores/app-store";
 import { openSettings } from "../../stores/shell-store";
 import { useRepositoryStore } from "../../stores/repository-store";
@@ -33,7 +33,11 @@ export function BranchMenu({ head }: { head: string }) {
   const refresh = useRepositoryStore((state) => state.refresh);
   const upstream = useRepositoryStore((state) => state.status?.branch.upstream);
   const [open, setOpen] = useState(false);
-  const [branches, setBranches] = useState<BranchSummary[]>([]);
+  const {
+    value: branches,
+    error: readError,
+    retry,
+  } = useRepositoryRead(window.eda.repository.listBranches, open ? repositoryId : null);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -43,15 +47,6 @@ export function BranchMenu({ head }: { head: string }) {
   const writeUnavailable = useRepositoryStore(
     (state) => state.status?.capabilities?.write === false,
   );
-
-  useEffect(() => {
-    if (!open || !repositoryId) return;
-
-    void window.eda.repository.listBranches(repositoryId).then((result) => {
-      if (result.ok) setBranches(result.value);
-      else setError(errorMessage(result.error));
-    });
-  }, [open, repositoryId]);
 
   const run = async (work: () => Promise<Result<unknown>>) => {
     if (!repositoryId || writeUnavailable || commandUnavailable) {
@@ -75,9 +70,7 @@ export function BranchMenu({ head }: { head: string }) {
 
       await refresh();
 
-      const listed = await window.eda.repository.listBranches(repositoryId);
-
-      if (listed.ok) setBranches(listed.value);
+      retry();
 
       return true;
     } finally {
@@ -85,7 +78,7 @@ export function BranchMenu({ head }: { head: string }) {
     }
   };
 
-  const local = branches.filter((branch) => !branch.remote);
+  const local = branches?.filter((branch) => !branch.remote) ?? [];
   const needle = query.trim().toLowerCase();
   const matches = needle ? local.filter((b) => b.name.toLowerCase().includes(needle)) : local;
   const renderedMatches = matches.slice(0, 200);
@@ -209,7 +202,12 @@ export function BranchMenu({ head }: { head: string }) {
               </li>
             )}
 
-            {matches.length === 0 && (
+            {!branches && !readError && (
+              <li role="status" className="px-2 py-3 text-center text-xs text-text-tertiary">
+                {t("references.loading")}
+              </li>
+            )}
+            {branches && matches.length === 0 && (
               <li className="px-2 py-3 text-center text-xs text-text-tertiary">
                 {t("branchMenu.noBranchMatches")}
               </li>
@@ -217,7 +215,18 @@ export function BranchMenu({ head }: { head: string }) {
           </ul>
 
           {commandUnavailable && <p className="text-xs text-text-tertiary">{commandUnavailable}</p>}
-          <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>
+          <ErrorDialog
+            onDismiss={() => setError(null)}
+            actions={
+              readError && (
+                <Button size="sm" onClick={retry}>
+                  {t("common.retry")}
+                </Button>
+              )
+            }
+          >
+            {error ?? readError}
+          </ErrorDialog>
 
           <div className="shrink-0 border-t border-border-subtle p-1.5">
             <p
@@ -242,7 +251,7 @@ export function BranchMenu({ head }: { head: string }) {
               {t("branchMenu.configureUpstream")}
             </Button>
 
-            {creating || (query.trim() && matches.length === 0) ? (
+            {creating || (branches && query.trim() && matches.length === 0) ? (
               <Button
                 size="sm"
                 variant="identity"

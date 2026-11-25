@@ -1,5 +1,6 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { deferred } from "../../../helpers/deferred";
 import { ok } from "@shared/errors";
 import { SignerDialog } from "@renderer/features/diff/SignerDialog";
 import { CommitSignatureIcon } from "@renderer/components/ui/display/CommitSignatureIcon";
@@ -85,6 +86,41 @@ it("requires a separate explicit trust decision after discovery and defaults it 
     false,
   );
   expect(document.body.textContent).toContain("trusted signer");
+});
+
+it("keeps the saved signer decision when the initial list arrives after a trust change", async () => {
+  const initial = deferred<Awaited<ReturnType<typeof window.eda.repository.signerDecisions>>>();
+  const saved = {
+    fingerprint,
+    identity: githubEmail,
+    scope: "repository",
+    decision: "trusted",
+  } as const;
+  vi.stubGlobal("eda", {
+    repository: {
+      signerDecisions: vi
+        .fn<typeof window.eda.repository.signerDecisions>()
+        .mockReturnValueOnce(initial.promise)
+        .mockResolvedValue(ok([saved])),
+      decideSigner: async () => ok(undefined),
+      commitSignature: async () => ok({ ...signature, signerTrust: "trusted" }),
+    },
+  });
+  await act(async () =>
+    root.render(
+      <SignerDialog
+        repositoryId="repo"
+        oid={"b".repeat(40)}
+        email={githubEmail}
+        initialSignature={signature}
+        onClose={() => {}}
+      />,
+    ),
+  );
+  await act(async () => button("Trust key").click());
+  expect(button("Remove decision")).toBeDefined();
+  await act(async () => initial.resolve(ok([])));
+  expect(button("Remove decision")).toBeDefined();
 });
 
 it("keeps revoked keys visibly blocked even with a saved trust decision", async () => {

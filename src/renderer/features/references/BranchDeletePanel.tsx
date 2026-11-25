@@ -1,3 +1,4 @@
+import { useReferenceAction } from "./hooks/useReferenceAction";
 import { ERROR_CODE, errorText } from "@shared/error-codes";
 import { AppError, errorAction, errorMessage, GitError, type Result } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -29,9 +30,13 @@ export function BranchDeletePanel({
   const { repositoryId } = context;
   const dispatch = repositoryCommandDispatcher(context);
   const [target] = useState(branch);
-  const [busy, setBusy] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const running = useRef(false);
+  const { busy, setBusy, assertContext, running, error, setError, run, refresh } =
+    useReferenceAction(context, {
+      onClose,
+      onBusyChange,
+      initiallyBusy: true,
+      fallback: errorText("referenceMenu.theReferenceActionFailed"),
+    });
   useRepositoryStore((state) => state.writing);
   const unavailable = repositoryCommandReason(context);
   const [targets, setTargets] = useState<ReturnType<typeof branchDeleteTargets> | null>(null);
@@ -69,11 +74,6 @@ export function BranchDeletePanel({
     if (!running.current) onClose();
   };
 
-  const assertContext = () => {
-    const reason = repositoryCommandReason(context);
-    if (reason) throw new AppError(errorText("errors.operationBlocked", { reason }));
-  };
-
   const requireResult = <T,>(result: Result<T>): T => {
     if (!result.ok) {
       setNeedsAuth(result.error.kind === "auth-failed");
@@ -81,37 +81,6 @@ export function BranchDeletePanel({
     }
 
     return result.value;
-  };
-
-  const run = async (work: () => Promise<void>) => {
-    if (running.current) return;
-    running.current = true;
-    setBusy(true);
-    onBusyChange(true);
-    setError(null);
-
-    try {
-      assertContext();
-      await work();
-      onClose();
-    } catch (failure) {
-      setError(
-        [
-          errorMessage(failure, errorText("referenceMenu.theReferenceActionFailed")),
-          errorAction(failure),
-        ]
-          .filter(Boolean)
-          .join(" "),
-      );
-    } finally {
-      running.current = false;
-      setBusy(false);
-      onBusyChange(false);
-    }
-  };
-
-  const refresh = async () => {
-    if (!repositoryCommandReason(context)) await useRepositoryStore.getState().refresh();
   };
 
   const deleteRef = () =>

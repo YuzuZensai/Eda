@@ -1,5 +1,5 @@
 import { errorAction, errorMessage, type Result } from "@shared/errors";
-import { useState, useEffect, useEffectEvent } from "react";
+import { useState, useEffect, useEffectEvent, useMemo } from "react";
 
 export function useRepositoryRead<Request, Value>(
   read: (request: Request) => Promise<Result<Value>>,
@@ -7,15 +7,16 @@ export function useRepositoryRead<Request, Value>(
 ) {
   const runRead = useEffectEvent(read);
   const [attempt, setAttempt] = useState(0);
+  const readKey = useMemo(() => ({ request, attempt }), [request, attempt]);
   const [response, setResponse] = useState<{
-    request: Request;
-    attempt: number;
+    readKey: typeof readKey;
     value?: Value;
     error?: string;
   }>();
 
   useEffect(() => {
-    if (!request) return;
+    const { request } = readKey;
+    if (request === null) return;
     let active = true;
 
     const load = async () => {
@@ -23,15 +24,15 @@ export function useRepositoryRead<Request, Value>(
         const result = await runRead(request);
         if (!active) return;
 
-        if (result.ok) setResponse({ request, attempt, value: result.value });
+        if (result.ok) setResponse({ readKey, value: result.value });
         else {
           const error = [errorMessage(result.error), errorAction(result.error)]
             .filter(Boolean)
             .join(" ");
-          setResponse({ request, attempt, error });
+          setResponse({ readKey, error });
         }
       } catch (error) {
-        if (active) setResponse({ request, attempt, error: errorMessage(error) });
+        if (active) setResponse({ readKey, error: errorMessage(error) });
       }
     };
 
@@ -39,8 +40,8 @@ export function useRepositoryRead<Request, Value>(
     return () => {
       active = false;
     };
-  }, [request, attempt]);
+  }, [readKey]);
 
-  const current = response?.request === request && response.attempt === attempt ? response : null;
+  const current = response?.readKey === readKey ? response : null;
   return { value: current?.value, error: current?.error, retry: () => setAttempt((n) => n + 1) };
 }
