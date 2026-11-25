@@ -335,7 +335,13 @@ it("maps Velopack full packages and uses markdown notes as plain text", () => {
     notes: info.NotesMarkdown,
     releasedAt: null,
   });
-  for (const change of [{ PackageId: "Other" }, { Type: "Delta" }, { Version: "0.0.2-beta" }])
+  for (const change of [
+    { PackageId: "Other" },
+    { Type: "Delta" },
+    { Version: "0.0.2-beta" },
+    { Version: ["0.0.2"] },
+    { NotesMarkdown: {} },
+  ])
     expect(() => releaseFromManifest({ ...info, ...change })).toThrow();
 });
 

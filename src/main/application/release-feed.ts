@@ -53,18 +53,7 @@ function latestFullRelease(feed: unknown): UpdateRelease {
     if (!isRecord(asset) || asset["PackageId"] !== UPDATE_PACKAGE_ID || asset["Type"] !== "Full")
       continue;
 
-    if (
-      typeof asset["Version"] !== "string" ||
-      (asset["NotesMarkdown"] != null && typeof asset["NotesMarkdown"] !== "string")
-    )
-      throw new AppError(ERROR_CODE.INVALID_STABLE_VERSION);
-
-    const release = releaseFromManifest({
-      PackageId: UPDATE_PACKAGE_ID,
-      Type: "Full",
-      Version: asset["Version"],
-      NotesMarkdown: asset["NotesMarkdown"] ?? "",
-    });
+    const release = releaseFromManifest(asset);
 
     if (!latest || newerRelease(release.version, latest.version)) latest = release;
   }

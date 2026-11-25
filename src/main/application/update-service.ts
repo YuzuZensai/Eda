@@ -10,6 +10,7 @@ import type {
   UpdateState,
 } from "@shared/updates";
 import { updateFeedUrl } from "@shared/updates";
+import { isStableVersion } from "@shared/version";
 
 export interface UpdateCheckResult {
   available: boolean;
@@ -333,8 +334,7 @@ export class UpdateService {
 
 export function newerRelease(candidate: string, current: string): boolean {
   const parse = (value: string) => {
-    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value))
-      throw new AppError(ERROR_CODE.INVALID_STABLE_VERSION);
+    if (!isStableVersion(value)) throw new AppError(ERROR_CODE.INVALID_STABLE_VERSION);
     return value.split(".").map((part) => BigInt(part));
   };
   const next = parse(candidate),

@@ -1,23 +1,24 @@
 import type { UpdateRelease } from "@shared/updates";
-import type { VelopackAsset } from "velopack";
+import { isRecord } from "@shared/validation";
+import { isStableVersion } from "@shared/version";
 import { AppError } from "@shared/errors";
 import { ERROR_CODE } from "@shared/error-codes";
 import { UPDATE_PACKAGE_ID } from "@shared/updates";
 
-export function releaseFromManifest(
-  info: Pick<VelopackAsset, "PackageId" | "Type" | "Version" | "NotesMarkdown">,
-): UpdateRelease {
+export function releaseFromManifest(info: unknown): UpdateRelease {
   if (
-    info.PackageId !== UPDATE_PACKAGE_ID ||
-    info.Type !== "Full" ||
-    !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(info.Version)
+    !isRecord(info) ||
+    info["PackageId"] !== UPDATE_PACKAGE_ID ||
+    info["Type"] !== "Full" ||
+    !isStableVersion(info["Version"]) ||
+    (info["NotesMarkdown"] != null && typeof info["NotesMarkdown"] !== "string")
   )
     throw new AppError(ERROR_CODE.INVALID_STABLE_VERSION);
 
   return {
-    version: info.Version,
-    name: `Eda ${info.Version}`,
-    notes: info.NotesMarkdown ? info.NotesMarkdown.slice(0, 16_000) : null,
+    version: info["Version"],
+    name: `Eda ${info["Version"]}`,
+    notes: info["NotesMarkdown"]?.slice(0, 16_000) || null,
     releasedAt: null,
   };
 }

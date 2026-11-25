@@ -10,7 +10,7 @@ import { format, resolveConfig } from "prettier";
 import { basename, join, relative, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
-import type { BuildInfo } from "../src/shared/version.ts";
+import { isStableVersion, type BuildInfo } from "../src/shared/version.ts";
 
 // Decode bundled catalogs before their importers run without network reads or runtime dependencies.
 export function compactMessageCatalogs(): Plugin {
@@ -42,11 +42,9 @@ export function compactMessageCatalogs(): Plugin {
 }
 
 export function readBuildInfo(root = fileURLToPath(new URL("../", import.meta.url))): BuildInfo {
-  const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
-    version: string;
-  };
+  const version: unknown = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))?.version;
 
-  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version))
+  if (!isStableVersion(version))
     throw new Error("Eda's package.json version must be a stable semantic version (X.Y.Z).");
 
   let commit: string | null = null;

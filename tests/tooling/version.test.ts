@@ -93,4 +93,6 @@ test("source archives and unborn repositories never claim an enclosing commit or
 
   writeFileSync(join(archive, "package.json"), JSON.stringify({ version: "v0.0.1" }));
   assert.throws(() => readBuildInfo(archive), /semantic version/);
+  writeFileSync(join(archive, "package.json"), JSON.stringify({ version: ["0.0.1"] }));
+  assert.throws(() => readBuildInfo(archive), /semantic version/);
 });
