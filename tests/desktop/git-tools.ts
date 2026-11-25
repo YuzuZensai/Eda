@@ -281,11 +281,10 @@ try {
   const proofCommand = "echo desktop-terminal > terminal-proof.txt";
   await page.keyboard.type(proofCommand);
   await page.keyboard.press("Enter");
-  await expect.poll(() => existsSync(join(repository, "terminal-proof.txt"))).toBe(true);
-  assert.equal(
-    (await readFile(join(repository, "terminal-proof.txt"), "utf8")).trim(),
-    "desktop-terminal",
-  );
+  const proofPath = join(repository, "terminal-proof.txt");
+  await expect
+    .poll(async () => (existsSync(proofPath) ? (await readFile(proofPath, "utf8")).trim() : null))
+    .toBe("desktop-terminal");
   const completion = terminal.getByRole("textbox", { name: "Git completion" });
   const search = terminal.getByRole("textbox", { name: "Find in scrollback" });
   await expect(completion).toBeHidden();
