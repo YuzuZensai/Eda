@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitError } from "@shared/errors";
 import { IdentityManager } from "@main/identity/identity-manager";
 import { openInMemoryDatabase } from "@main/persistence/database";
+import { ContentRecoveryRepository } from "@main/persistence/content-recovery-repository";
 import { IdentityRepository } from "@main/persistence/identity-repository";
 import { SettingsRepository } from "@main/persistence/settings-repository";
 import { repositories as repositoryTable } from "@main/persistence/schema";
@@ -60,12 +61,50 @@ async function setup(options: { gitName?: string; gitEmail?: string } = {}) {
     }),
   } as never;
 
-  const writer = new RepositoryWriter(repo.git, repositories, manager, identities);
+  const writer = new RepositoryWriter(
+    repo.git,
+    repositories,
+    manager,
+    identities,
+    undefined,
+    new ContentRecoveryRepository(db),
+  );
 
   return { repo, writer, identities, identity, paths, settings, manager };
 }
 
 describe("staging and committing through the writer", () => {
+  it.each(["listBranches", "listTags", "previewCommit"] as const)(
+    "drops %s results after relocation",
+    async (method) => {
+      const { writer, paths, repo } = await setup();
+      const pending = writer[method]("r1");
+      paths.set("r1", join(repo.home, "relocated"));
+      await expect(pending).rejects.toMatchObject({
+        code: "main.repositoryManager.theRepositoryChangedRefreshAndTryAgain",
+      });
+    },
+  );
+
+  it("drops working-tree previews and ignore inspection after relocation", async () => {
+    const { writer, paths, repo } = await setup();
+    await repo.writeFile("a.txt", "changed\n");
+    const selection = { repositoryId: "r1", path: "a.txt", area: "unstaged" as const, hunks: [0] };
+    const previews = [
+      writer.previewDiscard("r1", ["a.txt"]),
+      writer.previewDiscardPartial(selection),
+      writer.previewPartial(selection),
+      writer.inspectIgnore("r1", "a.txt", "path"),
+    ];
+    paths.set("r1", join(repo.home, "relocated"));
+    const results = await Promise.allSettled(previews);
+    for (const result of results)
+      expect(result).toMatchObject({
+        status: "rejected",
+        reason: { code: "main.repositoryManager.theRepositoryChangedRefreshAndTryAgain" },
+      });
+  });
+
   it("previews Gitflow release merges and tag, resumes a conflicted finish and respects branch retention", async () => {
     const { repo, writer } = await setup();
     await writer.gitflow("r1", {

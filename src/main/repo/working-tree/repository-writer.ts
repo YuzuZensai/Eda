@@ -1,3 +1,4 @@
+import { readActiveRepository, assertRepositoryContext } from "../lifecycle/repository-context";
 import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t, type MessageKey } from "@shared/i18n";
@@ -258,19 +259,15 @@ export class RepositoryWriter {
   }
 
   previewDiscard(repositoryId: string, paths: string[]) {
-    const repository = this.repositories.resolveActiveRepository(repositoryId);
-
-    return this.recoveryService().preview(
-      repository.path,
-      repository.identityId,
-      repositoryId,
-      paths,
+    return readActiveRepository(this.repositories, repositoryId, (root, profileId) =>
+      this.recoveryService().preview(root, profileId, repositoryId, paths),
     );
   }
 
   previewDiscardPartial(request: PartialStageRequest) {
-    const repository = this.repositories.resolveActiveRepository(request.repositoryId);
-    return this.recoveryService().previewPartial(repository.path, repository.identityId, request);
+    return readActiveRepository(this.repositories, request.repositoryId, (root, profileId) =>
+      this.recoveryService().previewPartial(root, profileId, request),
+    );
   }
 
   applyDiscard(repositoryId: string, token: string) {
@@ -314,10 +311,8 @@ export class RepositoryWriter {
   }
 
   inspectIgnore(repositoryId: string, path: string, kind: IgnoreKind) {
-    return this.ignore.inspect(
-      this.repositories.resolveActiveRepository(repositoryId).path,
-      path,
-      kind,
+    return readActiveRepository(this.repositories, repositoryId, (root) =>
+      this.ignore.inspect(root, path, kind),
     );
   }
 
@@ -338,8 +333,9 @@ export class RepositoryWriter {
   }
 
   previewPartial(request: PartialStageRequest): Promise<PartialStagePreview> {
-    const repository = this.repositories.resolveActiveRepository(request.repositoryId);
-    return this.partial.preview(repository.path, repository.identityId, request);
+    return readActiveRepository(this.repositories, request.repositoryId, (root, profileId) =>
+      this.partial.preview(root, profileId, request),
+    );
   }
 
   applyPartial(repositoryId: string, token: string): Promise<void> {
@@ -419,6 +415,8 @@ export class RepositoryWriter {
             },
           )
         : null;
+
+    assertRepositoryContext(this.repositories, repository, t("operations.commit"));
 
     return {
       author: { name: expected.gitName, email: expected.gitEmail },
@@ -597,8 +595,12 @@ export class RepositoryWriter {
   }
 
   listBranches(repositoryId: string): Promise<BranchSummary[]> {
-    const { path } = this.repositories.resolveActiveRepository(repositoryId);
-    return this.git.listBranches(path);
+    return readActiveRepository(
+      this.repositories,
+      repositoryId,
+      (path) => this.git.listBranches(path),
+      t("operations.listBranches"),
+    );
   }
 
   createTag(
@@ -653,19 +655,17 @@ export class RepositoryWriter {
   async verifyTag(repositoryId: string, name: string) {
     const repository = this.repositories.resolveActiveRepository(repositoryId);
     const tag = await this.git.verifyTag(repository.path, name);
-    const current = this.repositories.resolveActiveRepository(repositoryId);
-    if (current.identityId !== repository.identityId || current.path !== repository.path)
-      throw new GitError({
-        kind: "invalid-input",
-        operation: t("operations.verifyTag"),
-        message: errorText("main.repositoryManager.theRepositoryChangedRefreshAndTryAgain"),
-      });
-    return { ...tag, ...this.signers?.decorate(current.identityId, repositoryId, tag) };
+    assertRepositoryContext(this.repositories, repository, t("operations.verifyTag"));
+    return { ...tag, ...this.signers?.decorate(repository.identityId, repositoryId, tag) };
   }
 
   listTags(repositoryId: string): Promise<TagSummary[]> {
-    const { path } = this.repositories.resolveActiveRepository(repositoryId);
-    return this.git.listTags(path);
+    return readActiveRepository(
+      this.repositories,
+      repositoryId,
+      (path) => this.git.listTags(path),
+      t("operations.listTags"),
+    );
   }
 
   private write<T>(

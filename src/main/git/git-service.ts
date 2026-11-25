@@ -810,6 +810,35 @@ export class GitService {
     }
   }
 
+  partialDiff(cwd: string, path: string, source: DiffArea | "untracked", operation: string) {
+    assertRepositoryPath(path, operation);
+    const flags = ["--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3"];
+    const args =
+      source === "untracked"
+        ? [
+            "diff",
+            "--no-index",
+            ...flags,
+            "--",
+            process.platform === "win32" ? "NUL" : "/dev/null",
+            path,
+          ]
+        : [
+            "--literal-pathspecs",
+            "diff",
+            ...flags,
+            ...(source === "staged" ? ["--cached"] : []),
+            "--",
+            path,
+          ];
+    return this.exec(args, {
+      cwd,
+      operation,
+      allowedExitCodes: source === "untracked" ? [0, 1] : [0],
+      maxStdoutBytes: 1024 * 1024,
+    });
+  }
+
   async workingDiff(
     path: string,
     options: DiffDisplayOptions & { area: DiffArea; paths?: readonly string[] },

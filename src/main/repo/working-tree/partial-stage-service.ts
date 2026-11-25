@@ -1,3 +1,4 @@
+import { isUtf8 } from "node:buffer";
 import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -35,35 +36,16 @@ export class PartialStageService {
         ),
       });
 
-    const flags = ["--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3"];
-    const untracked = request.area === "unstaged" && change.kind === "untracked";
-    const args = untracked
-      ? [
-          "diff",
-          "--no-index",
-          ...flags,
-          "--",
-          process.platform === "win32" ? "NUL" : "/dev/null",
-          request.path,
-        ]
-      : [
-          "diff",
-          ...flags,
-          ...(request.area === "staged" ? ["--cached"] : []),
-          "--",
-          `:(literal)${request.path}`,
-        ];
+    const source =
+      request.area === "unstaged" && change.kind === "untracked" ? "untracked" : request.area;
+    const result = await this.git.partialDiff(
+      root,
+      request.path,
+      source,
+      t("operations.readPartialStagingSource"),
+    );
 
-    const result = await this.git.exec(args, {
-      cwd: root,
-      operation: t("operations.readPartialStagingSource"),
-      allowedExitCodes: untracked ? [0, 1] : [0],
-      maxStdoutBytes: 1024 * 1024,
-    });
-
-    try {
-      new TextDecoder("utf-8", { fatal: true }).decode(result.stdoutBytes);
-    } catch {
+    if (!isUtf8(result.stdoutBytes)) {
       throw new GitError({
         kind: "invalid-input",
         operation: t("operations.partialStaging"),

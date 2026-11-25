@@ -1,3 +1,4 @@
+import { isUtf8 } from "node:buffer";
 import { isFullObjectId } from "@shared/repository/object-id";
 import { readRegularFile } from "../../filesystem/read-regular-file";
 import { errorText, type ErrorText } from "@shared/error-codes";
@@ -411,28 +412,14 @@ export class DiscardService {
     const preview = await this.preview(root, profileId, request.repositoryId, [request.path]);
     const pending = this.previews.get(preview.token)!;
     const untracked = !pending.record.files[0]!.tracked;
-    const flags = ["--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3"];
-    const args = untracked
-      ? [
-          "diff",
-          "--no-index",
-          ...flags,
-          "--",
-          process.platform === "win32" ? "NUL" : "/dev/null",
-          request.path,
-        ]
-      : ["--literal-pathspecs", "diff", ...flags, "--", request.path];
+    const source = await this.git.partialDiff(
+      root,
+      request.path,
+      untracked ? "untracked" : "unstaged",
+      t("operations.previewPartialDiscard"),
+    );
 
-    const source = await this.git.exec(args, {
-      cwd: root,
-      operation: t("operations.previewPartialDiscard"),
-      allowedExitCodes: untracked ? [0, 1] : [0],
-      maxStdoutBytes: 1024 * 1024,
-    });
-
-    try {
-      new TextDecoder("utf-8", { fatal: true }).decode(source.stdoutBytes);
-    } catch {
+    if (!isUtf8(source.stdoutBytes)) {
       throw invalid(errorText("main.discardService.partialDiscardRequiresUtf8TextUseAWhole"));
     }
 
