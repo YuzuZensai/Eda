@@ -1,4 +1,4 @@
-import { access, chmod, realpath } from "node:fs/promises";
+import { access, chmod, realpath, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { RepositoryTrust } from "@main/git/security/repository-trust";
 import { RepositoryExecutionInspector } from "@main/git/security/repository-execution";
@@ -8,6 +8,10 @@ import { openInMemoryDatabase } from "@main/persistence/database";
 import { NodeProcessRunner } from "@main/git/execution/node-process-runner";
 import { resolveGitEngine } from "@main/git/execution/git-engine";
 import { GitService } from "@main/git/git-service";
+import { RepositoryManager } from "@main/repo/lifecycle/repository-manager";
+import { IdentityManager } from "@main/identity/identity-manager";
+import { IdentityRepository } from "@main/persistence/identity-repository";
+import { RepositoryMemberships } from "@main/persistence/repository-memberships";
 import { createTempRepo } from "../../helpers/temp-repo";
 
 async function fixture() {
@@ -33,7 +37,9 @@ async function fixture() {
   const git = new GitService(runner, engine, env, undefined, trust);
   return {
     repo,
+    db,
     confirm,
+    runner,
     trust,
     git,
     cleanup: async () => {
@@ -53,6 +59,62 @@ it("opens ordinary repositories without prompting or granting execution trust", 
     expect((await f.trust.checked(f.repo.path)).trusted).toBe(false);
     await f.git.stageAll(f.repo.path);
     expect(await f.git.isRepository(f.repo.path)).toBe(true);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it("reports a repository moved while Git starts its execution check", async () => {
+  const f = await fixture();
+  try {
+    await f.trust.authorize(f.repo.path);
+    const run = f.runner.run.bind(f.runner);
+    vi.spyOn(f.runner, "run").mockImplementation(async (request) => {
+      if (request.cwd !== f.repo.path) return run(request);
+      await rename(f.repo.path, join(f.repo.home, "moved"));
+      return run(request);
+    });
+    await expect(f.git.status(f.repo.path)).rejects.toMatchObject({ kind: "not-a-repository" });
+    await expect(f.trust.isTrusted(f.repo.path)).rejects.toMatchObject({
+      kind: "not-a-repository",
+    });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it("keeps other repositories available when a worktree moves during the list's trust check", async () => {
+  const f = await fixture();
+  try {
+    const identities = new IdentityRepository(f.db);
+    const identity = new IdentityManager(identities, f.git);
+    const manager = new RepositoryManager(
+      new RepositoryMemberships(f.db),
+      f.git,
+      identity,
+      identities,
+    );
+    const owner = identities.create({
+      name: "Work",
+      gitName: "Work",
+      gitEmail: "work@example.com",
+      hue: 210,
+      signing: { format: "none", signCommits: false },
+    });
+    await identity.setActive(owner.id);
+    const other = join(f.repo.home, "other");
+    await f.repo.run(["init", other]);
+    const stable = await manager.open(other);
+    const moved = await manager.open(f.repo.path);
+    const isTrusted = f.trust.isTrusted.bind(f.trust);
+    vi.spyOn(f.trust, "isTrusted").mockImplementation(async (path) => {
+      if (path === moved.path) await rename(path, join(f.repo.home, "moved"));
+      return isTrusted(path);
+    });
+    expect(await manager.listForActiveIdentity()).toEqual([
+      expect.objectContaining({ id: stable.id, available: true }),
+      expect.objectContaining({ id: moved.id, available: false }),
+    ]);
   } finally {
     await f.cleanup();
   }

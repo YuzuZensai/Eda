@@ -36,6 +36,8 @@ export class RepositoryManager {
         } catch (error) {
           if (error instanceof GitError && error.text.key === "repositoryFormat.unsupported")
             return { ...toSummary(row), available: false, unavailableReason: error.message };
+          if (error instanceof GitError && error.kind === "not-a-repository")
+            return { ...toSummary(row), available: false };
           throw error;
         }
       }),
@@ -71,7 +73,6 @@ export class RepositoryManager {
       (await lstat(join(path, "HEAD")).catch(() => null))?.isFile() &&
       (await lstat(join(path, "objects")).catch(() => null))?.isDirectory();
     if (looksBare) {
-      // Inspect the explicitly selected metadata without registering it as a working tree.
       const bare = await this.git.exec(["--git-dir=" + path, "rev-parse", "--is-bare-repository"], {
         operation: t("operations.openRepository"),
         env: { configScope: "none" },

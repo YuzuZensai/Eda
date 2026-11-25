@@ -6,7 +6,7 @@ import { t } from "@shared/i18n";
 import { unsupportedRepositoryFormat } from "../execution/error-mapping";
 import { buildGitEnvironment } from "../execution/environment";
 import type { GitEngine } from "../execution/git-engine";
-import type { ProcessRunner } from "../execution/process-runner";
+import { runGitProcess, type ProcessRunner } from "../execution/process-runner";
 
 export interface RepositoryExecution {
   reasons: string[];
@@ -31,16 +31,21 @@ export class RepositoryExecutionInspector {
       overrides: { ...this.engine.environment, ...this.environment },
     });
     const run = async (args: string[], stdin?: string) => {
-      const result = await this.runner.run({
-        executable: this.engine.path,
-        args: ["--no-pager", "-c", "core.fsmonitor=false", ...args],
-        cwd: root,
-        signal: signal ?? AbortSignal.timeout(10_000),
-        env: { ...env, GIT_NO_LAZY_FETCH: "1", GIT_OPTIONAL_LOCKS: "0" },
-        ...(stdin !== undefined && { stdin }),
-        maxStdoutBytes: 8 * 1024 * 1024,
-        maxStderrBytes: 64 * 1024,
-      });
+      const result = await runGitProcess(
+        this.runner,
+        {
+          executable: this.engine.path,
+          args: ["--no-pager", "-c", "core.fsmonitor=false", ...args],
+          cwd: root,
+          signal: signal ?? AbortSignal.timeout(10_000),
+          env: { ...env, GIT_NO_LAZY_FETCH: "1", GIT_OPTIONAL_LOCKS: "0" },
+          ...(stdin !== undefined && { stdin }),
+          maxStdoutBytes: 8 * 1024 * 1024,
+          maxStderrBytes: 64 * 1024,
+        },
+        t("operations.openRepository"),
+        root,
+      );
       if (result.cancelled || result.outputLimitExceeded || result.exitCode !== 0)
         throw new GitError({
           kind: "invalid-input",
@@ -97,15 +102,20 @@ export class RepositoryExecutionInspector {
     const sources: (string | null)[] = [];
     if (filters.size > 0 || merges.size > 0 || config.some(({ key }) => key === "core.hookspath")) {
       // Check both the incoming commit and the current index/worktree. No checkout or filter runs here.
-      const head = await this.runner.run({
-        executable: this.engine.path,
-        args: ["rev-parse", "--verify", "--end-of-options", `${revision}^{tree}`],
-        cwd: root,
-        signal: signal ?? AbortSignal.timeout(10_000),
-        env,
-        maxStdoutBytes: 1024,
-        maxStderrBytes: 1024,
-      });
+      const head = await runGitProcess(
+        this.runner,
+        {
+          executable: this.engine.path,
+          args: ["rev-parse", "--verify", "--end-of-options", `${revision}^{tree}`],
+          cwd: root,
+          signal: signal ?? AbortSignal.timeout(10_000),
+          env,
+          maxStdoutBytes: 1024,
+          maxStderrBytes: 1024,
+        },
+        t("operations.openRepository"),
+        root,
+      );
       if (head.cancelled || head.outputLimitExceeded || ![0, 128].includes(head.exitCode))
         throw new GitError({
           kind: "invalid-input",

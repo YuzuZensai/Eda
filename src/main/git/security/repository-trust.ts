@@ -19,6 +19,11 @@ const refused = () =>
     message: errorText("main.repositoryTrust.required"),
   });
 
+function refuseMissing(error: unknown): never {
+  if (missing(error)) throw refused();
+  throw error;
+}
+
 async function pointer(path: string, prefix = "") {
   const { bytes } = await readRegularFile(path, 4096, refused);
   const text = bytes.toString("utf8").replace(/\r?\n$/, "");
@@ -29,25 +34,30 @@ async function pointer(path: string, prefix = "") {
   return target;
 }
 
-async function metadata(root: string, bare: boolean, volumes: RepositoryVolumeIdentity) {
-  const marker = bare ? root : join(root, ".git");
-  const entry = await lstat(marker);
-  if (!entry.isDirectory() && (!entry.isFile() || bare)) throw refused();
-  const gitDir = await realpath(entry.isDirectory() ? marker : await pointer(marker, "gitdir: "));
-  const common = await pointer(join(gitDir, "commondir")).catch((error) => {
-    if (missing(error)) return gitDir;
-    throw error;
-  });
-  const commonDir = await realpath(common);
-  const ids = await Promise.all(
-    [root, gitDir, commonDir].map(async (path) => {
-      const info = await stat(path, { bigint: true });
-      if (!info.isDirectory()) throw refused();
-      const device = await volumes.identify(path, info.dev);
-      return [path, device, String(info.ino), String(info.birthtimeNs)];
-    }),
-  );
-  return { root, gitDir, commonDir, fingerprint: JSON.stringify(ids) };
+async function metadata(path: string, bare: boolean, volumes: RepositoryVolumeIdentity) {
+  try {
+    const root = await realpath(path);
+    const marker = bare ? root : join(root, ".git");
+    const entry = await lstat(marker);
+    if (!entry.isDirectory() && (!entry.isFile() || bare)) throw refused();
+    const gitDir = await realpath(entry.isDirectory() ? marker : await pointer(marker, "gitdir: "));
+    const common = await pointer(join(gitDir, "commondir")).catch((error) => {
+      if (missing(error)) return gitDir;
+      throw error;
+    });
+    const commonDir = await realpath(common);
+    const ids = await Promise.all(
+      [root, gitDir, commonDir].map(async (path) => {
+        const info = await stat(path, { bigint: true });
+        if (!info.isDirectory()) throw refused();
+        const device = await volumes.identify(path, info.dev);
+        return [path, device, String(info.ino), String(info.birthtimeNs)];
+      }),
+    );
+    return { root, gitDir, commonDir, fingerprint: JSON.stringify(ids) };
+  } catch (error) {
+    return refuseMissing(error);
+  }
 }
 
 export class RepositoryTrust {
@@ -84,17 +94,17 @@ export class RepositoryTrust {
   }
 
   async authorize(root: string, bare = false, review = false) {
-    const record = await metadata(await realpath(root), bare, this.volumes);
+    const record = await metadata(root, bare, this.volumes);
     if (!review && this.store.matches(record.root, record.fingerprint)) return;
-    const execution = await this.inspector?.inspect(record.root, record.commonDir);
+    const execution = await this.inspector
+      ?.inspect(record.root, record.commonDir)
+      .catch(refuseMissing);
     const trusted = execution
       ? (review || execution.reasons.length > 0) &&
         (await this.confirm(record.root, execution.reasons))
       : await this.confirm(record.root);
     if (!trusted && !this.inspector) throw refused();
-    if (
-      (await metadata(await realpath(root), bare, this.volumes)).fingerprint !== record.fingerprint
-    )
+    if ((await metadata(root, bare, this.volumes)).fingerprint !== record.fingerprint)
       throw refused();
     this.store.remember(
       record.root,
@@ -103,28 +113,25 @@ export class RepositoryTrust {
   }
 
   async rememberCreated(path: string) {
-    const record = await metadata(await realpath(path), false, this.volumes);
+    const record = await metadata(path, false, this.volumes);
     this.store.remember(record.root, `untrusted:${record.fingerprint}`);
   }
 
   async isTrusted(root: string): Promise<boolean> {
-    const record = await metadata(await realpath(root), false, this.volumes);
+    const record = await metadata(root, false, this.volumes);
     return this.store.matches(record.root, record.fingerprint);
   }
 
   async checked(root: string, signal?: AbortSignal, revision?: string) {
-    try {
-      const record = await metadata(await realpath(root), false, this.volumes);
-      const trusted = this.store.matches(record.root, record.fingerprint);
-      if (!trusted && !this.store.matches(record.root, `untrusted:${record.fingerprint}`))
-        throw refused();
-      const execution = !trusted
-        ? await this.inspector?.inspect(record.root, record.commonDir, signal, revision)
-        : undefined;
-      return { ...record, trusted, execution };
-    } catch (error) {
-      if (missing(error)) throw refused();
-      throw error;
-    }
+    const record = await metadata(root, false, this.volumes);
+    const trusted = this.store.matches(record.root, record.fingerprint);
+    if (!trusted && !this.store.matches(record.root, `untrusted:${record.fingerprint}`))
+      throw refused();
+    const execution = !trusted
+      ? await this.inspector
+          ?.inspect(record.root, record.commonDir, signal, revision)
+          .catch(refuseMissing)
+      : undefined;
+    return { ...record, trusted, execution };
   }
 }

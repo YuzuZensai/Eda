@@ -41,7 +41,7 @@ import { mapGitError } from "./execution/error-mapping";
 import type { GitEngine } from "./execution/git-engine";
 import type { GitDiagnostics } from "@shared/integrations/git-engine";
 import { resolveExecutable } from "./execution/executable";
-import { ProcessSpawnError, type ProcessRunner } from "./execution/process-runner";
+import { runGitProcess, type ProcessRunner } from "./execution/process-runner";
 import { readStashHistory } from "./operations/stash-history";
 import { readCommitTemplate } from "./commit-template";
 import { parseUnifiedDiff } from "./parsers/diff-parser";
@@ -365,15 +365,14 @@ export class GitService {
     env["GIT_NO_LAZY_FETCH"] = "1";
     env["GIT_ALLOW_PROTOCOL"] ??= "https:ssh:file";
 
-    let result;
-
-    try {
-      const reportProgress = (line: string) => {
-        const safeLine = redact(line);
-        options.onProgress?.(safeLine);
-        this.operations?.progress(safeLine);
-      };
-      result = await this.runner.run({
+    const reportProgress = (line: string) => {
+      const safeLine = redact(line);
+      options.onProgress?.(safeLine);
+      this.operations?.progress(safeLine);
+    };
+    const result = await runGitProcess(
+      this.runner,
+      {
         executable: this.engine.path,
         args: [
           "--no-pager",
@@ -401,36 +400,10 @@ export class GitService {
         ...(options.reportStdoutProgress && { onStdoutLine: reportProgress }),
         ...(options.maxStdoutBytes !== undefined && { maxStdoutBytes: options.maxStdoutBytes }),
         ...(options.maxStderrBytes !== undefined && { maxStderrBytes: options.maxStderrBytes }),
-      });
-    } catch (error) {
-      if (error instanceof ProcessSpawnError) {
-        if (options.cwd !== undefined && !existsSync(options.cwd)) {
-          throw new GitError({
-            kind: "not-a-repository",
-            operation: options.operation,
-            message: errorText("main.git.gitService.noLongerExists", { cwd: options.cwd }),
-            suggestedAction: errorText(
-              "main.git.gitService.itMayHaveBeenMovedOrDeletedRemoveItFromEdaOrOpenADifferentFolder",
-            ),
-            repositoryPath: options.cwd,
-          });
-        }
-
-        throw new GitError({
-          kind: "git-not-found",
-          operation: options.operation,
-          message: errorText("main.git.gitService.edaCouldNotStartGit"),
-          suggestedAction: errorText(
-            "main.git.gitService.theGitEngineIsConfiguredAsCheckThatItStillExistsInSettings",
-            { path: this.engine.path },
-          ),
-          ...(options.cwd !== undefined && { repositoryPath: options.cwd }),
-          rawStderr: error.message,
-        });
-      }
-
-      throw error;
-    }
+      },
+      options.operation,
+      options.cwd,
+    );
 
     const stderr = redact(result.stderr.toString("utf8"));
 
