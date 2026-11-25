@@ -33,7 +33,13 @@ const gitConfigGlobal = join(userData, "gitconfig");
 await writeFile(gitConfigGlobal, "");
 
 const app = await electron.launch({
-  args: ["dist/main/index.js", "--no-sandbox", `--user-data-dir=${userData}`],
+  // The frame assertion samples CSS lime in sRGB, including on wide-gamut displays.
+  args: [
+    "dist/main/index.js",
+    "--no-sandbox",
+    "--force-color-profile=srgb",
+    `--user-data-dir=${userData}`,
+  ],
   env: {
     ...fixtureEnvironment(userData),
     HOME: userData,
@@ -175,6 +181,16 @@ try {
 
   if (heapGrowth > 128 * 1024 * 1024)
     throw new Error(`Renderer heap grew by ${Math.round(heapGrowth / 1024 / 1024)} MiB.`);
+
+  await list.evaluate((element) => {
+    const bottom = element.getBoundingClientRect().bottom;
+    const rows = element.querySelectorAll<HTMLElement>('[data-tour="history-commit"]');
+    Array.from(rows)
+      .findLast((row) => row.getBoundingClientRect().bottom <= bottom)!
+      .focus();
+  });
+  for (let step = 0; step < 3; step++) await page.keyboard.press("Tab");
+  await expect(list.locator('[data-tour="history-commit"]:focus')).toBeInViewport({ ratio: 1 });
 
   await assertThumbDragCoverage(page, list, rowHeight);
   await assertWheelScrollCoverage(page, list, rowHeight);

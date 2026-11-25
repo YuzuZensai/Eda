@@ -43,6 +43,12 @@ function firstVisibleRow(offsets: number[], scrollTop: number) {
   return low;
 }
 
+function revealRange(element: HTMLDivElement, top: number, bottom: number) {
+  if (top < element.scrollTop) element.scrollTop = top;
+  else if (bottom > element.scrollTop + element.clientHeight)
+    element.scrollTop = Math.min(top, bottom - element.clientHeight);
+}
+
 export function VirtualRows<T>({
   items,
   rowHeight,
@@ -108,7 +114,10 @@ export function VirtualRows<T>({
   const renderEnd = Math.min(end, start + MAX_RENDERED_ROWS);
   const rowTop = offsets?.[start] ?? start * rowHeight;
   const pinRenderedRows = buffered && !offsets;
-  const stickyInset = Math.min(0, viewport.height - (renderEnd - start) * rowHeight);
+  const minRowTop = Math.min(0, viewport.height - (renderEnd - start) * rowHeight);
+  const renderedTop = pinRenderedRows
+    ? `clamp(${minRowTop}px, calc(${rowTop}px - var(--scroll-top, 0px)), 0px)`
+    : `${rowTop}px`;
 
   useLayoutEffect(() => {
     if (!measureRows || !mounted.current) return;
@@ -138,6 +147,7 @@ export function VirtualRows<T>({
 
   const updateViewport = (element: HTMLDivElement) => {
     const top = element.scrollTop;
+    if (pinRenderedRows) mounted.current?.style.setProperty("--scroll-top", `${top}px`);
     const height = element.clientHeight;
     lastScroll.current = top + origin;
     const batch =
@@ -181,7 +191,7 @@ export function VirtualRows<T>({
 
     element.scrollTop = Math.max(0, lastScroll.current - origin);
     readViewport(element);
-  }, [origin, scrollKey]);
+  }, [origin, scrollKey, pinRenderedRows]);
 
   useEffect(() => {
     if (end >= items.length - PREFETCH_ROWS) onNearEnd?.();
@@ -202,9 +212,7 @@ export function VirtualRows<T>({
     const top = offsets?.[index] ?? index * rowHeight;
     const bottom = offsets?.[index + 1] ?? top + rowHeight;
 
-    if (top < element.scrollTop) element.scrollTop = top;
-    else if (bottom > element.scrollTop + element.clientHeight)
-      element.scrollTop = Math.min(top, bottom - element.clientHeight);
+    revealRange(element, top, bottom);
   });
   useEffect(() => {
     reveal();
@@ -221,6 +229,14 @@ export function VirtualRows<T>({
       data-item-offset={itemOffset}
       className={`ui-scroll-region relative overflow-auto ${className}`}
       onScroll={(event) => updateViewport(event.currentTarget)}
+      onFocus={(event) => {
+        const element = event.currentTarget;
+        if (!pinRenderedRows || !mounted.current?.contains(event.target)) return;
+        const bounds = event.target.getBoundingClientRect();
+        const top = rowTop + bounds.top - mounted.current.getBoundingClientRect().top;
+        revealRange(element, top, top + bounds.height);
+        updateViewport(element);
+      }}
     >
       <div
         className="relative min-w-full"
@@ -229,27 +245,30 @@ export function VirtualRows<T>({
           width: horizontalScroll ? "max-content" : "100%",
         }}
       >
-        {pinRenderedRows && <div style={{ height: rowTop }} />}
+        {/* A pinned viewport keeps the previous rows painted until the scroll handler runs. */}
         <div
-          ref={mounted}
-          className={pinRenderedRows ? "sticky min-w-full" : "absolute left-0 top-0 min-w-full"}
-          style={{
-            ...(pinRenderedRows
-              ? { insetBlock: stickyInset }
-              : { transform: `translateY(${rowTop}px)` }),
-            width: horizontalScroll ? undefined : "100%",
-          }}
+          className={pinRenderedRows ? "sticky top-0 overflow-clip" : "contents"}
+          style={pinRenderedRows ? { height: Math.min(viewport.height, contentHeight) } : undefined}
         >
-          {items.slice(start, renderEnd).map((item, offset) => {
-            const index = start + offset;
-            return measureRows ? (
-              <div key={index} data-row-index={index}>
-                {renderRow(item, index)}
-              </div>
-            ) : (
-              renderRow(item, itemOffset + index)
-            );
-          })}
+          <div
+            ref={mounted}
+            className={pinRenderedRows ? undefined : "absolute left-0 top-0 min-w-full"}
+            style={{
+              transform: `translateY(${renderedTop})`,
+              width: horizontalScroll ? undefined : "100%",
+            }}
+          >
+            {items.slice(start, renderEnd).map((item, offset) => {
+              const index = start + offset;
+              return measureRows ? (
+                <div key={index} data-row-index={index}>
+                  {renderRow(item, index)}
+                </div>
+              ) : (
+                renderRow(item, itemOffset + index)
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
