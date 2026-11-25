@@ -2,9 +2,10 @@ import { lfsLockServer } from "../helpers/lfs-lock-server.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, glob, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
+import { prepareGit } from "../../scripts/prepare-git.ts";
 import { expect } from "playwright/test";
 import type { Locator, Page } from "playwright";
 import { electron } from "../helpers/fixture-electron.ts";
@@ -19,8 +20,20 @@ const env = fixtureEnvironment(root);
 const linked = join(root, "linked");
 const child = join(root, "child");
 const remote = join(root, "server.git");
+const bundle = await prepareGit();
+const lfs = await glob("**/git-lfs{,.exe}", { cwd: bundle }).next();
+assert.ok(!lfs.done, "The bundled Git LFS executable is required by the fixture checkout hooks.");
+const gitEnv = {
+  ...env,
+  PATH: [env["PATH"] ?? env["Path"], join(bundle, dirname(lfs.value))].join(delimiter),
+};
+
 const run = (cwd: string, ...args: string[]) =>
-  execFileSync("git", ["-C", cwd, ...args], { env, encoding: "utf8", stdio: "pipe" }).trimEnd();
+  execFileSync("git", ["-C", cwd, ...args], {
+    env: gitEnv,
+    encoding: "utf8",
+    stdio: "pipe",
+  }).trimEnd();
 const git = (...args: string[]) => run(repository, ...args);
 const button = (container: Page | Locator, name: string) =>
   container.getByRole("button", { name, exact: true });
