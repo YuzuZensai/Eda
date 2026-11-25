@@ -65,7 +65,19 @@ beforeEach(async () => {
   previousApp = useAppStore.getState();
   previousSession = useSessionStore.getState();
   previousPreferences = usePreferencesStore.getState();
-  useAppStore.setState({ selectedRepositoryId: "repo" });
+  useAppStore.setState({
+    selectedRepositoryId: "repo",
+    activeIdentity: {
+      id: "profile",
+      name: "Work",
+      gitName: "Yuzu",
+      gitEmail: "yuzu@example.test",
+      hue: 210,
+      signing: { format: "none", signCommits: false },
+      createdAt: "",
+      updatedAt: "",
+    },
+  });
   useSessionStore.setState({
     transitioning: false,
     snapshot: {
@@ -77,6 +89,7 @@ beforeEach(async () => {
   });
   useRepositoryStore.setState({
     repositoryId: "repo",
+    phase: "ready",
     writing: false,
     identityId: "profile",
     status,
@@ -444,8 +457,17 @@ it("keeps drafts isolated between repositories and profiles and disables edits d
   await act(async () => useAppStore.setState({ selectedRepositoryId: "other" }));
   expect(titleInput().disabled).toBe(true);
   await act(async () => useRepositoryStore.setState({ repositoryId: "other" }));
+  expect(titleInput().disabled).toBe(true);
+  await act(async () =>
+    useSessionStore
+      .getState()
+      .change({ kind: "tabs", tabs: ["repo", "other"], selectedRepositoryId: "other" }),
+  );
   expect(titleInput().value).toBe("");
   await typeTitle(titleInput(), "Other repository draft");
+  expect(useSessionStore.getState().snapshot?.drafts["other"]?.message).toBe(
+    "Other repository draft",
+  );
   expect(useSessionStore.getState().snapshot?.drafts["repo"]?.message).toBe("Repository draft");
   await act(async () =>
     useSessionStore.setState({
@@ -457,6 +479,13 @@ it("keeps drafts isolated between repositories and profiles and disables edits d
       },
     }),
   );
+  expect(titleInput().disabled).toBe(true);
+  expect(titleInput().value).toBe("");
+  await act(async () => {
+    const profile = useAppStore.getState().activeIdentity!;
+    useAppStore.setState({ activeIdentity: { ...profile, id: "other-profile" } });
+    useRepositoryStore.setState({ identityId: "other-profile" });
+  });
   expect(titleInput().value).toBe("Other profile draft");
   await act(async () => useSessionStore.setState({ snapshot: null }));
   expect(titleInput().disabled).toBe(true);

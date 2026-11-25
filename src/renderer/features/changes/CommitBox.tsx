@@ -1,13 +1,12 @@
 import { errorAction, errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
-import type { CommitPreview } from "@shared/repository/repository-write";
 import {
   FileInputIcon as FileInput,
   KeyRoundIcon as KeyRound,
   ShieldOffIcon as ShieldOff,
   UserPlusIcon as UserPlus,
 } from "../../components/ui/icons";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "../../components/ui/feedback/Skeleton";
 import {
   Button,
@@ -24,16 +23,14 @@ import {
 import { useAppStore } from "../../stores/app-store";
 import { usePreferencesStore } from "../../stores/preferences-store";
 import { useRepositoryStore } from "../../stores/repository-store";
-import { useSessionStore } from "../../stores/session-store";
 import { DirectPush } from "../sync/DirectPush";
 import { HistorySearch } from "../history/HistorySearch";
+import { useRepositoryRead } from "../../repository/hooks/useRepositoryRead";
 import { useCommitDraft } from "./hooks/useCommitDraft";
 import { CommitMessageEditor } from "../../components/ui/forms/CommitMessageEditor";
 
 export function CommitBox({ pending = false }: { pending?: boolean }) {
-  const [historyOwner, setHistoryOwner] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
-  const [coauthorOpen, setCoauthorOpen] = useState(false);
   const [coauthorName, setCoauthorName] = useState("");
   const [coauthorEmail, setCoauthorEmail] = useState("");
   const [templateMessage, setTemplateMessage] = useState<string | null>(null);
@@ -43,31 +40,11 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
   const writing = useRepositoryStore((state) => state.writing);
   const writeError = useRepositoryStore((state) => state.writeError);
   const commitNotice = useRepositoryStore((state) => state.commitNotice);
-  const repositoryId = useRepositoryStore((state) => state.repositoryId);
-  const [preview, setPreview] = useState<CommitPreview | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-
-    setPreview(null);
-    setPreviewError(null);
-
-    if (!pending && repositoryId)
-      void window.eda.repository.previewCommit(repositoryId).then((result) => {
-        if (!alive) return;
-        if (result.ok) setPreview(result.value);
-        else setPreviewError(errorMessage(result.error));
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, [repositoryId, identity, status, pending, preferences]);
 
   const {
-    snapshot,
-    transitioning,
+    owner,
+    getCurrentDraft,
+    updateDraft,
     draft,
     message,
     amend,
@@ -83,7 +60,51 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
     disabled: messageDisabled,
   } = useCommitDraft(pending);
 
-  const owner = JSON.stringify([snapshot?.context, repositoryId]);
+  const repositoryId = owner?.repositoryId;
+  const [historyOwner, setHistoryOwner] = useState<typeof owner>(null);
+  const [coauthorOwner, setCoauthorOwner] = useState<typeof owner>(null);
+  const templateRequest = useRef(0);
+
+  useEffect(() => {
+    setTemplateMessage(null);
+    return () => {
+      templateRequest.current++;
+    };
+  }, [owner]);
+
+  const insertTemplate = async () => {
+    if (!repositoryId || !getCurrentDraft()) return;
+    const request = ++templateRequest.current;
+    try {
+      const result = await window.eda.repository.commitTemplate(repositoryId);
+      const latest = getCurrentDraft();
+      if (request !== templateRequest.current || !latest) return;
+
+      if (!result.ok) setTemplateMessage(errorMessage(result.error));
+      else if (!result.value)
+        setTemplateMessage(t("commitBox.noCommitTemplateIsConfiguredForThisRepository"));
+      else if (latest.message !== message)
+        setTemplateMessage(t("commitBox.theDraftChangedWhileLoadingInsertTheTemplateAgain"));
+      else {
+        setMessage(message ? `${message}\n\n${result.value}` : result.value);
+        setTemplateMessage(null);
+      }
+    } catch (error) {
+      if (request === templateRequest.current && getCurrentDraft())
+        setTemplateMessage(errorMessage(error));
+    }
+  };
+
+  const previewRequest = useMemo(
+    () => (owner ? { owner, identity, status, preferences } : null),
+    [owner, identity, status, preferences],
+  );
+  const { value: preview, error: previewError } = useRepositoryRead(
+    (request: NonNullable<typeof previewRequest>) =>
+      window.eda.repository.previewCommit(request.owner.repositoryId),
+    previewRequest,
+  );
+
   const limit = preferences.commitSummaryLimit.value;
 
   return (
@@ -122,7 +143,7 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
       >
         <div className="flex flex-col gap-2 pt-2">
           <CommitMessageEditor
-            key={`${snapshot?.context.profileId}:${repositoryId}`}
+            key={JSON.stringify([owner?.context, repositoryId, owner?.generation])}
             message={message}
             onChange={setMessage}
             conventional={preferences.conventionalCommitsEnabled.value}
@@ -135,7 +156,7 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
           <Checkbox
             className="flex items-center gap-1.5 text-xs text-text-secondary"
             checked={amend}
-            disabled={pending || !!snapshot?.recovery || transitioning || !status?.branch.oid}
+            disabled={messageDisabled || writing || (!amend && !status?.branch.oid)}
             onChange={(event) => void setAmend(event.target.checked)}
           >
             {t("commitBox.amendThePreviousCommit")}
@@ -149,13 +170,8 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
                 <Checkbox
                   className="min-w-0 text-xs text-text-secondary"
                   checked={draft.signOff ?? false}
-                  disabled={writing || transitioning}
-                  onChange={(event) => {
-                    if (repositoryId)
-                      useSessionStore
-                        .getState()
-                        .setDraft(repositoryId, { ...draft, signOff: event.target.checked });
-                  }}
+                  disabled={writing || messageDisabled}
+                  onChange={(event) => updateDraft({ signOff: event.target.checked })}
                 >
                   {t("commitBox.addSignedOffByTrailer")}
                 </Checkbox>
@@ -166,8 +182,8 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
                     aria-label={t("commitBox.addCoAuthor")}
                     title={t("commitBox.addCoAuthor")}
                     icon={<UserPlus size={14} aria-hidden="true" />}
-                    disabled={writing || transitioning}
-                    onClick={() => setCoauthorOpen(true)}
+                    disabled={writing || messageDisabled}
+                    onClick={() => setCoauthorOwner(owner)}
                   />
 
                   <IconButton
@@ -175,42 +191,8 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
                     aria-label={t("commitBox.insertGitTemplate")}
                     title={t("commitBox.insertGitTemplate")}
                     icon={<FileInput size={14} aria-hidden="true" />}
-                    disabled={writing || transitioning}
-                    onClick={() => {
-                      if (!repositoryId) return;
-
-                      const owner = snapshot?.context.profileId;
-                      const currentMessage = message;
-
-                      void window.eda.repository.commitTemplate(repositoryId).then((result) => {
-                        const current = useSessionStore.getState();
-
-                        if (
-                          current.snapshot?.context.profileId !== owner ||
-                          current.snapshot?.session.selectedRepositoryId !== repositoryId
-                        )
-                          return;
-
-                        if (!result.ok) setTemplateMessage(errorMessage(result.error));
-                        else if (!result.value)
-                          setTemplateMessage(
-                            t("commitBox.noCommitTemplateIsConfiguredForThisRepository"),
-                          );
-                        else if (
-                          (current.snapshot.drafts[repositoryId]?.message ?? "") !== currentMessage
-                        )
-                          setTemplateMessage(
-                            t("commitBox.theDraftChangedWhileLoadingInsertTheTemplateAgain"),
-                          );
-                        else {
-                          setMessage(
-                            currentMessage ? `${currentMessage}\n\n${result.value}` : result.value,
-                          );
-
-                          setTemplateMessage(null);
-                        }
-                      });
-                    }}
+                    disabled={writing || messageDisabled}
+                    onClick={() => void insertTemplate()}
                   />
                 </div>
               </div>
@@ -265,13 +247,14 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
               />
             )}
 
-          {coauthorOpen && (
+          {owner && coauthorOwner === owner && (
             <Dialog
               title={t("commitBox.coAuthorDialogTitle")}
-              onClose={() => setCoauthorOpen(false)}
+              onClose={() => setCoauthorOwner(null)}
               footer={
                 <Button
                   disabled={
+                    writing ||
                     !coauthorName.trim() ||
                     /[<>\r\n]/.test(coauthorName) ||
                     !/^[^\s<>@]+@[^\s<>@]+$/.test(coauthorEmail)
@@ -283,7 +266,7 @@ export function CommitBox({ pending = false }: { pending?: boolean }) {
 Co-authored-by: ${coauthorName.trim()} <${coauthorEmail.trim()}>`,
                     );
 
-                    setCoauthorOpen(false);
+                    setCoauthorOwner(null);
                   }}
                 >
                   {t("commitBox.insertTrailer")}
