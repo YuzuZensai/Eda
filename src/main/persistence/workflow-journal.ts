@@ -233,15 +233,7 @@ export class WorkflowJournal {
 
     const record = decodeRecord(row);
 
-    if (
-      !record ||
-      record.identity?.id !== row.profileId ||
-      record.id !== row.id ||
-      record.profileId !== row.profileId ||
-      record.repositoryId !== row.repositoryId ||
-      (kind === "local" && !record.branch) ||
-      !isFullObjectId(record.head)
-    )
+    if (!record || (kind === "local" && !record.branch) || !isFullObjectId(record.head))
       return undefined;
 
     return record;
@@ -279,27 +271,7 @@ export class WorkflowJournal {
       .orderBy(desc(workflowJournal.updatedAt))
       .get();
 
-    if (!row) return undefined;
-
-    try {
-      const record = decodeRecord(row);
-
-      if (
-        !record ||
-        record.id !== row.id ||
-        record.profileId !== profileId ||
-        record.repositoryId !== repositoryId ||
-        typeof record.message !== "string" ||
-        typeof record.workflowToken !== "string" ||
-        typeof record.tree !== "string" ||
-        record.identity?.id !== profileId
-      )
-        return undefined;
-
-      return record;
-    } catch {
-      return undefined;
-    }
+    return row ? decodeRecord(row) : undefined;
   }
 }
 

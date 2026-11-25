@@ -31,25 +31,28 @@ beforeEach(() => {
 });
 afterEach(() => db.close());
 
-it("preserves unsupported operation records during startup recovery and pruning", () => {
-  db.insert(operations)
-    .values({
-      id: "future",
-      profileId,
-      version: 2,
-      updatedAt: "2000-01-01T00:00:00.000Z",
+it.each([1, 2])(
+  "preserves unreadable version %i activity during recovery and pruning",
+  (version) => {
+    db.insert(operations)
+      .values({
+        id: "future",
+        profileId,
+        version,
+        updatedAt: "2000-01-01T00:00:00.000Z",
+        record: '{"future":"keep"}',
+      })
+      .run();
+    const store = new OperationRepository(db);
+    store.recover();
+    store.prune(profileId);
+    expect(store.list(profileId)[0]).toMatchObject({ state: "interrupted", output: "" });
+    expect(db.select().from(operations).get()).toMatchObject({
+      version,
       record: '{"future":"keep"}',
-    })
-    .run();
-  const store = new OperationRepository(db);
-  store.recover();
-  store.prune(profileId);
-  expect(store.list(profileId)[0]).toMatchObject({ state: "interrupted", output: "" });
-  expect(db.select().from(operations).get()).toMatchObject({
-    version: 2,
-    record: '{"future":"keep"}',
-  });
-});
+    });
+  },
+);
 
 it("preserves unreadable recovery records without breaking lists or deleting another record", () => {
   const store = new ContentRecoveryRepository(db);
@@ -71,13 +74,18 @@ it("preserves unreadable recovery records without breaking lists or deleting ano
   store.prune(profileId, "repo");
   expect(db.select().from(contentRecovery).get()?.version).toBe(2);
 
-  db.update(contentRecovery)
-    .set({ version: 1, value: JSON.stringify({ ...record, id: "another-row" }) })
-    .run();
-  expect(store.get(profileId, "repo", record.id)).toBeUndefined();
-  expect(store.list(profileId, "repo")).toEqual([]);
-  store.prune(profileId, "repo");
-  expect(db.select().from(contentRecovery).all()).toHaveLength(1);
+  for (const mismatch of [
+    { id: "another-row" },
+    { profileId: "another-profile" },
+    { repositoryId: "another-repo" },
+  ]) {
+    const value = JSON.stringify({ ...record, ...mismatch });
+    db.update(contentRecovery).set({ version: 1, value }).run();
+    expect(store.get(profileId, "repo", record.id)).toBeUndefined();
+    expect(store.list(profileId, "repo")).toEqual([]);
+    store.prune(profileId, "repo");
+    expect(db.select().from(contentRecovery).get()?.value).toBe(value);
+  }
 
   db.raw.exec("PRAGMA ignore_check_constraints = ON");
   db.update(contentRecovery).set({ value: "broken" }).run();
@@ -143,6 +151,7 @@ it.each([
   { exitCode: "failure" },
   { kindKey: "unknown.translation" },
   { durationMs: -1 },
+  { updatedAt: "different timestamp" },
 ])("uses a safe fallback for malformed operation fields: %j", (invalid) => {
   const record = JSON.stringify({
     id: "damaged",

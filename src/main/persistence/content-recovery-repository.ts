@@ -229,7 +229,8 @@ export class ContentRecoveryRepository {
       .select({
         id: contentRecovery.id,
         createdAt: contentRecovery.createdAt,
-        value: sql<string>`CASE WHEN json_valid(${contentRecovery.value}) THEN json_remove(${contentRecovery.value}, '$.files', '$.savedIndex', '$.after', '$.root', '$.profileId', '$.repositoryId') ELSE NULL END`,
+        value: sql<string | null>`CASE WHEN json_valid(${contentRecovery.value}) THEN
+          json_remove(${contentRecovery.value}, '$.files', '$.savedIndex', '$.after', '$.root') END`,
       })
       .from(contentRecovery)
       .where(
@@ -243,11 +244,16 @@ export class ContentRecoveryRepository {
       .all()
       .flatMap((row) => {
         try {
+          if (row.value === null) return [];
           const record: unknown = JSON.parse(row.value);
-          return isRecoverySummary(record) &&
-            record.id === row.id &&
-            record.createdAt === row.createdAt
-            ? [record]
+          if (!isRecord(record)) return [];
+          const { profileId: owner, repositoryId: membership, ...summary } = record;
+          return owner === profileId &&
+            membership === repositoryId &&
+            isRecoverySummary(summary) &&
+            summary.id === row.id &&
+            summary.createdAt === row.createdAt
+            ? [summary]
             : [];
         } catch {
           return [];

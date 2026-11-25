@@ -35,18 +35,22 @@ function isOperationRecord(value: unknown): value is OperationRecord {
   );
 }
 
-function decode(row: typeof operations.$inferSelect): OperationRecord {
+function decode(row: typeof operations.$inferSelect): OperationRecord | undefined {
+  if (row.version !== 1) return undefined;
   try {
     const value: unknown = JSON.parse(row.record);
     if (
-      row.version === 1 &&
       isOperationRecord(value) &&
       value.id === row.id &&
-      value.profileId === row.profileId
+      value.profileId === row.profileId &&
+      value.updatedAt === row.updatedAt
     )
       return value;
   } catch {}
+  return undefined;
+}
 
+function damagedRecord(row: typeof operations.$inferSelect): OperationRecord {
   return {
     id: row.id,
     profileId: row.profileId,
@@ -101,7 +105,7 @@ export class OperationRepository {
       .orderBy(desc(operations.updatedAt))
       .limit(RECENT_OPERATIONS)
       .all()
-      .map(decode);
+      .map((row) => decode(row) ?? damagedRecord(row));
   }
 
   recover(): void {
@@ -121,6 +125,7 @@ export class OperationRepository {
 
     for (const row of candidates) {
       const record = decode(row);
+      if (!record) continue;
 
       if (record.state === "queued" || record.state === "running")
         this.save({
@@ -159,8 +164,8 @@ export class OperationRepository {
 
     const expired = rows
       .filter((row, index) => {
-        if (row.version !== 1) return false;
         const record = decode(row);
+        if (!record) return false;
         return (
           record.state !== "queued" &&
           record.state !== "running" &&
