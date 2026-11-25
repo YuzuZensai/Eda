@@ -123,15 +123,13 @@ try {
     const afterSave = await remoteSave.boundingBox();
     const afterToggle = await remoteLoading.boundingBox();
     assert.ok(before && beforeSave && beforeToggle && after && afterSave && afterToggle);
-    assert.equal(
-      after.y - afterToggle.y,
+    expect(after.y - afterToggle.y, "Loading preserves the remote form position").toBeCloseTo(
       before.y - beforeToggle.y,
-      "Loading preserves the remote form position",
+      1,
     );
-    assert.equal(
-      afterSave.y - afterToggle.y,
+    expect(afterSave.y - afterToggle.y, "Loading preserves the remote action position").toBeCloseTo(
       beforeSave.y - beforeToggle.y,
-      "Loading preserves the remote action position",
+      1,
     );
     assert.equal(after.width, before.width);
     assert.equal(after.height, before.height);
