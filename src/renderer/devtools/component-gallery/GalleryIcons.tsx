@@ -1,212 +1,27 @@
 import { t } from "@shared/i18n";
-import {
-  IconDefaults,
-  ActivityIcon,
-  ArchiveIcon,
-  ArrowDownIcon,
-  ArrowDownToLineIcon,
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  ArrowUpDownIcon,
-  ArrowUpIcon,
-  ArrowUpRightIcon,
-  BookMarkedIcon,
-  BranchIcon,
-  CheckIcon,
-  CherryIcon,
-  ChevronDownIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ChevronUpIcon,
-  CircleAlertIcon,
-  CircleCheckIcon,
-  CircleIcon,
-  CloseIcon,
-  Columns2Icon,
-  CopyIcon,
-  DiffIcon,
-  DownloadIcon,
-  EllipsisIcon,
-  ExternalLinkIcon,
-  EyeOffIcon,
-  FastForwardIcon,
-  FileIcon,
-  FileInputIcon,
-  FlaskConicalIcon,
-  FolderGit2Icon,
-  FolderIcon,
-  FolderOpenIcon,
-  GitCommitHorizontalIcon,
-  GitMergeIcon,
-  GitPullRequestArrowIcon,
-  GlobeIcon,
-  HeartIcon,
-  HistoryIcon,
-  IdentityIcon,
-  ImagePlusIcon,
-  InfoIcon,
-  KeyRoundIcon,
-  LinkIcon,
-  LockKeyholeIcon,
-  MailIcon,
-  MapPinIcon,
-  MaximizeIcon,
-  MinusIcon,
-  MonitorIcon,
-  MoonIcon,
-  PackageCheckIcon,
-  PaletteIcon,
-  PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
-  PanelsTopLeftIcon,
-  PencilIcon,
-  PlugIcon,
-  PlusIcon,
-  RefreshIcon,
-  RestoreIcon,
-  RotateCcwIcon,
-  RotateCwIcon,
-  Rows3Icon,
-  SearchIcon,
-  SearchXIcon,
-  SettingsIcon,
-  ShieldCheckIcon,
-  CircleDashedIcon,
-  CircleHelpIcon,
-  CircleXIcon,
-  ShieldOffIcon,
-  SidebarIcon,
-  SlidersHorizontalIcon,
-  SpinnerIcon,
-  SquareArrowOutUpRightIcon,
-  SquareIcon,
-  StarIcon,
-  SunIcon,
-  TagIcon,
-  Trash2Icon,
-  TreeIcon,
-  TriangleAlertIcon,
-  Undo2Icon,
-  UnplugIcon,
-  UploadIcon,
-  UserPlusIcon,
-  UsersRoundIcon,
-} from "../../components/ui/icons";
+import * as sharedIcons from "../../components/ui/icons";
 import { Name, Sample } from "./GallerySample";
 
-const ICONS = {
-  ActivityIcon,
-  ArchiveIcon,
-  ArrowDownIcon,
-  ArrowDownToLineIcon,
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  ArrowUpDownIcon,
-  ArrowUpIcon,
-  ArrowUpRightIcon,
-  BookMarkedIcon,
-  BranchIcon,
-  CheckIcon,
-  CherryIcon,
-  ChevronDownIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  ChevronUpIcon,
-  CircleAlertIcon,
-  CircleCheckIcon,
-  CircleIcon,
-  CloseIcon,
-  Columns2Icon,
-  CopyIcon,
-  DiffIcon,
-  DownloadIcon,
-  EllipsisIcon,
-  ExternalLinkIcon,
-  EyeOffIcon,
-  FastForwardIcon,
-  FileIcon,
-  FileInputIcon,
-  FlaskConicalIcon,
-  FolderGit2Icon,
-  FolderIcon,
-  FolderOpenIcon,
-  GitCommitHorizontalIcon,
-  GitMergeIcon,
-  GitPullRequestArrowIcon,
-  GlobeIcon,
-  HeartIcon,
-  HistoryIcon,
-  IdentityIcon,
-  ImagePlusIcon,
-  InfoIcon,
-  KeyRoundIcon,
-  LinkIcon,
-  LockKeyholeIcon,
-  MailIcon,
-  MapPinIcon,
-  MaximizeIcon,
-  MinusIcon,
-  MonitorIcon,
-  MoonIcon,
-  PackageCheckIcon,
-  PaletteIcon,
-  PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
-  PanelsTopLeftIcon,
-  PencilIcon,
-  PlugIcon,
-  PlusIcon,
-  RefreshIcon,
-  RestoreIcon,
-  RotateCcwIcon,
-  RotateCwIcon,
-  Rows3Icon,
-  SearchIcon,
-  SearchXIcon,
-  SettingsIcon,
-  ShieldCheckIcon,
-  CircleDashedIcon,
-  CircleHelpIcon,
-  CircleXIcon,
-  ShieldOffIcon,
-  SidebarIcon,
-  SlidersHorizontalIcon,
-  SpinnerIcon,
-  SquareArrowOutUpRightIcon,
-  SquareIcon,
-  StarIcon,
-  SunIcon,
-  TagIcon,
-  Trash2Icon,
-  TreeIcon,
-  TriangleAlertIcon,
-  Undo2Icon,
-  UnplugIcon,
-  UploadIcon,
-  UserPlusIcon,
-  UsersRoundIcon,
-};
+const { IconDefaults, ICON_SIZE, ...icons } = sharedIcons;
 
 export function GalleryIcons() {
   return (
-    <>
-      <Sample id="gallery-icons" title={t("settings.componentGallery.icons")}>
-        <IconDefaults>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-            {Object.entries(ICONS).map(([name, Icon]) => (
-              <div
-                key={name}
-                className="gallery-icon flex min-w-0 items-center gap-2 rounded-md border border-border-subtle bg-bg-inset px-3 py-3 text-xs text-text-secondary"
-              >
-                <Icon aria-hidden="true" />
-                <span className="min-w-0 truncate">{name}</span>
-              </div>
-            ))}
-          </div>
-        </IconDefaults>
+    <Sample id="gallery-icons" title={t("settings.componentGallery.icons")}>
+      <IconDefaults>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          {Object.entries(icons).map(([name, Icon]) => (
+            <div
+              key={name}
+              className="gallery-icon flex min-w-0 items-center gap-2 rounded-md border border-border-subtle bg-bg-inset px-3 py-3 text-xs text-text-secondary"
+            >
+              <Icon size={ICON_SIZE} aria-hidden="true" />
+              <span className="min-w-0 truncate">{name}</span>
+            </div>
+          ))}
+        </div>
+      </IconDefaults>
 
-        <Name>{t("settings.componentGallery.iconDefaultsIconsTsx")}</Name>
-      </Sample>
-    </>
+      <Name>{t("settings.componentGallery.iconDefaultsIconsTsx")}</Name>
+    </Sample>
   );
 }
