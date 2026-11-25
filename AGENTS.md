@@ -7,7 +7,7 @@ Follow these guidelines unless the user asks otherwise.
 
 ## Before editing
 
-1. Read the files you plan to change, their exports and callers, and the relevant tests. Search for the same behavior before adding code. Reuse what fits or extend it if that is simpler than a second implementation.
+1. Read the files you plan to change, their exports and callers, and the relevant tests. Before adding code, look for an existing helper or implementation you can reuse or extend.
 2. Be clear about what the change should achieve and how you'll check it. State assumptions that affect the result. Look for answers in the code first. Ask if the remaining uncertainty would change your approach.
 3. Speak up if there's a simpler solution. If you don't understand a requirement or an existing design, explain what's unclear before building on it.
 4. Keep changes focused. Remove code your change makes obsolete, but leave unrelated cleanup and formatting for a separate task. When a broader refactor is requested, work within that scope.
