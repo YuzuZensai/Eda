@@ -297,3 +297,45 @@ it.each(["success", "failure"])(
     }
   },
 );
+
+it("keeps a profile switch from starting while deletion flushes the session", async () => {
+  const { useSessionStore } = await import("@renderer/stores/session-store");
+  const flush = deferred<boolean>();
+  const saving = vi.spyOn(useSessionStore.getState(), "flush").mockReturnValue(flush.promise);
+  const app = useAppStore.getState();
+  try {
+    reset();
+    const deleting = app.deleteIdentity("work", "token");
+    const switching = app.setActiveIdentity("home");
+    expect(useAppStore.getState().switchingIdentityId).toBe("work");
+    expect(useSessionStore.getState().transitioning).toBe(true);
+    flush.resolve(false);
+    expect(await deleting).toBe(false);
+    await switching;
+    expect(useSessionStore.getState().transitioning).toBe(false);
+    expect(useAppStore.getState().switchingIdentityId).toBeNull();
+  } finally {
+    flush.resolve(false);
+    saving.mockRestore();
+    useAppStore.setState(app);
+  }
+});
+
+it("discards a folder chosen for a profile that is no longer active", async () => {
+  const folder = deferred<Result<string | null>>();
+  const open = vi.fn(async () => ok(repo("a")));
+  const app = useAppStore.getState();
+  install(identity("work"), []);
+  window.eda.repository.chooseFolder = () => folder.promise;
+  window.eda.repository.open = open;
+  try {
+    useAppStore.setState({ activeIdentity: identity("work") });
+    const adding = app.addRepository();
+    useAppStore.setState({ activeIdentity: identity("home") });
+    folder.resolve(ok("/work/repo"));
+    await adding;
+    expect(open).not.toHaveBeenCalled();
+  } finally {
+    useAppStore.setState(app);
+  }
+});

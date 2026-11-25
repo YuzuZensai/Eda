@@ -1,4 +1,4 @@
-import { errorMessage } from "@shared/errors";
+import { errorMessage, type Result } from "@shared/errors";
 import {
   emptyView,
   type CommitDraft,
@@ -37,6 +37,22 @@ const pending: { context: SessionSnapshot["context"]; change: SessionChange }[] 
 let worker: Promise<boolean> | null = null;
 let loadGeneration = 0;
 
+async function restoreSession(
+  read: () => Promise<Result<SessionSnapshot | null>>,
+  current: () => boolean,
+): Promise<boolean> {
+  try {
+    const result = await read();
+    if (!current()) return false;
+    if (result.ok) useSessionStore.setState({ snapshot: result.value, error: null });
+    else useSessionStore.setState({ error: errorMessage(result.error) });
+    return result.ok;
+  } catch (error) {
+    if (current()) useSessionStore.setState({ error: errorMessage(error) });
+    return false;
+  }
+}
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   snapshot: null,
   error: null,
@@ -46,64 +62,47 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   async load() {
     const generation = ++loadGeneration;
     const context = get().snapshot?.context;
-    const current = () =>
-      generation === loadGeneration &&
-      get().snapshot?.context.profileId === context?.profileId &&
-      get().snapshot?.context.windowId === context?.windowId &&
-      get().snapshot?.context.generation === context?.generation;
+    const current = () => generation === loadGeneration && get().snapshot?.context === context;
 
     if (!(await get().flush()) || !current()) return false;
-
-    try {
-      const result = await window.eda.sessions.open();
-
-      if (!current()) return false;
-      if (!result.ok) {
-        set({ error: errorMessage(result.error) });
-        return false;
-      }
-
-      set({ snapshot: result.value, error: null });
-
-      return true;
-    } catch (error) {
-      if (current()) set({ error: errorMessage(error) });
-      return false;
-    }
+    return restoreSession(() => window.eda.sessions.open(), current);
   },
   change(change) {
     const snapshot = get().snapshot;
 
     if (!snapshot || snapshot.recovery || get().transitioning) return;
 
-    const next = structuredClone(snapshot);
+    const next = { ...snapshot };
+    let draftRevisions = get().draftRevisions;
 
     if (change.kind === "tabs") {
-      const previousId = next.session.selectedRepositoryId;
+      const { selectedRepositoryId, views } = snapshot.session;
       const previous =
-        (previousId ? next.session.views[previousId] : undefined) ??
-        Object.values(next.session.views)[0];
+        (selectedRepositoryId ? views[selectedRepositoryId] : undefined) ?? Object.values(views)[0];
+      const id = change.selectedRepositoryId;
+      next.session = { ...snapshot.session, tabs: change.tabs, selectedRepositoryId: id };
 
-      if (previous && change.selectedRepositoryId) {
-        const id = change.selectedRepositoryId;
-
-        next.session.views[id] = {
-          ...(next.session.views[id] ?? emptyView()),
-          ...sharedLayout(previous),
-        };
+      if (previous && id && views[id] !== previous) {
+        const view = { ...(views[id] ?? emptyView()), ...sharedLayout(previous) };
+        next.session.views = { ...views, [id]: view };
         pending.push({
           context: snapshot.context,
-          change: { kind: "view", repositoryId: id, view: next.session.views[id]! },
+          change: { kind: "view", repositoryId: id, view },
         });
       }
+    } else if (change.kind === "view") {
+      next.session = {
+        ...snapshot.session,
+        views: { ...snapshot.session.views, [change.repositoryId]: change.view },
+      };
+    } else {
+      next.drafts = { ...snapshot.drafts, [change.repositoryId]: change.draft };
+      const key = `${snapshot.context.profileId}:${change.repositoryId}`;
+      draftRevisions = { ...draftRevisions, [key]: (draftRevisions[key] ?? 0) + 1 };
+    }
 
-      next.session.tabs = change.tabs;
-      next.session.selectedRepositoryId = change.selectedRepositoryId;
-    } else if (change.kind === "view") next.session.views[change.repositoryId] = change.view;
-    else next.drafts[change.repositoryId] = change.draft;
-
-    set({ snapshot: next });
     pending.push({ context: snapshot.context, change });
+    set({ snapshot: next, draftRevisions });
     void get().flush();
   },
   setView(repositoryId, patch) {
@@ -129,60 +128,53 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     get().change({ kind: "view", repositoryId, view });
   },
   setDraft(repositoryId, draft) {
-    const key = `${get().snapshot?.context.profileId}:${repositoryId}`;
-    set({
-      draftRevisions: { ...get().draftRevisions, [key]: (get().draftRevisions[key] ?? 0) + 1 },
-    });
     get().change({ kind: "draft", repositoryId, draft });
   },
   async flush() {
     if (worker) return worker;
     if (!pending.length) return true;
 
-    set({ saving: true, error: null });
-    worker = (async () => {
-      try {
-        while (pending.length) {
-          const item = pending[0]!;
-          const result = await window.eda.sessions.change(item.context, item.change);
+    worker = Promise.resolve()
+      .then(async () => {
+        try {
+          while (pending.length) {
+            const item = pending[0]!;
+            const result = await window.eda.sessions.change(item.context, item.change);
 
-          if (!result.ok) {
-            set({ error: errorMessage(result.error) });
-            return false;
+            if (!result.ok) {
+              set({ error: errorMessage(result.error) });
+              return false;
+            }
+
+            pending.shift();
           }
 
-          pending.shift();
+          return true;
+        } catch (error) {
+          set({ error: errorMessage(error) });
+          return false;
+        } finally {
+          worker = null;
+          set({ saving: false });
         }
-
-        return true;
-      } catch (error) {
-        set({ error: errorMessage(error) });
-        return false;
-      } finally {
-        set({ saving: false });
-      }
-    })();
-
-    const result = await worker;
-
-    worker = null;
-
-    return result;
+      })
+      .then((saved) => {
+        // A subscriber can queue another edit when saving turns false.
+        if (saved && worker) return worker;
+        return saved && pending.length === 0;
+      });
+    set({ saving: true, error: null });
+    return worker;
   },
   async reset() {
+    const generation = loadGeneration;
     const context = get().snapshot?.context;
 
-    if (!context || pending.length) return false;
+    if (!context || pending.length || get().transitioning) return false;
 
-    const result = await window.eda.sessions.reset(context);
-
-    if (!result.ok) {
-      set({ error: errorMessage(result.error) });
-      return false;
-    }
-
-    set({ snapshot: result.value, error: null });
-
-    return true;
+    return restoreSession(
+      () => window.eda.sessions.reset(context),
+      () => generation === loadGeneration && get().snapshot?.context === context,
+    );
   },
 }));

@@ -307,29 +307,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   async setActiveIdentity(id) {
-    if (get().switchingIdentityId !== null) return;
-
-    identityRefreshGeneration += 1;
-    set({ switchingIdentityId: id });
-    useSessionStore.setState({ transitioning: true });
-
     try {
-      if (!(await useSessionStore.getState().flush())) return;
+      await transitionProfile(id, async () => {
+        const result = await window.eda.identity.setActive(id);
+        if (!result.ok) {
+          set({ error: result.error });
+          return false;
+        }
 
-      const result = await window.eda.identity.setActive(id);
-
-      if (!result.ok) {
-        set({ error: result.error });
-        return;
-      }
-
-      if (result.value.session)
-        useSessionStore.setState({ snapshot: result.value.session, error: null });
-
-      useRepositoryStore.getState().clear();
-      set({ selectedRepositoryId: null });
-      await get().refreshIdentities();
-      await get().refreshRepositories();
+        if (result.value.session)
+          useSessionStore.setState({ snapshot: result.value.session, error: null });
+        set({ selectedRepositoryId: null });
+        return true;
+      });
     } catch {
       set({
         error: new GitError({
@@ -338,9 +328,6 @@ export const useAppStore = create<AppState>((set, get) => ({
           message: errorText("errors.unexpected"),
         }).toData(),
       });
-    } finally {
-      useSessionStore.setState({ transitioning: false });
-      set({ switchingIdentityId: null });
     }
   },
 
@@ -376,34 +363,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   async deleteIdentity(id, token) {
-    if (!(await useSessionStore.getState().flush())) return false;
-
-    identityRefreshGeneration += 1;
-    set({ switchingIdentityId: id });
-    useSessionStore.setState({ transitioning: true });
-
-    try {
+    return transitionProfile(id, async () => {
       const result = await window.eda.identity.delete(id, token);
-
-      if (!result.ok) {
-        set({ error: result.error });
-        return false;
-      }
-
-      useRepositoryStore.getState().clear();
-      await get().refreshIdentities();
-      await get().refreshRepositories();
-
-      return true;
-    } finally {
-      useSessionStore.setState({ transitioning: false });
-      set({ switchingIdentityId: null });
-    }
+      if (!result.ok) set({ error: result.error });
+      return result.ok;
+    });
   },
 
   async addRepository() {
-    const chosen = await window.eda.repository.chooseFolder();
+    const profileId = get().activeIdentity?.id;
+    const context = useSessionStore.getState().snapshot?.context;
+    const current = () =>
+      get().activeIdentity?.id === profileId &&
+      get().switchingIdentityId === null &&
+      useSessionStore.getState().snapshot?.context === context;
 
+    if (!current()) return;
+    const chosen = await window.eda.repository.chooseFolder();
+    if (!current()) return;
     if (!chosen.ok) {
       set({ error: chosen.error });
       return;
@@ -412,6 +389,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (chosen.value === null) return;
 
     const opened = await window.eda.repository.open(chosen.value);
+    if (!current()) return;
 
     if (!opened.ok) {
       set({ error: opened.error });
@@ -419,13 +397,33 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     await get().refreshRepositories();
-    get().selectRepository(opened.value.id);
+    if (current()) get().selectRepository(opened.value.id);
   },
 
   dismissError() {
     set({ error: null });
   },
 }));
+
+async function transitionProfile(id: string, change: () => Promise<boolean>): Promise<boolean> {
+  const app = useAppStore.getState();
+  if (app.switchingIdentityId !== null) return false;
+
+  identityRefreshGeneration++;
+  useAppStore.setState({ switchingIdentityId: id });
+  useSessionStore.setState({ transitioning: true });
+  try {
+    if (!(await useSessionStore.getState().flush()) || !(await change())) return false;
+
+    useRepositoryStore.getState().clear();
+    await app.refreshIdentities();
+    await app.refreshRepositories();
+    return true;
+  } finally {
+    useSessionStore.setState({ transitioning: false });
+    useAppStore.setState({ switchingIdentityId: null });
+  }
+}
 
 function saveTabs(state: AppState): void {
   const profileId = state.activeIdentity?.id;

@@ -1,3 +1,4 @@
+import { deferred } from "../../helpers/deferred";
 import { errorFixture } from "../../helpers/error";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { err, ok, type Result } from "@shared/errors";
@@ -92,12 +93,10 @@ describe("session save acknowledgements", () => {
   });
 
   it("captures the original profile when draft writes wait in a queue", async () => {
-    let release!: () => void;
+    const saving = deferred<void>();
 
     save.mockImplementationOnce(async () => {
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
+      await saving.promise;
       return ok(undefined);
     });
 
@@ -105,9 +104,9 @@ describe("session save acknowledgements", () => {
 
     store.setDraft("repo", { version: 1, message: "first", amend: false });
     store.setDraft("repo", { version: 1, message: "second", amend: true });
-    expect(save).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1));
 
-    release();
+    saving.resolve();
     expect(await store.flush()).toBe(true);
     expect(save.mock.calls.map((call) => call[0].profileId)).toEqual(["work", "work"]);
     expect(useSessionStore.getState().snapshot?.drafts["repo"]).toEqual({
@@ -117,7 +116,7 @@ describe("session save acknowledgements", () => {
     });
   });
 
-  it("keeps input and the old context after a failed save; retry acknowledges it", async () => {
+  it("keeps input and the old context after a failed save and acknowledges it on retry", async () => {
     save.mockResolvedValueOnce(
       err(errorFixture({ kind: "unknown", operation: "save", message: "Disk full" })),
     );
@@ -181,4 +180,81 @@ it("keeps a newer switched session when an earlier session load finishes", async
   finish(ok(snapshot("old")));
   expect(await loading).toBe(false);
   expect(useSessionStore.getState().snapshot?.context.profileId).toBe("new");
+});
+
+it.each(["reset", "load"])(
+  "restores the new profile when %s finishes first during a recovery reset",
+  async (first) => {
+    const reset = deferred<Result<SessionSnapshot | null>>();
+    const open = deferred<Result<SessionSnapshot | null>>();
+    window.eda.sessions.reset = () => reset.promise;
+    window.eda.sessions.open = vi.fn(() => open.promise);
+    useSessionStore.setState({ snapshot: { ...snapshot(), recovery: "Unsupported layout" } });
+    const store = useSessionStore.getState();
+    const resetting = store.reset();
+    const loading = store.load();
+    await vi.waitFor(() => expect(window.eda.sessions.open).toHaveBeenCalled());
+    if (first === "reset") {
+      reset.resolve(ok(snapshot()));
+      await resetting;
+    }
+    open.resolve(ok(snapshot("home")));
+    await loading;
+    reset.resolve(ok(snapshot()));
+    expect(await resetting).toBe(false);
+    expect(await loading).toBe(true);
+    expect(useSessionStore.getState().snapshot?.context.profileId).toBe("home");
+  },
+);
+
+it("reports a rejected recovery request and allows retry", async () => {
+  window.eda.sessions.reset = vi
+    .fn()
+    .mockRejectedValueOnce(new Error())
+    .mockResolvedValue(ok(snapshot()));
+  useSessionStore.setState({ snapshot: { ...snapshot(), recovery: "Unsupported layout" } });
+  const store = useSessionStore.getState();
+  expect(await store.reset()).toBe(false);
+  expect(useSessionStore.getState().error).toBeTruthy();
+  expect(await store.reset()).toBe(true);
+  expect(useSessionStore.getState().error).toBeNull();
+});
+
+it("waits for edits made as a previous save completes before acknowledging a flush", async () => {
+  const last = deferred<Result<void>>();
+  save.mockResolvedValueOnce(ok(undefined)).mockReturnValueOnce(last.promise);
+  const store = useSessionStore.getState();
+  const unsubscribe = useSessionStore.subscribe((state, previous) => {
+    if (previous.saving && !state.saving) {
+      unsubscribe();
+      store.setDraft("repo", { version: 1, message: "second", amend: false });
+    }
+  });
+  try {
+    store.setDraft("repo", { version: 1, message: "first", amend: false });
+    const flushing = store.flush();
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    last.resolve(err(errorFixture({ message: "Disk full" })));
+    expect(await flushing).toBe(false);
+  } finally {
+    unsubscribe();
+    last.resolve(ok(undefined));
+  }
+});
+
+it("persists nested draft changes in the same order as the visible edits", async () => {
+  const store = useSessionStore.getState();
+  const unsubscribe = useSessionStore.subscribe((state) => {
+    if (state.snapshot?.drafts["repo"]?.message === "first") {
+      unsubscribe();
+      store.setDraft("repo", { version: 1, message: "second", amend: true });
+    }
+  });
+  try {
+    store.setDraft("repo", { version: 1, message: "first", amend: false });
+    expect(await store.flush()).toBe(true);
+    expect(save.mock.calls.at(-1)?.[1]).toMatchObject({ draft: { message: "second" } });
+  } finally {
+    unsubscribe();
+  }
 });
