@@ -2,35 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentStatus, UnlockKeyRequest } from "@shared/identity/ssh";
 import { openInMemoryDatabase } from "@main/persistence/database";
 import { IdentityRepository } from "@main/persistence/identity-repository";
-import type { SecretStore } from "@main/secrets/secret-store";
+import { MemorySecrets } from "../../helpers/memory-secrets";
 import { secretKeys } from "@main/secrets/secret-store";
 import { CredentialService } from "@main/credentials/credential-service";
-
-class MemorySecrets implements SecretStore {
-  readonly values = new Map<string, string>();
-
-  constructor(
-    readonly available = true,
-    readonly unavailableReason?: string,
-  ) {}
-
-  async get(key: string) {
-    return this.values.get(key);
-  }
-
-  async set(key: string, value: string) {
-    this.values.set(key, value);
-  }
-
-  async delete(key: string) {
-    this.values.delete(key);
-  }
-
-  async deleteForIdentity(identityId: string) {
-    for (const key of this.values.keys())
-      if (key.startsWith(`identity:${identityId}:`)) this.values.delete(key);
-  }
-}
 
 const setup = (secrets = new MemorySecrets()) => {
   const identities = new IdentityRepository(openInMemoryDatabase());

@@ -1,7 +1,6 @@
-import { OAuthCredentials, type AuthorizedAccount } from "./oauth-credentials";
+import { OAuthCredentials } from "./oauth-credentials";
 import {
   requestOAuth,
-  readOAuthTokens,
   tokenText as text,
   tokenSeconds as secondsValue,
   type OAuthTokens as Tokens,
@@ -24,18 +23,14 @@ import type {
 } from "../persistence/provider-account-repository";
 import type { SecretStore } from "../secrets/secret-store";
 import { ProviderProfileCache } from "./provider-profile-cache";
-import { listProviderRepositories } from "./provider-repositories";
 import { GitLabOAuthCallback } from "./gitlab-oauth-callback";
 import { gitLabProfileDetails, type GitLabProfileDetails } from "./gitlab-profile";
 
 const TOKEN_URL = "https://gitlab.com/oauth/token";
 const USER_URL = "https://gitlab.com/api/v4/user";
 
-const fail = (
-  message: ErrorText,
-  kind:
-    "invalid-input" | "network-failed" | "auth-failed" | "keychain-unavailable" = "invalid-input",
-) => new GitError({ kind, operation: t("operations.gitLabSignIn"), message });
+const fail = (message: ErrorText) =>
+  new GitError({ kind: "invalid-input", operation: t("operations.gitLabSignIn"), message });
 
 interface Pending {
   profileId: string;
@@ -55,12 +50,18 @@ export class GitLabAuth {
   private readonly pending = new Map<string, Pending>();
 
   constructor(
-    private readonly accounts: ProviderAccountRepository,
-    private readonly secrets: SecretStore,
+    accounts: ProviderAccountRepository,
+    secrets: SecretStore,
     private readonly fetch: typeof globalThis.fetch,
     private readonly now = Date.now,
   ) {
-    this.credentialsStore = new OAuthCredentials("gitlab", accounts, secrets, now);
+    this.credentialsStore = new OAuthCredentials(
+      "gitlab",
+      accounts,
+      secrets,
+      now,
+      (account, refreshToken) => this.refresh(account, refreshToken),
+    );
     this.profiles = new ProviderProfileCache(now);
   }
 
@@ -69,38 +70,25 @@ export class GitLabAuth {
   }
 
   async profile(profileId: string): Promise<GitLabProfileDetails | null> {
-    const account = this.accounts.find(profileId);
-    if (
-      !account ||
-      !this.credentialsStore.owns(account) ||
-      this.credentialsStore.authorized.has(profileId)
-    )
-      return null;
+    const account = this.credentialsStore.visibleAccount(profileId);
+    if (!account) return null;
 
     const details = await this.profiles.get(account.credentialRef, async () => {
-      const credentials = await this.credentials(account);
+      const credentials = await this.credentialsStore.credentials(account);
       const user = await this.request(USER_URL, undefined, undefined, credentials.password);
 
-      if (
-        String(user["id"]) !== account.accountId ||
-        this.accounts.find(profileId)?.credentialRef !== account.credentialRef
-      )
+      if (String(user["id"]) !== account.accountId || !this.credentialsStore.isCurrent(account))
         return null;
 
       return gitLabProfileDetails(account.accountId, user);
     });
 
-    return this.accounts.find(profileId)?.credentialRef === account.credentialRef ? details : null;
+    return this.credentialsStore.isCurrent(account) ? details : null;
   }
 
   profileUrl(profileId: string): string {
-    const account = this.accounts.find(profileId);
-    if (
-      !account ||
-      !this.credentialsStore.owns(account) ||
-      this.credentialsStore.authorized.has(profileId)
-    )
-      throw fail(errorText("main.providers.gitlabAuth.connectAGitLabAccountFirst"));
+    const account = this.credentialsStore.visibleAccount(profileId);
+    if (!account) throw fail(errorText("main.providers.gitlabAuth.connectAGitLabAccountFirst"));
     const login = account.login;
     if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$/.test(login))
       throw fail(errorText("main.providers.gitlabAuth.theGitLabAccountProfileIsInvalid"));
@@ -108,7 +96,7 @@ export class GitLabAuth {
   }
 
   async begin(profileId: string): Promise<GitLabSignIn> {
-    this.requireStorage();
+    this.credentialsStore.requireStorage();
     this.cancelAll();
     const signIn = { id: randomUUID(), expiresAt: this.now() + 10 * 60_000 };
     const state = randomBytes(32).toString("base64url");
@@ -202,7 +190,7 @@ export class GitLabAuth {
     );
 
     if (response["error"]) throw this.oauthError(response["error"]);
-    const tokens = this.tokens(response, this.clientId);
+    const tokens = this.tokens(response);
     const user = await this.request(USER_URL, undefined, controller.signal, tokens.accessToken);
 
     if (
@@ -214,29 +202,25 @@ export class GitLabAuth {
 
     this.requirePending(profileId, signIn.id);
 
-    const candidate: AuthorizedAccount = {
+    const accountId = String(user["id"]);
+    await this.credentialsStore.commit({
       signInId: signIn.id,
       profileId,
-      accountId: String(user["id"]),
+      accountId,
       login: user["username"] as string,
       tokens,
-    };
-
-    this.credentialsStore.authorized.set(profileId, candidate);
-    await this.credentialsStore.commit(candidate);
+    });
     this.requirePending(profileId, signIn.id);
-    const account = this.accounts.find(profileId);
+    const account = this.credentialsStore.visibleAccount(profileId);
 
-    if (account?.accountId === candidate.accountId)
-      this.profiles.set(account.credentialRef, gitLabProfileDetails(candidate.accountId, user));
+    if (account?.accountId === accountId)
+      this.profiles.set(account.credentialRef, gitLabProfileDetails(accountId, user));
 
     session.result = this.status(profileId);
   }
 
   cancel(profileId: string, id: string): void {
-    if (this.credentialsStore.authorized.get(profileId)?.signInId === id) {
-      this.credentialsStore.authorized.delete(profileId);
-    }
+    this.credentialsStore.cancel(profileId, id);
 
     const pending = this.pending.get(id);
     if (pending?.profileId !== profileId) return;
@@ -246,13 +230,13 @@ export class GitLabAuth {
   }
 
   cancelProfile(profileId: string): void {
-    this.credentialsStore.authorized.delete(profileId);
+    this.credentialsStore.cancel(profileId);
     for (const [id, pending] of this.pending)
       if (pending.profileId === profileId) this.cancel(profileId, id);
   }
 
   cancelAll(): void {
-    this.credentialsStore.authorized.clear();
+    this.credentialsStore.cancelAll();
     for (const [id, pending] of this.pending) this.cancel(pending.profileId, id);
   }
 
@@ -263,88 +247,32 @@ export class GitLabAuth {
   }
 
   selectAccount(profileId: string, accountId: string) {
-    const selected = this.accounts.find(profileId, accountId);
-    if (!selected || !this.credentialsStore.owns(selected))
-      throw fail(errorText("main.providerRepositories.signInRequired"));
-    this.cancelProfile(profileId);
-    this.accounts.save(selected);
-    return this.status(profileId);
+    return this.credentialsStore.selectAccount(profileId, accountId, () =>
+      this.cancelProfile(profileId),
+    );
   }
 
   async disconnect(profileId: string): Promise<void> {
     this.cancelProfile(profileId);
-    const account = this.accounts.find(profileId);
-    if (!account) return;
-    this.requireStorage();
-    if (this.credentialsStore.owns(account)) await this.secrets.delete(account.credentialRef);
-    this.accounts.delete(profileId, account.credentialRef);
-    this.profiles.delete(account.credentialRef);
+    const account = await this.credentialsStore.disconnect(profileId);
+    if (account) this.profiles.delete(account.credentialRef);
   }
 
   async forFetch(profileId: string, url: string): Promise<TransportCredentials | undefined> {
     if (!isGitLabHttps(url)) return undefined;
 
-    if (this.credentialsStore.authorized.has(profileId))
-      throw fail(
-        errorText("main.providers.gitlabAuth.finishConnectingGitLabInProfileSettingsThenRetry"),
-        "auth-failed",
-      );
-
-    const account = this.accounts.find(profileId);
-    if (!account) return undefined;
-    return this.credentials(account);
+    return this.credentialsStore.forFetch(profileId);
   }
 
-  async repositories(profileId: string, page = 1) {
-    const account = this.accounts.find(profileId);
-
-    if (!account || this.credentialsStore.authorized.has(profileId))
-      throw fail(errorText("main.providerRepositories.signInRequired"), "auth-failed");
-
-    const credentials = await this.credentials(account);
-
-    const result = await listProviderRepositories(
-      this.fetch,
-      "gitlab",
-      credentials.password,
-      page,
-      undefined,
-      profileId,
-    );
-    if (this.accounts.find(profileId)?.credentialRef !== account.credentialRef)
-      throw fail(errorText("main.providerRepositories.signInRequired"));
-    return result;
+  repositories(profileId: string, page = 1) {
+    return this.credentialsStore.repositories(profileId, page, this.fetch);
   }
 
-  private async credentials(account: SavedProviderAccount): Promise<TransportCredentials> {
-    this.requireStorage();
-
-    if (account.state !== "connected")
-      throw fail(
-        errorText("main.providers.gitlabAuth.reconnectGitLabInTheIntegrationsSectionOf"),
-        "auth-failed",
-      );
-
-    const tokens = await this.credentialsStore.currentTokens(
-      account,
-      () => this.readTokens(account),
-      (saved) => this.refresh(account, saved),
-    );
-
-    return { username: "oauth2", password: tokens.accessToken };
-  }
-
-  private async refresh(account: SavedProviderAccount, tokens: Tokens): Promise<Tokens> {
-    if (
-      !tokens.refreshToken ||
-      (tokens.refreshExpiresAt !== undefined && tokens.refreshExpiresAt <= this.now())
-    )
-      return this.expired(account);
-
+  private async refresh(account: SavedProviderAccount, refreshToken: string): Promise<Tokens> {
     const response = await this.request(TOKEN_URL, {
-      client_id: tokens.clientId,
+      client_id: this.clientId,
       grant_type: "refresh_token",
-      refresh_token: tokens.refreshToken,
+      refresh_token: refreshToken,
       redirect_uri: INTEGRATIONS.gitlab.redirectUri,
     });
 
@@ -352,47 +280,20 @@ export class GitLabAuth {
       if (
         ["bad_refresh_token", "expired_token", "invalid_grant"].includes(String(response["error"]))
       )
-        return this.expired(account);
+        return this.credentialsStore.expired(account);
 
       throw this.oauthError(response["error"]);
     }
 
-    const refreshed = this.tokens(response, tokens.clientId);
+    const refreshed = this.tokens(response);
     const user = await this.request(USER_URL, undefined, undefined, refreshed.accessToken);
-    if (String(user["id"]) !== account.accountId) return this.expired(account);
-    const current = this.accounts.find(account.profileId);
-
-    if (current?.credentialRef !== account.credentialRef)
-      throw fail(
-        errorText("main.providers.gitlabAuth.theGitLabAccountChangedRetryThePull"),
-        "auth-failed",
-      );
-
-    await this.secrets.set(account.credentialRef, JSON.stringify(refreshed));
-
+    if (String(user["id"]) !== account.accountId) return this.credentialsStore.expired(account);
+    await this.credentialsStore.saveRefreshed(account, refreshed);
     this.profiles.set(account.credentialRef, gitLabProfileDetails(account.accountId, user));
-
     return refreshed;
   }
 
-  private expired(account: SavedProviderAccount): never {
-    if (this.accounts.find(account.profileId)?.credentialRef === account.credentialRef)
-      this.accounts.save({ ...account, state: "expired" });
-
-    throw fail(
-      errorText("main.providers.gitlabAuth.yourGitLabLoginExpiredReconnectGitLabThenRetryThePull"),
-      "auth-failed",
-    );
-  }
-
-  private async readTokens(account: SavedProviderAccount): Promise<Tokens> {
-    if (!this.credentialsStore.owns(account)) return this.expired(account);
-    const raw = await this.secrets.get(account.credentialRef);
-    const tokens = readOAuthTokens(raw, this.clientId);
-    return tokens ? tokens : this.expired(account);
-  }
-
-  private tokens(response: Record<string, unknown>, clientId: string): Tokens {
+  private tokens(response: Record<string, unknown>): Tokens {
     const accessToken = text(response["access_token"]);
     const refreshToken = text(response["refresh_token"]);
     const expires = secondsValue(response["expires_in"]);
@@ -411,7 +312,7 @@ export class GitLabAuth {
       throw fail(errorText("main.providers.gitlabAuth.gitLabReturnedAnInvalidAccessTokenResponse"));
 
     return {
-      clientId,
+      clientId: this.clientId,
       accessToken,
       ...(expires ? { expiresAt: this.now() + expires * 1000 } : {}),
       ...(refreshToken ? { refreshToken } : {}),
@@ -438,14 +339,6 @@ export class GitLabAuth {
     }
 
     return pending;
-  }
-
-  private requireStorage(): void {
-    if (!this.secrets.available)
-      throw fail(
-        errorText("main.providers.gitlabAuth.secureCredentialStorageIsUnavailableUnlockYourOs"),
-        "keychain-unavailable",
-      );
   }
 
   private oauthError(_code: unknown): GitError {

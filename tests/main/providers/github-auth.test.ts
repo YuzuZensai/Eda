@@ -8,7 +8,7 @@ import { ProviderAccountRepository } from "@main/persistence/provider-account-re
 import { IdentityRepository } from "@main/persistence/identity-repository";
 import { openDatabase } from "@main/persistence/database";
 import type { Database } from "@main/persistence/types";
-import type { SecretStore } from "@main/secrets/secret-store";
+import { MemorySecrets } from "../../helpers/memory-secrets";
 import { deferred } from "../../helpers/deferred";
 
 const databases: Database[] = [];
@@ -52,22 +52,7 @@ function setup(path = ":memory:") {
   });
 
   const other = identities.create({ ...profile, name: "Personal" });
-  const values = new Map<string, string>();
-
-  const secrets: SecretStore = {
-    available: true,
-    get: vi.fn(async (key) => values.get(key)),
-    set: vi.fn(async (key, value) => {
-      values.set(key, value);
-    }),
-    delete: vi.fn(async (key) => {
-      values.delete(key);
-    }),
-    deleteForIdentity: vi.fn(async (id) => {
-      for (const key of values.keys()) if (key.startsWith(`identity:${id}:`)) values.delete(key);
-    }),
-  };
-
+  const secrets = new MemorySecrets();
   const fetch = vi.fn<typeof globalThis.fetch>();
   let now = Date.now();
   const accounts = new ProviderAccountRepository(db, "github");
@@ -97,7 +82,7 @@ function setup(path = ":memory:") {
     identities,
     profile,
     other,
-    values,
+    values: secrets.values,
     secrets,
     accounts,
     fetch,
@@ -130,7 +115,7 @@ describe("GitHub device OAuth", () => {
     ctx.advance(3_600_000);
     const saved = [...ctx.values.values()][0];
     const delayed = deferred<string | undefined>();
-    vi.mocked(ctx.secrets.get).mockResolvedValueOnce(saved).mockReturnValueOnce(delayed.promise);
+    ctx.secrets.get.mockResolvedValueOnce(saved).mockReturnValueOnce(delayed.promise);
     ctx.fetch.mockClear();
     ctx.fetch
       .mockResolvedValueOnce(
@@ -157,7 +142,7 @@ describe("GitHub device OAuth", () => {
     const ctx = setup();
     await ctx.connect();
     ctx.fetch.mockClear();
-    vi.mocked(ctx.secrets.get).mockClear();
+    ctx.secrets.get.mockClear();
 
     ctx.fetch.mockResolvedValueOnce(
       json({
@@ -324,7 +309,7 @@ describe("GitHub device OAuth", () => {
 
     const other = { ...ctx.accounts.find(ctx.profile.id)!, profileId: ctx.other.id };
     ctx.accounts.save(other);
-    ctx.secrets.get = vi.fn(ctx.secrets.get);
+    ctx.secrets.get.mockClear();
 
     await expect(
       ctx.service.forFetch(ctx.other.id, "https://github.com/org/repo"),
@@ -546,6 +531,20 @@ it("browses with the active profile's saved GitHub credential and refuses an unc
   expect(ctx.fetch).not.toHaveBeenCalled();
 });
 
+it("rejects an in-flight repository listing if the account disconnects", async () => {
+  const ctx = setup();
+  await ctx.connect();
+  ctx.fetch.mockImplementationOnce(async () => {
+    await ctx.service.disconnect(ctx.profile.id);
+    return json([]);
+  });
+
+  await expect(ctx.service.repositories(ctx.profile.id)).rejects.toMatchObject({
+    kind: "invalid-input",
+    text: { key: "main.providerRepositories.signInRequired" },
+  });
+});
+
 it("switches accounts on the same host without losing credentials or exposing another profile", async () => {
   const ctx = setup();
   await ctx.connect();
@@ -603,7 +602,7 @@ it("does not return credentials when the account disconnects during a secret rea
   await fixture.connect();
   let finish!: (value: string | undefined) => void;
   const saved = [...fixture.values.values()][0];
-  vi.mocked(fixture.secrets.get).mockImplementationOnce(
+  fixture.secrets.get.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
         finish = resolve;
@@ -618,4 +617,93 @@ it("does not return credentials when the account disconnects during a secret rea
   await fixture.service.disconnect(fixture.profile.id);
   finish(saved);
   await refused;
+});
+
+it("commits the replacement sign-in after a cancelled vault write", async () => {
+  const ctx = setup();
+  const release = deferred<void>();
+  const started = deferred<void>();
+  ctx.secrets.set.mockImplementationOnce(async (key, value) => {
+    started.resolve();
+    await release.promise;
+    ctx.values.set(key, value);
+  });
+  const cancelled = expect(ctx.connect()).rejects.toThrow(/cancelled/i);
+  await started.promise;
+
+  ctx.fetch
+    .mockResolvedValueOnce(json(device))
+    .mockResolvedValueOnce(json({ ...token, access_token: "gho_replacement" }))
+    .mockResolvedValueOnce(json({ id: 8, login: "replacement" }));
+  const signIn = await ctx.service.begin(ctx.profile.id);
+  ctx.advance(5000);
+  const replacement = ctx.service.poll(ctx.profile.id, signIn.id);
+  await vi.waitFor(() => expect(ctx.fetch).toHaveBeenCalledTimes(6));
+  release.resolve();
+
+  await cancelled;
+  await expect(replacement).resolves.toMatchObject({
+    state: "connected",
+    status: { account: { id: "8" } },
+  });
+  expect(ctx.values.size).toBe(1);
+  expect(await ctx.service.forFetch(ctx.profile.id, "https://github.com/org/repo")).toMatchObject({
+    password: "gho_replacement",
+  });
+});
+
+it("checks profile ownership before sharing an in-flight credential read", async () => {
+  const ctx = setup();
+  await ctx.connect();
+  const saved = ctx.accounts.find(ctx.profile.id)!;
+  ctx.accounts.save({ ...saved, profileId: ctx.other.id });
+
+  const vaultRead = deferred<string | undefined>();
+  ctx.secrets.get.mockReturnValueOnce(vaultRead.promise);
+  const remote = "https://github.com/org/repo";
+  const owner = ctx.service.forFetch(ctx.profile.id, remote);
+  const other = ctx.service.forFetch(ctx.other.id, remote);
+  vaultRead.resolve(ctx.values.get(saved.credentialRef));
+
+  await expect(owner).resolves.toMatchObject({ password: token.access_token });
+  await expect(other).rejects.toMatchObject({ kind: "github-auth-required" });
+});
+
+it("discards late public profile details after disconnect", async () => {
+  const ctx = setup();
+  await ctx.connect();
+  const response = deferred<Response>();
+  ctx.fetch.mockReturnValueOnce(response.promise);
+  const details = ctx.service.profile(ctx.profile.id);
+  await ctx.service.disconnect(ctx.profile.id);
+  response.resolve(json({ id: 7, login: "work-user" }));
+  await expect(details).resolves.toBeNull();
+});
+
+it("keeps a rotated token with its saved account when selection changes during refresh", async () => {
+  const ctx = setup();
+  await ctx.connect();
+  ctx.fetch
+    .mockResolvedValueOnce(json(device))
+    .mockResolvedValueOnce(json(token))
+    .mockResolvedValueOnce(json({ id: 8, login: "second-user" }));
+  const signIn = await ctx.service.begin(ctx.profile.id);
+  ctx.advance(5000);
+  await ctx.service.poll(ctx.profile.id, signIn.id);
+  ctx.advance(3_600_000);
+  ctx.fetch.mockResolvedValueOnce(json({ ...token, access_token: "gho_rotated" }));
+  ctx.fetch.mockImplementationOnce(async () => {
+    ctx.service.selectAccount(ctx.profile.id, "7");
+    return json({ id: 8, login: "second-user" });
+  });
+
+  const remote = "https://github.com/org/repo";
+  await expect(ctx.service.forFetch(ctx.profile.id, remote)).rejects.toMatchObject({
+    kind: "github-auth-required",
+  });
+  expect(ctx.service.status(ctx.profile.id).account?.id).toBe("7");
+  ctx.service.selectAccount(ctx.profile.id, "8");
+  await expect(ctx.service.forFetch(ctx.profile.id, remote)).resolves.toMatchObject({
+    password: "gho_rotated",
+  });
 });

@@ -1,5 +1,7 @@
 import { errorText } from "@shared/error-codes";
-import { GitError } from "@shared/errors";
+import { GitError, type GitErrorKind } from "@shared/errors";
+import { INTEGRATIONS } from "@shared/integrations/config";
+import type { TransportCredentials } from "@shared/integrations/remotes";
 import { t } from "@shared/i18n";
 import { randomUUID } from "node:crypto";
 import type {
@@ -7,9 +9,10 @@ import type {
   SavedProviderAccount,
 } from "../persistence/provider-account-repository";
 import { secretKeys, type SecretStore } from "../secrets/secret-store";
-import type { OAuthTokens } from "./oauth";
+import { readOAuthTokens, type OAuthTokens } from "./oauth";
+import { listProviderRepositories } from "./provider-repositories";
 
-export interface AuthorizedAccount {
+interface AuthorizedAccount {
   signInId: string;
   profileId: string;
   accountId: string;
@@ -19,18 +22,26 @@ export interface AuthorizedAccount {
 
 const messages = {
   github: {
+    pending: "main.providers.githubAuth.finishConnectingGitHubInProfileSettingsThenRetry",
+    reconnect: "main.providers.githubAuth.reconnectGitHubInTheIntegrationsSectionOf",
+    storage: "main.providers.githubAuth.secureCredentialStorageIsUnavailableUnlockYourOs",
     cancelled: "main.providers.githubAuth.theGitHubConnectionWasCancelledSignInAgain",
+    expired: "main.providers.githubAuth.yourGitHubLoginExpiredReconnectGitHubThenRetryThePull",
     changed: "main.providers.githubAuth.theGitHubAccountChangedRetryThePull",
   },
   gitlab: {
+    pending: "main.providers.gitlabAuth.finishConnectingGitLabInProfileSettingsThenRetry",
+    reconnect: "main.providers.gitlabAuth.reconnectGitLabInTheIntegrationsSectionOf",
+    storage: "main.providers.gitlabAuth.secureCredentialStorageIsUnavailableUnlockYourOs",
     cancelled: "main.providers.gitlabAuth.theGitLabConnectionWasCancelledSignInAgain",
+    expired: "main.providers.gitlabAuth.yourGitLabLoginExpiredReconnectGitLabThenRetryThePull",
     changed: "main.providers.gitlabAuth.theGitLabAccountChangedRetryThePull",
   },
 } as const;
 
 export class OAuthCredentials {
-  readonly authorized = new Map<string, AuthorizedAccount>();
-  private readonly committing = new Map<string, Promise<void>>();
+  private readonly authorized = new Map<string, AuthorizedAccount>();
+  private readonly writes = new Map<string, Promise<void>>();
   private readonly reading = new Map<string, Promise<OAuthTokens>>();
 
   constructor(
@@ -38,10 +49,52 @@ export class OAuthCredentials {
     private readonly accounts: ProviderAccountRepository,
     private readonly secrets: SecretStore,
     private readonly now: () => number,
+    private readonly refresh: (
+      account: SavedProviderAccount,
+      refreshToken: string,
+    ) => Promise<OAuthTokens>,
   ) {}
 
-  owns(account: SavedProviderAccount): boolean {
+  private owns(account: SavedProviderAccount): boolean {
     return account.credentialRef.startsWith(this.prefix(account.profileId, account.accountId));
+  }
+
+  visibleAccount(profileId: string): SavedProviderAccount | undefined {
+    const account = this.accounts.find(profileId);
+    if (account && !this.authorized.has(profileId) && this.owns(account)) return account;
+    return undefined;
+  }
+
+  isCurrent(account: SavedProviderAccount): boolean {
+    return this.visibleAccount(account.profileId)?.credentialRef === account.credentialRef;
+  }
+
+  cancel(profileId: string, signInId?: string): void {
+    if (signInId === undefined || this.authorized.get(profileId)?.signInId === signInId)
+      this.authorized.delete(profileId);
+  }
+
+  cancelAll(): void {
+    this.authorized.clear();
+  }
+
+  selectAccount(profileId: string, accountId: string, cancel: () => void) {
+    const selected = this.accounts.find(profileId, accountId);
+    if (!selected || !this.owns(selected)) throw this.failure("signInRequired", "invalid-input");
+    cancel();
+    this.accounts.save(selected);
+    return this.status(profileId);
+  }
+
+  async disconnect(profileId: string): Promise<SavedProviderAccount | undefined> {
+    const account = this.accounts.find(profileId);
+    if (!account) return undefined;
+    this.requireStorage();
+    await this.write(profileId, async () => {
+      if (this.owns(account)) await this.secrets.delete(account.credentialRef);
+      this.accounts.delete(profileId, account.credentialRef);
+    });
+    return account;
   }
 
   status(profileId: string) {
@@ -63,50 +116,108 @@ export class OAuthCredentials {
   }
 
   async settle(): Promise<void> {
-    await Promise.allSettled([...this.committing.values(), ...this.reading.values()]);
+    await Promise.allSettled([...this.writes.values(), ...this.reading.values()]);
   }
 
   commit(candidate: AuthorizedAccount): Promise<void> {
-    const existing = this.committing.get(candidate.profileId);
-
-    if (existing)
-      return existing.then(async () => {
-        if (this.authorized.get(candidate.profileId) === candidate) await this.commit(candidate);
-      });
-
-    const work = this.save(candidate).finally(() => this.committing.delete(candidate.profileId));
-
-    this.committing.set(candidate.profileId, work);
-    return work;
+    const { profileId } = candidate;
+    this.authorized.set(profileId, candidate);
+    return this.write(profileId, async () => {
+      try {
+        if (this.authorized.get(profileId) !== candidate) throw this.failure("cancelled");
+        await this.save(candidate);
+      } finally {
+        if (this.authorized.get(profileId) === candidate) this.authorized.delete(profileId);
+      }
+    });
   }
 
-  async currentTokens(
-    account: SavedProviderAccount,
-    readTokens: () => Promise<OAuthTokens>,
-    refreshTokens: (tokens: OAuthTokens) => Promise<OAuthTokens>,
-  ): Promise<OAuthTokens> {
+  private write(profileId: string, work: () => Promise<void>): Promise<void> {
+    const previous = this.writes.get(profileId) ?? Promise.resolve();
+    const next = previous.then(work, work).finally(() => {
+      if (this.writes.get(profileId) === next) this.writes.delete(profileId);
+    });
+    this.writes.set(profileId, next);
+    return next;
+  }
+
+  requireStorage() {
+    if (!this.secrets.available) throw this.failure("storage", "keychain-unavailable");
+  }
+
+  async repositories(profileId: string, page: number, fetch: typeof globalThis.fetch) {
+    const account = this.accounts.find(profileId);
+    if (!account || this.authorized.has(profileId)) throw this.failure("signInRequired");
+
+    const { password } = await this.credentials(account);
+    const result = await listProviderRepositories(
+      fetch,
+      this.provider,
+      password,
+      page,
+      undefined,
+      profileId,
+    );
+    if (!this.isCurrent(account)) throw this.failure("signInRequired", "invalid-input");
+    return result;
+  }
+
+  async forFetch(profileId: string) {
+    if (this.authorized.has(profileId)) throw this.failure("pending");
+    const account = this.accounts.find(profileId);
+    return account ? this.credentials(account) : undefined;
+  }
+
+  async credentials(account: SavedProviderAccount): Promise<TransportCredentials> {
+    this.requireStorage();
+    if (account.state !== "connected") throw this.failure("reconnect");
+    if (!this.owns(account)) return this.expired(account);
+
     let work = this.reading.get(account.credentialRef);
 
     if (!work) {
-      work = readTokens()
-        .then((tokens) => {
-          if (this.accounts.find(account.profileId)?.credentialRef !== account.credentialRef)
-            throw this.failure("changed");
-
-          return tokens.expiresAt !== undefined && tokens.expiresAt <= this.now() + 60_000
-            ? refreshTokens(tokens)
-            : tokens;
-        })
-        .finally(() => this.reading.delete(account.credentialRef));
+      work = this.readOrRefresh(account).finally(() => this.reading.delete(account.credentialRef));
       this.reading.set(account.credentialRef, work);
     }
 
     const tokens = await work;
 
-    if (this.accounts.find(account.profileId)?.credentialRef !== account.credentialRef)
-      throw this.failure("changed");
+    if (!this.isCurrent(account)) throw this.failure("changed");
 
-    return tokens;
+    return {
+      username: this.provider === "github" ? "x-access-token" : "oauth2",
+      password: tokens.accessToken,
+    };
+  }
+
+  expired(account: SavedProviderAccount): never {
+    if (this.accounts.find(account.profileId)?.credentialRef === account.credentialRef)
+      this.accounts.save({ ...account, state: "expired" });
+    throw this.failure("expired");
+  }
+
+  saveRefreshed(account: SavedProviderAccount, tokens: OAuthTokens): Promise<void> {
+    return this.write(account.profileId, async () => {
+      const saved = this.accounts.find(account.profileId, account.accountId);
+      if (saved?.credentialRef !== account.credentialRef) throw this.failure("changed");
+      await this.secrets.set(account.credentialRef, JSON.stringify(tokens));
+    });
+  }
+
+  private async readOrRefresh(account: SavedProviderAccount): Promise<OAuthTokens> {
+    const raw = await this.secrets.get(account.credentialRef);
+    const tokens = readOAuthTokens(raw, INTEGRATIONS[this.provider].clientId);
+    if (!tokens || (this.provider === "github" && !tokens.accessToken.startsWith("gho_")))
+      return this.expired(account);
+    if (!this.isCurrent(account)) throw this.failure("changed");
+    if (tokens.expiresAt === undefined || tokens.expiresAt > this.now() + 60_000) return tokens;
+
+    if (
+      !tokens.refreshToken ||
+      (tokens.refreshExpiresAt !== undefined && tokens.refreshExpiresAt <= this.now())
+    )
+      return this.expired(account);
+    return this.refresh(account, tokens.refreshToken);
   }
 
   private async save(candidate: AuthorizedAccount): Promise<void> {
@@ -136,13 +247,20 @@ export class OAuthCredentials {
     );
   }
 
-  private failure(reason: "cancelled" | "changed"): GitError {
+  private failure(
+    reason: keyof typeof messages.github | "signInRequired",
+    kind: GitErrorKind = this.provider === "github" ? "github-auth-required" : "auth-failed",
+  ): GitError {
     return new GitError({
-      kind: this.provider === "github" ? "github-auth-required" : "auth-failed",
+      kind,
       operation: t(
         this.provider === "github" ? "operations.gitHubSignIn" : "operations.gitLabSignIn",
       ),
-      message: errorText(messages[this.provider][reason]),
+      message: errorText(
+        reason === "signInRequired"
+          ? "main.providerRepositories.signInRequired"
+          : messages[this.provider][reason],
+      ),
     });
   }
 }

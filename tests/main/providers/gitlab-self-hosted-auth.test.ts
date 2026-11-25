@@ -4,7 +4,7 @@ import { GitLabSelfHostedAccountRepository } from "@main/persistence/gitlab-self
 import { IdentityRepository } from "@main/persistence/identity-repository";
 import { openInMemoryDatabase } from "@main/persistence/database";
 import type { Database } from "@main/persistence/types";
-import type { SecretStore } from "@main/secrets/secret-store";
+import { MemorySecrets } from "../../helpers/memory-secrets";
 
 const databases: Database[] = [];
 
@@ -35,20 +35,7 @@ function setup() {
   });
 
   const other = identities.create({ ...profile, name: "Other" });
-  const values = new Map<string, string>();
-
-  const secrets: SecretStore = {
-    available: true,
-    get: vi.fn(async (key) => values.get(key)),
-    set: vi.fn(async (key, value) => {
-      values.set(key, value);
-    }),
-    delete: vi.fn(async (key) => {
-      values.delete(key);
-    }),
-    deleteForIdentity: vi.fn(async () => {}),
-  };
-
+  const secrets = new MemorySecrets();
   const fetch = vi.fn<typeof globalThis.fetch>(async (url) =>
     String(url).endsWith("/user")
       ? json({ id: 7, username: "work.user", ...profileFields })
@@ -72,7 +59,7 @@ function setup() {
     identities,
     profile,
     other,
-    values,
+    values: secrets.values,
     secrets,
     fetch,
     insecure,

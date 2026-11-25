@@ -6,7 +6,7 @@ import { ProviderAccountRepository } from "@main/persistence/provider-account-re
 import { IdentityRepository } from "@main/persistence/identity-repository";
 import { openDatabase } from "@main/persistence/database";
 import type { Database } from "@main/persistence/types";
-import type { SecretStore } from "@main/secrets/secret-store";
+import { MemorySecrets } from "../../helpers/memory-secrets";
 import { deferred } from "../../helpers/deferred";
 
 const callbacks = vi.hoisted(
@@ -66,20 +66,7 @@ function setup() {
   });
 
   const other = identities.create({ ...profile, name: "Personal" });
-  const values = new Map<string, string>();
-
-  const secrets: SecretStore = {
-    available: true,
-    get: vi.fn(async (key) => values.get(key)),
-    set: vi.fn(async (key, value) => {
-      values.set(key, value);
-    }),
-    delete: vi.fn(async (key) => {
-      values.delete(key);
-    }),
-    deleteForIdentity: vi.fn(async () => {}),
-  };
-
+  const secrets = new MemorySecrets();
   const fetch = vi.fn<typeof globalThis.fetch>();
   let now = Date.now();
   const accounts = new ProviderAccountRepository(db, "gitlab");
@@ -105,7 +92,7 @@ function setup() {
     identities,
     profile,
     other,
-    values,
+    values: secrets.values,
     secrets,
     fetch,
     accounts,
@@ -223,7 +210,7 @@ it("does not reuse rotated refresh tokens from a delayed concurrent vault read",
   ctx.advance(7_200_000);
   const saved = [...ctx.values.values()][0];
   const delayed = deferred<string | undefined>();
-  vi.mocked(ctx.secrets.get).mockResolvedValueOnce(saved).mockReturnValueOnce(delayed.promise);
+  ctx.secrets.get.mockResolvedValueOnce(saved).mockReturnValueOnce(delayed.promise);
   ctx.fetch.mockClear();
   ctx.fetch
     .mockResolvedValueOnce(
@@ -451,4 +438,39 @@ it("browses with the active profile's saved GitLab credential and refuses an unc
   ctx.fetch.mockClear();
   await expect(ctx.service.repositories(ctx.other.id)).rejects.toThrow();
   expect(ctx.fetch).not.toHaveBeenCalled();
+});
+
+it("keeps a late refresh from restoring the disconnected account's vault entry", async () => {
+  const ctx = setup();
+  await ctx.connect();
+  ctx.advance(7_200_000);
+  const release = deferred<void>();
+  const started = deferred<void>();
+  ctx.secrets.delete.mockImplementationOnce(async (key) => {
+    started.resolve();
+    await release.promise;
+    ctx.values.delete(key);
+  });
+
+  const verification = deferred<Response>();
+  ctx.fetch
+    .mockResolvedValueOnce(json({ ...token, access_token: "rotated" }))
+    .mockReturnValueOnce(verification.promise);
+  const refresh = ctx.service.forFetch(ctx.profile.id, "https://gitlab.com/org/repo");
+  await vi.waitFor(() => expect(ctx.fetch).toHaveBeenCalledTimes(4));
+
+  const disconnected = ctx.service.disconnect(ctx.profile.id);
+  await started.promise;
+  ctx.secrets.set.mockImplementationOnce(async (key, value) => {
+    await disconnected;
+    ctx.values.set(key, value);
+  });
+  verification.resolve(json({ id: 7, username: "work.user" }));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  release.resolve();
+  await disconnected;
+
+  await expect(refresh).rejects.toMatchObject({ kind: "auth-failed" });
+  expect(ctx.accounts.find(ctx.profile.id)).toBeUndefined();
+  expect(ctx.values.size).toBe(0);
 });

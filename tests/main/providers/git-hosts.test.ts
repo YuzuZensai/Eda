@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { MemorySecrets } from "../../helpers/memory-secrets";
 import { GitHosts } from "@main/providers/git-hosts";
 import type { GitHostKind } from "@shared/integrations/git-host";
 
@@ -51,22 +52,8 @@ it.each([
 ] as const)(
   "discovers %s repositories and scopes Git credentials to the connected profile and HTTPS base",
   async (kind, base, api, response) => {
-    const saved = new Map<string, string>();
     const request = vi.fn(async () => new Response(JSON.stringify(response)));
-    const hosts = new GitHosts(
-      {
-        available: true,
-        get: async (k) => saved.get(k),
-        set: async (k, v) => {
-          saved.set(k, v);
-        },
-        delete: async (k) => {
-          saved.delete(k);
-        },
-        deleteForIdentity: async () => {},
-      },
-      request,
-    );
+    const hosts = new GitHosts(new MemorySecrets(), request);
     await hosts.connect(
       "work",
       { kind: kind as GitHostKind, base, username: "person@example.test" },

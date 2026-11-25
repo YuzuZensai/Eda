@@ -6,6 +6,7 @@ const MAX_ENTRIES = 128;
 export class ProviderProfileCache<T> {
   private readonly entries = new Map<string, Entry<T>>();
   private readonly pending = new Map<string, Pending<T>>();
+  private generation = 0;
 
   constructor(private readonly now = Date.now) {}
 
@@ -26,9 +27,11 @@ export class ProviderProfileCache<T> {
     const cached = this.entries.get(key);
     if (cached && cached.expiresAt > this.now()) return cached.value;
     const pending = this.pending.get(key);
+    const generation = this.generation;
     if (pending) {
       if (!pending.invalidated) return pending.work;
       await pending.work;
+      if (generation !== this.generation) return null;
       return this.get(key, load, fallback);
     }
     if (this.pending.size >= MAX_ENTRIES) return cached?.value ?? fallback;
@@ -36,7 +39,9 @@ export class ProviderProfileCache<T> {
       invalidated: false,
       work: this.refresh(load, cached?.value ?? fallback)
         .then(({ value, ttl }) => {
-          if (!entry.invalidated) this.save(key, value, ttl);
+          if (generation !== this.generation) return null;
+          if (entry.invalidated) return this.peek(key);
+          this.save(key, value, ttl);
           return value;
         })
         .finally(() => this.pending.delete(key)),
@@ -51,8 +56,11 @@ export class ProviderProfileCache<T> {
   }
 
   async clear(): Promise<void> {
-    await Promise.allSettled([...this.pending.values()].map((entry) => entry.work));
+    this.generation++;
     this.entries.clear();
+    const pending = [...this.pending.values()];
+    for (const entry of pending) entry.invalidated = true;
+    await Promise.allSettled(pending.map((entry) => entry.work));
   }
 
   private invalidate(key: string): void {
