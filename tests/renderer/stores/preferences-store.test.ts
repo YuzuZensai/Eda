@@ -3,6 +3,7 @@ import { errorFixture } from "../../helpers/error";
 import { err, ok } from "@shared/errors";
 import type { EdaApi } from "@shared/ipc";
 import {
+  builtInSetting,
   SETTING_DEFINITIONS,
   type ResolvedSetting,
   type SettingKey,
@@ -154,6 +155,7 @@ it("keeps a global appearance preview visible across reloads and restores the wo
 
     previewBackground(null);
     expect(document.documentElement.dataset["customBackground"]).toBe("false");
+    expect(document.documentElement.style.getPropertyValue("--background-image")).toBe("none");
 
     previewMotion(null);
     expect(document.documentElement.dataset["reducedMotion"]).toBe(
@@ -286,4 +288,80 @@ it("ignores a stale save failure after leaving and returning to the same profile
 
   expect(await saving).toBe(false);
   expect(usePreferencesStore.getState().error).toBeNull();
+});
+
+it("drops repository overrides when the next repository cannot be read", async () => {
+  install(async (key, context) => {
+    if (context.repositoryId === "second") throw new Error("Repository unavailable");
+    if (key === "diffMode")
+      return ok({
+        key,
+        value: "split",
+        hasOverride: true,
+        source: { kind: "repository", profileId: "work", repositoryId: "first" },
+      });
+    return ok(resolved(key, context));
+  });
+
+  const { load } = usePreferencesStore.getState();
+  await load({ profileId: "work", repositoryId: "first" });
+  expect(usePreferencesStore.getState().values.diffMode.value).toBe("split");
+  const reading = load({ profileId: "work", repositoryId: "second" });
+  expect(usePreferencesStore.getState().values.diffMode).toEqual(builtInSetting("diffMode"));
+  await reading;
+  expect(usePreferencesStore.getState().error).not.toBeNull();
+  expect(usePreferencesStore.getState().values.diffMode).toEqual(builtInSetting("diffMode"));
+  expect(usePreferencesStore.getState().values.theme.value).toEqual(nordPreference);
+});
+
+it("tracks only the active context's pending saves across profile switches", async () => {
+  const previous = deferred<void>();
+  const current = deferred<void>();
+  const writes = vi
+    .fn()
+    .mockImplementationOnce(async () => {
+      await previous.promise;
+      return ok(undefined);
+    })
+    .mockImplementationOnce(async () => {
+      await current.promise;
+      return ok(undefined);
+    });
+  install(async (key, context) => ok(resolved(key, context)), writes);
+  const { load, set } = usePreferencesStore.getState();
+  await load({ profileId: "work" });
+  const first = set("theme", { kind: "profile", profileId: "work" }, nordPreference);
+  await load({ profileId: "home" });
+  try {
+    expect(usePreferencesStore.getState().saving).toBe(false);
+    const second = set("theme", { kind: "profile", profileId: "home" }, lightPreference);
+    previous.resolve();
+    await first;
+    expect(usePreferencesStore.getState().saving).toBe(true);
+    current.resolve();
+    await second;
+    expect(usePreferencesStore.getState().saving).toBe(false);
+  } finally {
+    previous.resolve();
+    current.resolve();
+    await first;
+  }
+});
+
+it("keeps a save failure visible when an earlier preference refresh finishes", async () => {
+  const pending = deferred<void>();
+  install(
+    async (key, context) => {
+      await pending.promise;
+      return ok(resolved(key, context));
+    },
+    async () => err(errorFixture({ message: "Cannot save" })),
+  );
+
+  const { load, set } = usePreferencesStore.getState();
+  const reading = load({ profileId: "home" });
+  expect(await set("theme", { kind: "profile", profileId: "home" }, nordPreference)).toBe(false);
+  pending.resolve();
+  await reading;
+  expect(usePreferencesStore.getState().error?.message).toBe("Cannot save");
 });

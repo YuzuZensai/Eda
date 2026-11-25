@@ -41,7 +41,7 @@ import type {
   RecoveryPage,
   RecoverySource,
 } from "./workflows/history-recovery";
-import type { PullPreview, PullRequest, PullStrategy } from "./workflows/pull";
+import type { PullPreview, PullRequest } from "./workflows/pull";
 import type { RebaseAction, RebaseReview, RebaseResult, RebasePlanEntry } from "./workflows/rebase";
 import type { Result } from "./errors";
 import type { GpgSigningKey } from "./identity/signing";
@@ -194,7 +194,6 @@ export interface EdaApi {
 
   pull: {
     preference(id: string): Promise<Result<ResolvedSetting<"pullStrategy">>>;
-    setPreference(id: string, strategy: PullStrategy | null): Promise<Result<void>>;
     prepare(request: PullRequest): Promise<Result<PullPreview>>;
     execute(id: string, token: string): Promise<Result<string>>;
   };
@@ -689,7 +688,6 @@ export const IPC_CHANNELS = {
   backgroundFetchConfigure: "background-fetch:configure",
   backgroundFetchRetry: "background-fetch:retry",
   pullPreference: "pull:preference",
-  pullSetPreference: "pull:set-preference",
   pullPrepare: "pull:prepare",
   pullExecute: "pull:execute",
   rebasePrepare: "rebase:prepare",

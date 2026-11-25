@@ -10,6 +10,7 @@ import {
 import { ApplicationPreferences } from "@renderer/features/settings/application/ApplicationPreferences";
 import { useAppStore } from "@renderer/stores/app-store";
 import { usePreferencesStore } from "@renderer/stores/preferences-store";
+import { deferred } from "../../../helpers/deferred";
 import { errorFixture } from "../../../helpers/error";
 
 vi.mock("@renderer/features/settings/git/MergeToolSettings", () => ({
@@ -213,5 +214,18 @@ it("keeps detected editor selection working without changing the browser", async
     { kind: "profile", profileId: "work" },
     "/tools/editor",
   );
+  expect(browser().textContent).toBe("Follow global");
+});
+
+it("discards a browser choice made after its settings page closed and reopened", async () => {
+  const selection = deferred<ReturnType<typeof ok<string>>>();
+  chooseBrowser.mockReturnValueOnce(selection.promise);
+  await act(async () => root.render(<ApplicationPreferences owner="profile" />));
+  await choose("Choose manually...");
+  await act(async () => root.render(null));
+  await act(async () => root.render(<ApplicationPreferences owner="profile" />));
+  await act(async () => selection.resolve(ok("/tools/late-browser")));
+
+  expect(save).not.toHaveBeenCalled();
   expect(browser().textContent).toBe("Follow global");
 });

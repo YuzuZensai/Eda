@@ -1,11 +1,6 @@
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { t } from "@shared/i18n";
-import {
-  isPullStrategy,
-  type PullPreview,
-  type PullRequest,
-  type PullStrategy,
-} from "@shared/workflows/pull";
+import { isPullStrategy, type PullPreview, type PullRequest } from "@shared/workflows/pull";
 import { randomUUID } from "node:crypto";
 
 import { GitError } from "@shared/errors";
@@ -50,13 +45,6 @@ export class PullService {
       profileId: repository.identityId,
       repositoryId,
     });
-  }
-
-  setPreference(repositoryId: string, strategy: PullStrategy | null) {
-    const repository = this.repositories.resolveActiveRepository(repositoryId);
-    const scope = { kind: "repository" as const, profileId: repository.identityId, repositoryId };
-    if (strategy === null) this.settings.reset("pullStrategy", scope);
-    else this.settings.set("pullStrategy", scope, strategy);
   }
 
   async prepare(request: PullRequest): Promise<PullPreview> {

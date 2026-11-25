@@ -2,86 +2,51 @@ import { t } from "@shared/i18n";
 import { RotateCcwIcon as RotateCcw } from "../../../components/ui/icons";
 import { defaultCommitPrefixes, parseCommitPrefixes } from "@shared/preferences/commit-prefix";
 import { useEffect, useId, useState } from "react";
-import {
-  SETTING_DEFINITIONS,
-  type ResolvedSetting,
-  type SettingScope,
-} from "@shared/preferences/settings";
-import { preferenceSource, usePreferencesStore } from "../../../stores/preferences-store";
+import { SETTING_DEFINITIONS } from "@shared/preferences/settings";
+import { preferenceSource } from "../../../stores/preferences-store";
+import { useScopedSetting } from "../hooks/useScopedSetting";
 import { Button, Checkbox, Textarea, IconButton, Dialog } from "../../../components/ui/index";
 
-export function CommitPrefixSettings({ scope }: { scope: SettingScope }) {
+export function CommitPrefixSettings({ owner }: { owner: "application" | "profile" }) {
   const inputId = useId();
-  const values = usePreferencesStore((state) => state.values);
-
-  const [enabled, setEnabled] = useState<ResolvedSetting<"conventionalCommitsEnabled"> | null>(
-    null,
-  );
-
-  const [prefixes, setPrefixes] = useState<ResolvedSetting<"commitPrefixes"> | null>(null);
+  const enabled = useScopedSetting("conventionalCommitsEnabled", owner);
+  const prefixes = useScopedSetting("commitPrefixes", owner);
+  const savedText = prefixes.resolved.value.join("\n");
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(savedText);
 
-  useEffect(() => {
-    let alive = true;
-    const context = scope.kind === "profile" ? { profileId: scope.profileId } : {};
-
-    void Promise.all([
-      window.eda.settings.resolve("conventionalCommitsEnabled", context),
-      window.eda.settings.resolve("commitPrefixes", context),
-    ]).then(([toggle, list]) => {
-      if (!alive) return;
-      if (toggle.ok) setEnabled(toggle.value);
-
-      if (list.ok) {
-        setPrefixes(list.value);
-        setText(list.value.value.join("\n"));
-      }
-    });
-
-    return () => {
-      alive = false;
-    };
-  }, [scope.kind, scope.kind === "profile" ? scope.profileId : undefined, values]);
-
-  if (!enabled || !prefixes) return null;
+  useEffect(() => setText(savedText), [savedText]);
 
   const parsed = parseCommitPrefixes(text);
   const valid = SETTING_DEFINITIONS.commitPrefixes.validate(parsed);
-  const changed = JSON.stringify(parsed) !== JSON.stringify(prefixes.value);
+  const changed = JSON.stringify(parsed) !== JSON.stringify(prefixes.resolved.value);
 
   return (
-    <div className="space-y-3 border-b border-border-subtle pb-4">
+    <fieldset
+      disabled={enabled.unavailable || prefixes.unavailable}
+      aria-busy={enabled.reading || prefixes.reading}
+      className="min-w-0 space-y-3 border-b border-border-subtle pb-4"
+    >
       <h2 className="text-sm font-medium">
         {t("settings.commitPrefixSettings.conventionalCommits")}
       </h2>
 
       <Checkbox
-        checked={enabled.value}
-        onChange={(event) =>
-          void usePreferencesStore
-            .getState()
-            .set("conventionalCommitsEnabled", scope, event.target.checked)
-        }
+        checked={enabled.resolved.value}
+        onChange={(event) => void enabled.set(event.target.checked)}
       >
         {t("settings.commitPrefixSettings.showCommitPrefixPicker")}
       </Checkbox>
 
       <p className="text-xs text-text-secondary">
         {t("settings.commitPrefixSettings.selectingAPrefixAddsItToTheSaved", {
-          value1: preferenceSource(enabled),
+          value1: preferenceSource(enabled.resolved),
         })}
       </p>
 
-      {scope.kind === "profile" && enabled.source.kind === "profile" && (
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() =>
-            void usePreferencesStore.getState().reset("conventionalCommitsEnabled", scope)
-          }
-        >
+      {owner === "profile" && !enabled.following && (
+        <Button size="sm" variant="secondary" onClick={() => void enabled.reset()}>
           {t("common.followGlobal")}
         </Button>
       )}
@@ -112,25 +77,17 @@ export function CommitPrefixSettings({ scope }: { scope: SettingScope }) {
 
       <p className="text-xs text-text-secondary">
         {t("settings.commitPrefixSettings.enterOneTypePerLineOrSeparateWith", {
-          value1: preferenceSource(prefixes),
+          value1: preferenceSource(prefixes.resolved),
         })}
       </p>
 
       <div className="flex gap-2">
-        <Button
-          size="sm"
-          disabled={!valid || !changed}
-          onClick={() => void usePreferencesStore.getState().set("commitPrefixes", scope, parsed)}
-        >
+        <Button size="sm" disabled={!valid || !changed} onClick={() => void prefixes.set(parsed)}>
           {t("settings.commitPrefixSettings.savePrefixes")}
         </Button>
 
-        {scope.kind === "profile" && prefixes.source.kind === "profile" && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => void usePreferencesStore.getState().reset("commitPrefixes", scope)}
-          >
+        {owner === "profile" && !prefixes.following && (
+          <Button size="sm" variant="secondary" onClick={() => void prefixes.reset()}>
             {t("settings.commitPrefixSettings.followGlobalPrefixes")}
           </Button>
         )}
@@ -154,12 +111,7 @@ export function CommitPrefixSettings({ scope }: { scope: SettingScope }) {
                   setResetting(true);
 
                   try {
-                    if (
-                      await usePreferencesStore
-                        .getState()
-                        .set("commitPrefixes", scope, defaultCommitPrefixes(emojis))
-                    )
-                      setResetOpen(false);
+                    if (await prefixes.set(defaultCommitPrefixes(emojis))) setResetOpen(false);
                   } finally {
                     setResetting(false);
                   }
@@ -177,6 +129,6 @@ export function CommitPrefixSettings({ scope }: { scope: SettingScope }) {
           </div>
         </Dialog>
       )}
-    </div>
+    </fieldset>
   );
 }

@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { builtInSetting } from "@shared/preferences/settings";
 import { ok } from "@shared/errors";
@@ -13,7 +13,7 @@ vi.mock("@renderer/stores/app-store", () => ({
         switchingIdentityId: string | null;
       }) => unknown,
     ) => select({ activeIdentity: profile, switchingIdentityId: profile.switching }),
-    { getState: () => ({ activeIdentity: profile }) },
+    { getState: () => ({ activeIdentity: profile, switchingIdentityId: profile.switching }) },
   ),
 }));
 
@@ -118,8 +118,8 @@ it("ignores reads from a profile being removed and resumes after the transition"
   try {
     await act(async () => root.render(<Example />));
     profile.switching = "first";
-    await act(async () => root.render(<Example />));
     await act(async () => reject(new Error("profile deleted")));
+    await act(async () => root.render(<Example />));
     expect(usePreferencesStore.getState().error).toBeNull();
     expect(resolve).toHaveBeenCalledTimes(1);
     profile.id = "second";
@@ -132,6 +132,27 @@ it("ignores reads from a profile being removed and resumes after the transition"
     profile.id = "first";
     profile.switching = null;
     usePreferencesStore.setState(previous, true);
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps an editable draft while an object-valued setting is unavailable", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("eda", { settings: { resolve: () => new Promise(() => {}) } });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  function Example() {
+    const { resolved } = useScopedSetting("mergeTool", "application");
+    const [draft, setDraft] = useState("");
+    useEffect(() => setDraft(resolved.value.executable), [resolved]);
+    return <button onClick={() => setDraft("/tools/merge")}>{draft}</button>;
+  }
+  try {
+    await act(async () => root.render(<Example />));
+    await act(async () => container.querySelector("button")!.click());
+    expect(container.textContent).toBe("/tools/merge");
+  } finally {
+    await act(async () => root.unmount());
     vi.unstubAllGlobals();
   }
 });

@@ -593,6 +593,12 @@ body::before {
   transition: opacity var(--duration-setup) var(--ease-out);
 }
 
+html[data-custom-background="false"] body::before {
+  transition:
+    opacity var(--duration-setup) var(--ease-out),
+    background-image 0s var(--duration-setup) allow-discrete;
+}
+
 .onboarding-background-controls {
   transition: opacity var(--duration-setup) var(--ease-out);
 }

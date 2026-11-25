@@ -1,43 +1,13 @@
-import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
-import type { ResolvedSetting } from "@shared/preferences/settings";
-import type { PullStrategy } from "@shared/workflows/pull";
-import { useEffect, useState } from "react";
-import { Button, ErrorDialog, Select } from "../../../components/ui/index";
-import { preferenceSource } from "../../../stores/preferences-store";
+import { isPullStrategy } from "@shared/workflows/pull";
+import { Button, Select } from "../../../components/ui/index";
+import { useScopedSetting } from "../hooks/useScopedSetting";
+import { preferenceSource, usePreferencesStore } from "../../../stores/preferences-store";
 
 export function RepositoryPullSettings({ repositoryId }: { repositoryId: string }) {
-  const [setting, setSetting] = useState<ResolvedSetting<"pullStrategy"> | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void window.eda.pull.preference(repositoryId).then((result) => {
-      if (cancelled) return;
-      if (result.ok) setSetting(result.value);
-      else setError(errorMessage(result.error));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [repositoryId]);
-
-  const save = async (strategy: PullStrategy | null) => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await window.eda.pull.setPreference(repositoryId, strategy);
-      if (!result.ok) setError(errorMessage(result.error));
-      else {
-        const refreshed = await window.eda.pull.preference(repositoryId);
-        if (refreshed.ok) setSetting(refreshed.value);
-        else setError(errorMessage(refreshed.error));
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
+  const strategy = useScopedSetting("pullStrategy", "repository", repositoryId);
+  const saving = usePreferencesStore((state) => state.saving);
+  const setting = strategy.resolved;
 
   return (
     <div className="space-y-3">
@@ -46,9 +16,11 @@ export function RepositoryPullSettings({ repositoryId }: { repositoryId: string 
         <Select
           aria-label={t("settings.repositoryPullSettings.defaultPullStrategy")}
           className="w-full"
-          disabled={busy || !setting}
-          value={setting?.value ?? "ff"}
-          onValueChange={(value) => void save(value as PullStrategy)}
+          disabled={saving || strategy.unavailable}
+          value={setting.value}
+          onValueChange={(value) => {
+            if (isPullStrategy(value)) void strategy.set(value);
+          }}
         >
           <option value="ff">
             {t("settings.repositoryPullSettings.fastForwardIfPossibleOtherwiseMerge")}
@@ -57,18 +29,19 @@ export function RepositoryPullSettings({ repositoryId }: { repositoryId: string 
           <option value="rebase">{t("settings.repositoryPullSettings.rebaseLocalCommits")}</option>
         </Select>
       </label>
-      {setting && <p className="text-xs text-text-tertiary">{preferenceSource(setting)}</p>}
-      {setting?.source.kind === "repository" && (
-        <Button disabled={busy} onClick={() => void save(null)}>
+      {!strategy.unavailable && (
+        <p className="text-xs text-text-tertiary">{preferenceSource(setting)}</p>
+      )}
+      {setting.source.kind === "repository" && (
+        <Button disabled={saving || strategy.unavailable} onClick={() => void strategy.reset()}>
           {t("settings.repositoryPullSettings.resetToDefault")}
         </Button>
       )}
-      {setting?.value === "rebase" && (
+      {setting.value === "rebase" && (
         <p className="text-xs text-text-secondary">
           {t("settings.repositoryPullSettings.rebaseChangesLocalCommitIDs")}
         </p>
       )}
-      <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>
     </div>
   );
 }

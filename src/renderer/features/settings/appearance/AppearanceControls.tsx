@@ -10,6 +10,29 @@ import { Checkbox, Select } from "../../../components/ui/index";
 import { useAppStore } from "../../../stores/app-store";
 import { previewMotion, usePreferencesStore } from "../../../stores/preferences-store";
 
+let previewGeneration = 0;
+
+function setGlobalPreview(enabled: boolean) {
+  const generation = ++previewGeneration;
+  afterViewTransition(async () => {
+    if (generation !== previewGeneration) return;
+    try {
+      const result = await window.eda.settings.previewGlobalAppearance(enabled);
+      if (!result.ok && generation === previewGeneration)
+        usePreferencesStore.setState({ error: result.error });
+    } catch {
+      if (generation !== previewGeneration) return;
+      usePreferencesStore.setState({
+        error: new GitError({
+          kind: "unknown",
+          operation: t("operations.previewAppearance"),
+          message: errorText("settings.appearanceControls.appearancePreviewCouldNotBeUpdated"),
+        }).toData(),
+      });
+    }
+  });
+}
+
 export function AppearanceControls({
   owner = "application",
   preview = false,
@@ -35,33 +58,10 @@ export function AppearanceControls({
   useEffect(() => {
     if (!preview) return;
 
-    const setPreview = (enabled: boolean) => {
-      void window.eda.settings
-        .previewGlobalAppearance(enabled)
-        .then((result) => {
-          if (!result.ok) usePreferencesStore.setState({ error: result.error });
-        })
-        .catch(() => {
-          usePreferencesStore.setState({
-            error: new GitError({
-              kind: "unknown",
-              operation: t("operations.previewAppearance"),
-              message: errorText("settings.appearanceControls.appearancePreviewCouldNotBeUpdated"),
-            }).toData(),
-          });
-        });
-    };
-
-    let active = true;
-
-    afterViewTransition(() => {
-      if (active) setPreview(true);
-    });
-
+    setGlobalPreview(true);
     return () => {
-      active = false;
       previewMotion(null);
-      afterViewTransition(() => setPreview(false));
+      setGlobalPreview(false);
     };
   }, [preview]);
 

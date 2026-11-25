@@ -149,7 +149,7 @@ function ScopedPreferencesContent({ owner, section, preview = false }: ScopedPre
         </div>
       )}
 
-      {section === "git" && <CommitPrefixSettings key={`${owner}:${active?.id}`} scope={scope} />}
+      {section === "git" && <CommitPrefixSettings owner={owner} />}
 
       {section === "git" && (
         <div className="border-b border-border-subtle pb-4">

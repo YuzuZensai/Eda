@@ -1,69 +1,37 @@
-import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { SettingValues } from "@shared/preferences/settings";
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import {
   DefinitionList,
   TextButton,
   StateMessage,
   Disclosure,
-  ErrorDialog,
   NoticeBanner,
   RadioCard,
 } from "../../../components/ui/index";
 import { useRepositoryRead } from "../../../repository/hooks/useRepositoryRead";
 import { useAppStore } from "../../../stores/app-store";
+import { useScopedSetting } from "../hooks/useScopedSetting";
+import { usePreferencesStore } from "../../../stores/preferences-store";
 
 export function GitEngineSettings() {
   const [inspect, setInspect] = useState(false);
   const details = useRepositoryRead(() => window.eda.app.gitDiagnostics(), inspect ? true : null);
   const groupName = useId();
   const engine = useAppStore((state) => state.gitEngine);
-  const [selected, setSelected] = useState<SettingValues["gitEngine"]>("bundled");
-  const [busy, setBusy] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void window.eda.settings
-      .resolve("gitEngine", {})
-      .then((result) => {
-        if (cancelled) return;
-        if (result.ok) setSelected(result.value.value);
-        else setError(errorMessage(result.error));
-      })
-      .catch(() => {
-        if (!cancelled)
-          setError(t("settings.gitEngineSettings.couldNotReadTheGitEnginePreference"));
-      })
-      .finally(() => {
-        if (!cancelled) setBusy(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const setting = useScopedSetting("gitEngine", "application");
+  const saving = usePreferencesStore((state) => state.saving);
+  const [pending, setPending] = useState<{
+    confirmed: typeof setting.resolved;
+    value: SettingValues["gitEngine"];
+  } | null>(null);
+  const selected = pending?.confirmed === setting.resolved ? pending.value : setting.resolved.value;
 
   const choose = async (value: SettingValues["gitEngine"]) => {
-    const previous = selected;
-
-    setSelected(value);
-    setBusy(true);
-    setError(null);
-
-    try {
-      const result = await window.eda.settings.set("gitEngine", { kind: "application" }, value);
-      if (!result.ok) {
-        setSelected(previous);
-        setError(errorMessage(result.error));
-      }
-    } catch {
-      setSelected(previous);
-      setError(t("settings.gitEngineSettings.couldNotSaveTheGitEnginePreference"));
-    } finally {
-      setBusy(false);
+    const choice = { confirmed: setting.resolved, value };
+    setPending(choice);
+    if (!(await setting.set(value))) {
+      setPending((current) => (current === choice ? null : current));
     }
   };
 
@@ -73,7 +41,7 @@ export function GitEngineSettings() {
       <p className="text-xs leading-relaxed text-text-secondary">
         {t("settings.gitEngineSettings.chooseTheGitInstallationUsedByEveryProfile")}
       </p>
-      <fieldset disabled={busy} aria-busy={busy}>
+      <fieldset disabled={setting.unavailable || saving} aria-busy={setting.reading || saving}>
         <div
           role="radiogroup"
           aria-label={t("settings.gitEngineSettings.gitInstallation")}
@@ -125,7 +93,6 @@ export function GitEngineSettings() {
       <p className="text-xs text-text-secondary">
         {t("settings.gitEngineSettings.changesTakeEffectAfterRestartingEda")}
       </p>
-      <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>
       {engine ? (
         <Disclosure
           title={t("settings.gitEngineSettings.runningGitDetails")}

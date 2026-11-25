@@ -102,8 +102,6 @@ const api: EdaApi = {
   },
   pull: {
     preference: (id) => ipcRenderer.invoke(IPC_CHANNELS.pullPreference, id),
-    setPreference: (id, strategy) =>
-      ipcRenderer.invoke(IPC_CHANNELS.pullSetPreference, id, strategy),
     prepare: (request) => ipcRenderer.invoke(IPC_CHANNELS.pullPrepare, request),
     execute: (id, token) => ipcRenderer.invoke(IPC_CHANNELS.pullExecute, id, token),
   },

@@ -49,8 +49,21 @@ type Values = {
   [K in (typeof PREFERENCE_KEYS)[number]]: ResolvedSetting<K>;
 };
 
-const defaults = (): Values =>
-  Object.fromEntries(PREFERENCE_KEYS.map((key) => [key, builtInSetting(key)])) as Values;
+function valuesForContext(context: SettingsContext, previous?: Values): Values {
+  return Object.fromEntries(
+    PREFERENCE_KEYS.map((key) => {
+      const setting = previous?.[key];
+      const source = setting?.source;
+      const inherited =
+        source &&
+        (source.kind === "built-in" ||
+          source.kind === "application" ||
+          (source.profileId === context.profileId &&
+            (source.kind === "profile" || source.repositoryId === context.repositoryId)));
+      return [key, inherited ? setting : builtInSetting(key)];
+    }),
+  ) as Values;
+}
 
 interface PreferencesState {
   context: SettingsContext;
@@ -96,9 +109,7 @@ function apply(values: Values): void {
   root.dataset["customBackground"] = String(!!background.image);
 
   const backgroundProperties = {
-    "--background-image": background.image
-      ? `url("${background.image}")`
-      : root.style.getPropertyValue("--background-image") || "none",
+    "--background-image": background.image ? `url("${background.image}")` : "none",
     "--background-strength": String(background.image ? background.strength / 100 : 0),
     "--background-blur": `${background.blur}px`,
   };
@@ -152,32 +163,30 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
 
       return false;
     } finally {
-      pendingMutations--;
-      set({ saving: pendingMutations > 0 });
+      if (current()) {
+        pendingMutations--;
+        set({ saving: pendingMutations > 0 });
+      }
     }
   };
 
   return {
     context: {},
-    values: defaults(),
+    values: valuesForContext({}),
     loading: false,
     saving: false,
     error: null,
     async load(context) {
       const request = ++generation;
+      const previous = get();
       if (
-        context.profileId !== get().context.profileId ||
-        context.repositoryId !== get().context.repositoryId
-      )
+        context.profileId !== previous.context.profileId ||
+        context.repositoryId !== previous.context.repositoryId
+      ) {
         contextGeneration++;
-
-      if (context.profileId !== get().context.profileId) {
-        const values = {
-          ...defaults(),
-          developerSettingsEnabled: get().values.developerSettingsEnabled,
-        };
-
-        set({ context, values, loading: true, error: null });
+        pendingMutations = 0;
+        const values = valuesForContext(context, previous.values);
+        set({ context, values, loading: true, saving: false, error: null });
         apply(values);
       } else set({ context, loading: true, error: null });
 
@@ -201,18 +210,14 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
           results.flatMap(([key, result]) => (result.ok ? [[key, result.value]] : [])),
         ) as Values;
 
-        set({ values, loading: false, error: null });
+        set({ values, loading: false });
         apply(values);
       } catch {
         if (request !== generation) return;
 
         set({
           loading: false,
-          error: new GitError({
-            kind: "unknown",
-            operation: t("operations.readPreferences"),
-            message: errorText("settings.useScopedSetting.couldNotReadApplicationPreferences"),
-          }).toData(),
+          error: preferenceReadError(),
         });
       }
     },
@@ -220,6 +225,14 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
     reset: (key, scope) => mutate(() => window.eda.settings.reset(key, scope)),
   };
 });
+
+export function preferenceReadError(): GitErrorData {
+  return new GitError({
+    kind: "unknown",
+    operation: t("operations.readPreferences"),
+    message: errorText("settings.useScopedSetting.couldNotReadApplicationPreferences"),
+  }).toData();
+}
 
 export function preferenceSource(setting: ResolvedSetting): string {
   return setting.source.kind === "built-in"

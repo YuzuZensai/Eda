@@ -121,13 +121,6 @@ export function registerRemoteHandlers({
 
   handle(IPC_CHANNELS.pullPreference, async (_event, id) => ok(pull.preference(requireId(id))));
 
-  handle(IPC_CHANNELS.pullSetPreference, async (_event, id, strategy) => {
-    if (strategy !== null && !isPullStrategy(strategy))
-      throw invalidRequest(errorText("main.remoteHandlers.chooseAPullStrategy"));
-    pull.setPreference(requireId(id), strategy);
-    return ok(undefined);
-  });
-
   handle(IPC_CHANNELS.pullPrepare, async (_event, raw) => {
     const value = requireRecord(raw, t("main.remoteHandlers.pullRequest"));
     const id = requireId(value["repositoryId"]);

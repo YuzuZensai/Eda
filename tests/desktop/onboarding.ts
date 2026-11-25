@@ -619,6 +619,9 @@ try {
   assert.notEqual(backdrop.duration, "0s");
   assert.notEqual(backdrop.image, "none");
   assert.equal(backdrop.strength, "0");
+  await page.waitForFunction(
+    () => getComputedStyle(document.body, "::before").backgroundImage === "none",
+  );
 
   await app!.evaluate(({ dialog }, imagePath) => {
     const original = dialog.showOpenDialog;
