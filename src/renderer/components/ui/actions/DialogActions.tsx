@@ -12,6 +12,7 @@ export interface DialogActionsProps {
   confirmVariant?: ButtonVariant;
   closeLabel?: string;
   closeVariant?: ButtonVariant;
+  autoFocusClose?: boolean;
   children?: ReactNode;
 }
 
@@ -25,11 +26,12 @@ export function DialogActions({
   confirmVariant = "primary",
   closeLabel = t("common.cancel"),
   closeVariant = "quiet",
+  autoFocusClose = false,
   children,
 }: DialogActionsProps) {
   return (
     <>
-      <Button variant={closeVariant} disabled={busy} onClick={onClose}>
+      <Button variant={closeVariant} disabled={busy} autoFocus={autoFocusClose} onClick={onClose}>
         {closeLabel}
       </Button>
       {children}

@@ -1,6 +1,6 @@
 import { t } from "@shared/i18n";
 import { useTrustPrompt } from "../../components/ui/overlays/useTrustPrompt";
-import { Button, DefinitionList, Dialog } from "../../components/ui/index";
+import { DialogActions, DefinitionList, Dialog } from "../../components/ui/index";
 
 export function SshHostTrustDialog() {
   const { request, busy, respond, feedback } = useTrustPrompt(
@@ -16,16 +16,17 @@ export function SshHostTrustDialog() {
       key={request.id}
       title={t("sshHostTrustDialog.trustSshHost")}
       description={t("sshHostTrustDialog.thisServerIsNotTrustedYetCompareIts")}
+      busy={busy}
       onClose={() => void respond(false)}
       footer={
-        <>
-          <Button autoFocus disabled={busy} onClick={() => void respond(false)}>
-            {t("common.cancel")}
-          </Button>
-          <Button variant="primary" busy={busy} onClick={() => void respond(true)}>
-            {t("sshHostTrustDialog.trustAndContinue")}
-          </Button>
-        </>
+        <DialogActions
+          autoFocusClose
+          closeVariant="secondary"
+          busy={busy}
+          onClose={() => void respond(false)}
+          onConfirm={() => void respond(true)}
+          confirmLabel={t("sshHostTrustDialog.trustAndContinue")}
+        />
       }
     >
       <DefinitionList

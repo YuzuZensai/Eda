@@ -1,7 +1,7 @@
 import type { RepositoryTrustRequest } from "@shared/repository/repository";
 import { t } from "@shared/i18n";
 import { ShieldOffIcon } from "../../components/ui/icons";
-import { Button, Dialog, Disclosure } from "../../components/ui/index";
+import { DialogActions, Dialog, Disclosure } from "../../components/ui/index";
 import { useTrustPrompt } from "../../components/ui/overlays/useTrustPrompt";
 
 export function RepositoryTrustDialog() {
@@ -39,14 +39,15 @@ export function RepositoryTrustPrompt({
       busy={busy}
       onClose={() => void respond(false)}
       footer={
-        <>
-          <Button autoFocus disabled={busy} onClick={() => void respond(false)}>
-            {t("main.repositoryTrust.keepDisabled")}
-          </Button>
-          <Button variant="primary" busy={busy} onClick={() => void respond(true)}>
-            {t("main.repositoryTrust.allow")}
-          </Button>
-        </>
+        <DialogActions
+          autoFocusClose
+          closeVariant="secondary"
+          busy={busy}
+          closeLabel={t("main.repositoryTrust.keepDisabled")}
+          onClose={() => void respond(false)}
+          onConfirm={() => void respond(true)}
+          confirmLabel={t("main.repositoryTrust.allow")}
+        />
       }
     >
       <div className="flex min-w-0 items-center gap-3 rounded-md border border-border-subtle bg-bg-surface p-3">
