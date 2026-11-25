@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { watch, type FSWatcher } from "node:fs";
 import type * as FileSystem from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RepositoryWatcher } from "@main/repo/lifecycle/repository-watcher";
@@ -106,16 +106,40 @@ it.each(["creation", "runtime"] as const)(
   },
 );
 
-it("delivers real filesystem changes to the owning repository", async () => {
+function useNativeWatch() {
   vi.useRealTimers();
-  vi.mocked(watch).mockImplementation(nativeWatch);
+  const observed = new Set<string>();
+  vi.mocked(watch).mockImplementation((...args) => {
+    const handle = nativeWatch(...args);
+    handle.on("change", (_event, name) => {
+      if (name) observed.add(join(args[0].toString(), name.toString()));
+    });
+    return handle;
+  });
 
+  // macOS starts directory watches asynchronously. Git lock events signal readiness
+  // without triggering a repository refresh.
+  return async (lockPath: string) =>
+    vi.waitFor(
+      async () => {
+        if (!observed.has(lockPath)) await writeFile(lockPath, "changed");
+        expect(observed).toContain(lockPath);
+      },
+      { interval: 100, timeout: 3000 },
+    );
+}
+
+it("delivers real filesystem changes to the owning repository", async () => {
+  const waitForWatch = useNativeWatch();
   const root = await mkdtemp(join(tmpdir(), "eda-watch-"));
   const change = vi.fn();
   const subscription = create(change);
 
   try {
+    await mkdir(join(root, ".git"));
     subscription.watch("repo", root);
+    await waitForWatch(join(root, ".git", "index.lock"));
+    change.mockClear();
     await writeFile(join(root, "file.txt"), "changed");
     await vi.waitFor(() => expect(change).toHaveBeenCalledWith("repo"));
     expect(change.mock.calls.every(([id, warning]) => id === "repo" && warning === undefined)).toBe(
@@ -127,9 +151,11 @@ it("delivers real filesystem changes to the owning repository", async () => {
   }
 });
 
-it("refreshes a linked worktree after external changes to its index and shared refs", async () => {
-  vi.useRealTimers();
-  vi.mocked(watch).mockImplementation(nativeWatch);
+it.each([
+  ["index", join("worktrees", "work", "index")],
+  ["shared ref", join("refs", "heads", "topic")],
+])("refreshes a linked worktree after an external change to its %s", async (_target, path) => {
+  const waitForWatch = useNativeWatch();
   const root = await mkdtemp(join(tmpdir(), "eda-linked-watch-"));
   const work = join(root, "work");
   const gitDir = join(root, "common", "worktrees", "work");
@@ -141,10 +167,11 @@ it("refreshes a linked worktree after external changes to its index and shared r
     await mkdir(gitDir, { recursive: true });
     await mkdir(join(commonDir, "refs", "heads"), { recursive: true });
     subscription.watch("linked", work, { gitDir, commonDir });
-    await writeFile(join(gitDir, "index"), "index");
-    await vi.waitFor(() => expect(change).toHaveBeenCalledWith("linked"));
+
+    const target = join(commonDir, path);
+    await waitForWatch(target + ".lock");
     change.mockClear();
-    await writeFile(join(commonDir, "refs", "heads", "topic"), "tip");
+    await rename(target + ".lock", target);
     await vi.waitFor(() => expect(change).toHaveBeenCalledWith("linked"));
   } finally {
     subscription.closeAll();
