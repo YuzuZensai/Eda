@@ -25,7 +25,16 @@ export function GitHubConnection(props: ConnectionProps) {
 function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps) {
   const {
     busy,
-    setBusy,
+    beginSignIn,
+    cancel,
+    disconnect,
+    openProfile,
+    pending,
+    setPending,
+    expanded,
+    setExpanded,
+    connectRequested,
+    setConnectRequested,
     selectAccount,
     status,
     setStatus,
@@ -40,12 +49,14 @@ function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps
   } = useConnectionStatus<GitHubStatus, GitHubAccountProfile, GitHubSignIn>(
     profileId,
     window.eda.github,
-    t("settings.gitHubConnection.couldNotLoadTheGitHubConnectionReopenSettingsAndTryAgain"),
+    {
+      load: t("settings.gitHubConnection.couldNotLoadTheGitHubConnectionReopenSettingsAndTryAgain"),
+      begin: t("settings.gitHubConnection.couldNotStartGitHubSignInTryAgain"),
+      disconnect: t("settings.gitHubConnection.couldNotDisconnectGitHubTryAgain"),
+      openProfile: t("settings.gitHubConnection.couldNotOpenTheGitHubProfileTryAgain"),
+    },
   );
-  const [pending, setPending] = useState<GitHubSignIn | null>(null);
   const hue = useAppStore((state) => state.activeIdentity?.hue ?? 210);
-  const [expanded, setExpanded] = useState(false);
-  const [connectRequested, setConnectRequested] = useState(false);
   const [copiedSignIn, setCopiedSignIn] = useState<string | null>(null);
   const signedIn = status?.account?.state === "connected";
 
@@ -119,82 +130,13 @@ function GitHubConnectionSession({ profileId, compact = false }: ConnectionProps
     return false;
   };
 
-  const begin = async () => {
-    setBusy(true);
-    setError(null);
-
-    try {
-      const result = await window.eda.github.begin(profileId);
-
-      if (!alive.current) {
-        if (result.ok) void window.eda.github.cancel(profileId, result.value.id);
-        return;
-      }
-
-      if (!result.ok) {
-        setError(errorMessage(result.error));
-        return;
-      }
-
-      current.current = result.value;
-      setPending(result.value);
-      await openBrowser(result.value);
-    } catch {
-      if (alive.current) setError(t("settings.gitHubConnection.couldNotStartGitHubSignInTryAgain"));
-    } finally {
-      if (alive.current) setBusy(false);
-    }
-  };
+  const begin = () => beginSignIn(openBrowser);
 
   useEffect(() => {
     if (!connectRequested || !status) return;
     setConnectRequested(false);
     if (!busy && !pending && !signedIn && status.secureStorage) void begin();
   }, [connectRequested, status, busy, pending, signedIn]);
-
-  const cancel = () => {
-    setExpanded(false);
-    setConnectRequested(false);
-    if (current.current) void window.eda.github.cancel(profileId, current.current.id);
-    current.current = null;
-    setPending(null);
-    setError(null);
-  };
-
-  const disconnect = async () => {
-    setBusy(true);
-    setError(null);
-
-    try {
-      const result = await window.eda.github.disconnect(profileId);
-      if (!alive.current) return;
-
-      if (result.ok) {
-        setStatus((value) => value && { ...value, account: null });
-        if (status?.alternatives?.length) retryStatus();
-        setExpanded(false);
-        setConnectRequested(false);
-      } else setError(errorMessage(result.error));
-    } catch {
-      if (alive.current) setError(t("settings.gitHubConnection.couldNotDisconnectGitHubTryAgain"));
-    } finally {
-      if (alive.current) setBusy(false);
-    }
-  };
-
-  const openProfile = async (copyUrl = false) => {
-    try {
-      const result = await (copyUrl
-        ? window.eda.github.openProfile(profileId, true)
-        : window.eda.github.openProfile(profileId));
-      if (alive.current && !result.ok) setError(errorMessage(result.error));
-      return result.ok;
-    } catch {
-      if (alive.current)
-        setError(t("settings.gitHubConnection.couldNotOpenTheGitHubProfileTryAgain"));
-    }
-    return false;
-  };
 
   const account = status?.account;
   const isConnected = signedIn;

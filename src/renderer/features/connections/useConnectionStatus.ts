@@ -2,7 +2,7 @@ import { errorMessage, type Result } from "@shared/errors";
 import { useEffect, useRef, useState } from "react";
 
 export function useConnectionStatus<
-  Status extends { account: { id: string } | null },
+  Status extends { account: { id: string } | null; alternatives?: readonly unknown[] },
   Profile extends { id: string },
   SignIn extends { id: string },
 >(
@@ -12,9 +12,15 @@ export function useConnectionStatus<
     status: (profileId: string) => Promise<Result<Status>>;
     profile: (profileId: string) => Promise<Result<Profile | null>>;
     cancel: (profileId: string, sessionId: string) => Promise<unknown>;
+    begin: (profileId: string) => Promise<Result<SignIn>>;
+    disconnect: (profileId: string) => Promise<Result<void>>;
+    openProfile: (profileId: string, copyUrl?: boolean) => Promise<Result<void>>;
   },
-  loadError: string,
+  messages: { load: string; begin: string; disconnect: string; openProfile: string },
 ) {
+  const [pending, setPending] = useState<SignIn | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [connectRequested, setConnectRequested] = useState(false);
   const [busy, setBusy] = useState(false);
   const [statusRevision, setStatusRevision] = useState(0);
   const [statusLoading, setStatusLoading] = useState(true);
@@ -48,7 +54,7 @@ export function useConnectionStatus<
         else setError(errorMessage(result.error));
       })
       .catch(() => {
-        if (active) setError(loadError);
+        if (active) setError(messages.load);
       })
       .finally(() => {
         if (active) setStatusLoading(false);
@@ -57,7 +63,7 @@ export function useConnectionStatus<
     return () => {
       active = false;
     };
-  }, [api, profileId, statusRevision, loadError]);
+  }, [api, profileId, statusRevision, messages.load]);
 
   useEffect(() => {
     let active = true;
@@ -100,9 +106,85 @@ export function useConnectionStatus<
     }
   };
 
+  const beginSignIn = async (openBrowser: (signIn: SignIn) => Promise<boolean>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.begin(profileId);
+      if (!alive.current) {
+        if (result.ok) void api.cancel(profileId, result.value.id);
+        return;
+      }
+      if (!result.ok) {
+        setError(errorMessage(result.error));
+        return;
+      }
+      current.current = result.value;
+      setPending(result.value);
+      await openBrowser(result.value);
+    } catch {
+      if (alive.current) setError(messages.begin);
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  };
+
+  const cancel = () => {
+    if (current.current) void api.cancel(profileId, current.current.id);
+    current.current = null;
+    setPending(null);
+    setError(null);
+    setExpanded(false);
+    setConnectRequested(false);
+  };
+
+  const retryStatus = () => setStatusRevision((value) => value + 1);
+  const disconnect = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.disconnect(profileId);
+      if (!alive.current) return;
+      if (!result.ok) {
+        setError(errorMessage(result.error));
+        return;
+      }
+      setStatus((value) => value && { ...value, account: null });
+      if (status?.alternatives?.length) retryStatus();
+      setExpanded(false);
+      setConnectRequested(false);
+    } catch {
+      if (alive.current) setError(messages.disconnect);
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  };
+
+  const openProfile = async (copyUrl = false) => {
+    try {
+      const result = await (copyUrl
+        ? api.openProfile(profileId, true)
+        : api.openProfile(profileId));
+      if (alive.current && !result.ok) setError(errorMessage(result.error));
+      return result.ok;
+    } catch {
+      if (alive.current) setError(messages.openProfile);
+      return false;
+    }
+  };
+
   return {
     busy,
-    setBusy,
+    beginSignIn,
+    cancel,
+    disconnect,
+    openProfile,
+    pending,
+    setPending,
+    expanded,
+    setExpanded,
+    connectRequested,
+    setConnectRequested,
     selectAccount,
     status,
     setStatus,
@@ -113,6 +195,6 @@ export function useConnectionStatus<
     setError,
     alive,
     current,
-    retryStatus: () => setStatusRevision((value) => value + 1),
+    retryStatus,
   };
 }
