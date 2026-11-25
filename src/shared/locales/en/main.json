@@ -422,6 +422,7 @@
   "main.identity.profileService.chooseADifferentDestinationProfile": "Choose a different destination profile.",
   "main.identity.profileService.copyRepositoriesToCopyTheirTabs": "Copy repositories to copy their tabs.",
   "main.identity.profileService.enterAProfileNameOf1To100Characters": "Enter a profile name of 1 to 100 characters.",
+  "main.identity.profileService.profileChangedDuringVaultCleanup": "The profile changed during deletion. Its remembered credentials were removed. Eda kept the profile and its latest changes. Review the updated deletion preview before trying again.",
   "main.identity.profileService.recoverTheSourceSavedStateBeforeCopyingItsTabs": "Recover the source saved state before copying its tabs.",
   "main.identity.profileService.rememberedCredentialsWereRemovedButProfileMetadataCould": "Remembered credentials were removed, but profile metadata could not be deleted. The profile was retained; retry deletion after restoring database access.",
   "main.identity.profileService.thatProfileNoLongerExists": "That profile no longer exists.",

@@ -29,11 +29,13 @@ export class ProfileSessionRepository {
       .where(eq(profileSessions.profileId, profileId))
       .all();
 
+    const live = this.ownedRepositoryIds(profileId);
+
     return [
       ...new Set(
         rows.flatMap((row) => {
           const session = parse(row.value);
-          return isSession(session) ? session.tabs : [];
+          return isSession(session) ? session.tabs.filter((id) => live.has(id)) : [];
         }),
       ),
     ];
@@ -58,14 +60,7 @@ export class ProfileSessionRepository {
         ? t("main.persistence.profileSessionRepository.savedTabsLayoutUseAnUnsupportedOrDamaged")
         : null;
     const session = valid ? parsed : emptySession();
-    const live = new Set(
-      this.db
-        .select({ id: repositories.id })
-        .from(repositories)
-        .where(eq(repositories.identityId, profileId))
-        .all()
-        .map((r) => r.id),
-    );
+    const live = this.ownedRepositoryIds(profileId);
 
     session.tabs = session.tabs.filter((id) => live.has(id));
 
@@ -137,6 +132,10 @@ export class ProfileSessionRepository {
       }
 
       current.session.views[change.repositoryId] = change.view;
+      if (!isSession(current.session))
+        throw invalid(
+          errorText("main.persistence.profileSessionRepository.invalidSavedStateUpdate"),
+        );
     }
 
     const value = JSON.stringify(current.session);
@@ -183,10 +182,22 @@ export class ProfileSessionRepository {
 
       this.db.delete(profileSessions).where(sessionOwner(profileId, windowId)).run();
 
+      const live = this.ownedRepositoryIds(profileId);
       for (const row of rows)
-        if (!isDraft(parse(row.value)))
+        if (!live.has(row.repositoryId) || !isDraft(parse(row.value)))
           this.db.delete(profileDrafts).where(draftOwner(profileId, row.repositoryId)).run();
     });
+  }
+
+  private ownedRepositoryIds(profileId: string): Set<string> {
+    return new Set(
+      this.db
+        .select({ id: repositories.id })
+        .from(repositories)
+        .where(eq(repositories.identityId, profileId))
+        .all()
+        .map((r) => r.id),
+    );
   }
 
   private requireProfile(profileId: string): void {

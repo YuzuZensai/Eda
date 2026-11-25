@@ -104,7 +104,6 @@ export class IdentityRepository {
     const merged: IdentityDraft = {
       ...existing,
       ...draft,
-      signing: { ...existing.signing, ...draft.signing },
     };
 
     this.requireAvailableName(merged.name, id);
@@ -131,21 +130,6 @@ export class IdentityRepository {
     this.db
       .update(identities)
       .set({ sshKeyPath: path, updatedAt: new Date().toISOString() })
-      .where(eq(identities.id, id))
-      .run();
-
-    return this.findById(id);
-  }
-
-  configureSigning(id: string, signing: IdentityDraft["signing"]): Identity | undefined {
-    this.db
-      .update(identities)
-      .set({
-        signingFormat: signing.format,
-        signingKeyRef: signing.keyRef ?? null,
-        signCommits: signing.signCommits ? 1 : 0,
-        updatedAt: new Date().toISOString(),
-      })
       .where(eq(identities.id, id))
       .run();
 

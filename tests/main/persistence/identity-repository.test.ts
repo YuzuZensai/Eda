@@ -163,10 +163,12 @@ describe("ssh key assignment", () => {
 describe("signing configuration", () => {
   it("stores an ssh signing key", () => {
     const created = identities.create(draft());
-    const updated = identities.configureSigning(created.id, {
-      format: "ssh",
-      keyRef: "/home/dev/.ssh/id_work.pub",
-      signCommits: true,
+    const updated = identities.update(created.id, {
+      signing: {
+        format: "ssh",
+        keyRef: "/home/dev/.ssh/id_work.pub",
+        signCommits: true,
+      },
     });
 
     expect(updated?.signing).toEqual({
@@ -182,7 +184,9 @@ describe("signing configuration", () => {
         signing: { format: "gpg", keyRef: "ABCD1234", signCommits: true },
       }),
     );
-    const updated = identities.configureSigning(created.id, { format: "none", signCommits: false });
+    const updated = identities.update(created.id, {
+      signing: { format: "none", signCommits: false },
+    });
 
     expect(updated?.signing.format).toBe("none");
     expect(updated?.signing.keyRef).toBeUndefined();

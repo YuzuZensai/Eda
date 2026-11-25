@@ -74,23 +74,30 @@ export class ProfileService {
   }
 
   async delete(id: string, token: string): Promise<void> {
-    const preview = this.previewDelete(id);
-
-    if (preview.fallback) this.sessions.read(preview.fallback.id, "primary");
-
-    await this.identity.replaceAfterDelete(id, preview.fallback?.id ?? null, async () => {
-      if (this.previewDelete(id).token !== token)
+    const checkPreview = () => {
+      const preview = this.previewDelete(id);
+      if (preview.token !== token)
         throw invalid(
           errorText(
             "main.identity.profileService.theProfileChangedAfterThePreviewReviewTheUpdatedDeletionPreview",
           ),
         );
 
-      // Delete credentials first so we can retry if vault cleanup fails.
+      return preview;
+    };
+    const preview = checkPreview();
+    if (preview.fallback) this.sessions.read(preview.fallback.id, "primary");
+
+    await this.identity.replaceAfterDelete(id, preview.fallback?.id ?? null, async () => {
+      checkPreview();
       await this.secrets.deleteForIdentity(id);
 
       try {
-        this.profiles.delete(id, preview.active, preview.fallback?.id ?? null);
+        // Other windows can still save drafts while the vault is being cleared.
+        if (this.previewDelete(id).token === token) {
+          this.profiles.delete(id, preview.active, preview.fallback?.id ?? null);
+          return;
+        }
       } catch {
         throw invalid(
           errorText(
@@ -98,6 +105,8 @@ export class ProfileService {
           ),
         );
       }
+
+      throw invalid(errorText("main.identity.profileService.profileChangedDuringVaultCleanup"));
     });
   }
 }

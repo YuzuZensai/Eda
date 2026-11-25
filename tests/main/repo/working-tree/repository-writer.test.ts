@@ -368,7 +368,7 @@ describe("pre-commit identity verification", () => {
       ["-q", "-t", "ed25519", "-N", "", "-f", key, "-C", "fixture@example.test"],
       { stdio: "pipe" },
     );
-    identities.configureSigning(identity.id, { format: "ssh", keyRef: key, signCommits: true });
+    identities.update(identity.id, { signing: { format: "ssh", keyRef: key, signCommits: true } });
     await repo.writeFile("signed.txt", "signed");
     await writer.stage("r1", ["signed.txt"]);
     await writer.commit("r1", "signed by Work");
@@ -381,10 +381,12 @@ describe("pre-commit identity verification", () => {
   it("explains a missing signing key and keeps staged changes after signing fails", async () => {
     const { repo, writer, identities, identity } = await setup();
 
-    identities.configureSigning(identity.id, {
-      format: "ssh",
-      keyRef: join(repo.home, "missing-key"),
-      signCommits: true,
+    identities.update(identity.id, {
+      signing: {
+        format: "ssh",
+        keyRef: join(repo.home, "missing-key"),
+        signCommits: true,
+      },
     });
     await repo.writeFile("signed.txt", "keep staged");
     await writer.stage("r1", ["signed.txt"]);

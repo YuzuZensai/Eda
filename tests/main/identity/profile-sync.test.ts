@@ -174,6 +174,19 @@ describe("profile Git synchronization", () => {
     expect(await repo.git.readConfig("user.email", { scope: "global" })).toBe("new@example.com");
   });
 
+  it("removes the previous signing key from the profile and Git when signing is disabled", async () => {
+    const { profiles, manager, work, repo } = await setup();
+    await manager.setActive(work.id);
+    await manager.update(work.id, {
+      signing: { format: "gpg", keyRef: "ABCD1234", signCommits: true },
+    });
+
+    const disabled = { format: "none", signCommits: false } as const;
+    await manager.update(work.id, { signing: disabled });
+    expect(profiles.findById(work.id)?.signing).toEqual(disabled);
+    expect(await repo.git.readConfig("user.signingkey", { scope: "global" })).toBeUndefined();
+  });
+
   it("does not synchronize edits to a background profile", async () => {
     const { manager, work, home, repo } = await setup();
     await manager.setActive(work.id);

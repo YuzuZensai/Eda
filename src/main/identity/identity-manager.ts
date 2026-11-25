@@ -158,7 +158,6 @@ export class IdentityManager {
         });
       } else {
         await cleanup();
-        this.identities.setActiveId(null);
         this.emit(null);
       }
     });
@@ -171,7 +170,6 @@ export class IdentityManager {
       const proposed = {
         ...previous,
         ...draft,
-        signing: { ...previous.signing, ...draft.signing },
       };
 
       this.identities.requireAvailableName(proposed.name, id);
@@ -260,9 +258,9 @@ export class IdentityManager {
             : {}),
         });
 
-        const identity = persist ? await persist() : candidate;
-        this.identities.setActiveId(identity.id);
-        return identity;
+        if (persist) return persist();
+        this.identities.setActiveId(candidate.id);
+        return candidate;
       },
     );
 

@@ -19,8 +19,8 @@ import {
 import { IdentityManager } from "@main/identity/identity-manager";
 import { ProfileService } from "@main/identity/profile-service";
 import { ProfileSessions } from "@main/identity/profile-sessions";
-import { emptyView } from "@shared/identity/profile-session";
-import type { SecretStore } from "@main/secrets/secret-store";
+import { emptySession, emptyView } from "@shared/identity/profile-session";
+import { MemorySecrets } from "../../helpers/memory-secrets";
 import { secretKeys } from "@main/secrets/secret-store";
 
 const nordPreference = { mode: "dark", light: "nord-light", dark: "nord" } as const;
@@ -66,21 +66,7 @@ async function setup() {
   const manager = new IdentityManager(identities, repo.git, settings);
   const store = new ProfileSessionRepository(db);
   const sessions = new ProfileSessions(manager, store);
-  const values = new Map<string, string>();
-  const secrets: SecretStore = {
-    available: true,
-    get: async (key) => values.get(key),
-    set: async (key, value) => {
-      values.set(key, value);
-    },
-    delete: async (key) => {
-      values.delete(key);
-    },
-    deleteForIdentity: async (id) => {
-      for (const key of values.keys())
-        if (key.startsWith(secretKeys.identityPrefix(id))) values.delete(key);
-    },
-  };
+  const secrets = new MemorySecrets();
 
   const service = new ProfileService(
     new ProfileRepository(db, identities, store),
@@ -103,7 +89,7 @@ async function setup() {
     manager,
     store,
     sessions,
-    values,
+    values: secrets.values,
     secrets,
     service,
   };
@@ -299,6 +285,48 @@ describe("durable profile sessions", () => {
     expect(store.read(work.id, "primary").drafts["work-repo"]?.message).toBe("keep");
   });
 
+  it("archives a draft with invalid membership and unblocks session updates on reset", async () => {
+    const { db, work, store } = await setup();
+    const value = JSON.stringify({ version: 1, message: "recover me", amend: false });
+    db.raw.exec("PRAGMA foreign_keys = OFF");
+    db.insert(profileDrafts).values({ profileId: work.id, repositoryId: "home-repo", value }).run();
+    db.raw.exec("PRAGMA foreign_keys = ON");
+    expect(store.read(work.id, "primary").recovery).toBeTruthy();
+
+    store.reset(work.id, "primary");
+    expect(db.select().from(profileRecovery).get()?.value).toBe(value);
+    expect(store.read(work.id, "primary").recovery).toBeNull();
+  });
+
+  it("keeps the saved session readable when an additional view exceeds the limit", async () => {
+    const { db, work, store } = await setup();
+    const ids = Array.from({ length: 2000 }, (_, i) => `view-${i}`);
+    db.insert(repositories)
+      .values(
+        ids.map((id) => ({ id, identityId: work.id, path: `/${id}`, name: id, createdAt: "now" })),
+      )
+      .run();
+    const views = Object.fromEntries(ids.map((id) => [id, emptyView()]));
+    db.insert(profileSessions)
+      .values({
+        profileId: work.id,
+        windowId: "primary",
+        value: JSON.stringify({ ...emptySession(), views }),
+      })
+      .run();
+
+    expect(() =>
+      store.change(work.id, "primary", {
+        kind: "view",
+        repositoryId: "work-repo",
+        view: emptyView(),
+      }),
+    ).toThrow();
+    const saved = store.read(work.id, "primary");
+    expect(saved.recovery).toBeNull();
+    expect(Object.keys(saved.session.views)).toHaveLength(ids.length);
+  });
+
   it("rejects invalid state and prunes missing memberships without deleting input elsewhere", async () => {
     const { db, work, store } = await setup();
 
@@ -322,8 +350,10 @@ describe("durable profile sessions", () => {
       tabs: ["work-repo"],
       selectedRepositoryId: "work-repo",
     });
+    expect(store.openRepositoryIds(work.id)).toEqual(["work-repo"]);
     db.delete(repositories).where(eq(repositories.id, "work-repo")).run();
     expect(store.read(work.id, "primary").session.tabs).toEqual([]);
+    expect(store.openRepositoryIds(work.id)).toEqual([]);
   });
 
   it("keeps the old binding, draft, and active profile after a failed switch", async () => {
@@ -383,10 +413,12 @@ describe("profile duplicate/delete", () => {
     const { db, service, work, identities, values, settings, store, manager } = await setup();
 
     identities.assignSshKey(work.id, "/keys/private");
-    identities.configureSigning(work.id, {
-      format: "ssh",
-      keyRef: "/keys/public.pub",
-      signCommits: true,
+    identities.update(work.id, {
+      signing: {
+        format: "ssh",
+        keyRef: "/keys/public.pub",
+        signCommits: true,
+      },
     });
     values.set(secretKeys.sshPassphrase(work.id), "secret");
     settings.set("theme", { kind: "profile", profileId: work.id }, nordPreference);
@@ -516,7 +548,8 @@ describe("profile duplicate/delete", () => {
   });
 
   it("rejects an outdated deletion preview after new input was saved", async () => {
-    const { service, work, store, identities } = await setup();
+    const { service, work, store, identities, values } = await setup();
+    values.set(secretKeys.sshPassphrase(work.id), "remembered");
     const preview = service.previewDelete(work.id);
 
     store.change(work.id, "primary", {
@@ -526,6 +559,30 @@ describe("profile duplicate/delete", () => {
     });
     await expect(service.delete(work.id, preview.token)).rejects.toThrow(/changed/);
     expect(identities.findById(work.id)).toBeDefined();
+    expect(values.get(secretKeys.sshPassphrase(work.id))).toBe("remembered");
+  });
+
+  it("reports cleared credentials and retains the profile and drafts when another window saves during vault cleanup", async () => {
+    const { service, sessions, secrets, values, work, manager, repo, store } = await setup();
+    values.set(secretKeys.sshPassphrase(work.id), "remembered");
+    const session = sessions.open(2)!;
+    const cleanup = secrets.deleteForIdentity.getMockImplementation()!;
+    secrets.deleteForIdentity.mockImplementationOnce(async (id) => {
+      await cleanup(id);
+      sessions.change(2, session.context, {
+        kind: "draft",
+        repositoryId: "work-repo",
+        draft: { version: 1, message: "still editing", amend: false },
+      });
+    });
+
+    await expect(service.delete(work.id, service.previewDelete(work.id).token)).rejects.toThrow(
+      /remembered credentials were removed/i,
+    );
+    expect(values.has(secretKeys.sshPassphrase(work.id))).toBe(false);
+    expect(store.read(work.id, "primary").drafts["work-repo"]?.message).toBe("still editing");
+    expect(manager.getActive()?.id).toBe(work.id);
+    expect(await repo.git.readConfig("user.email", { scope: "global" })).toBe(work.gitEmail);
   });
 
   it("retains metadata/session and compensates global Git if vault cleanup fails", async () => {
@@ -536,7 +593,7 @@ describe("profile duplicate/delete", () => {
       repositoryId: "work-repo",
       draft: { version: 1, message: "keep me", amend: false },
     });
-    vi.spyOn(secrets, "deleteForIdentity").mockRejectedValue(new Error("vault unavailable"));
+    secrets.deleteForIdentity.mockRejectedValue(new Error("vault unavailable"));
     await expect(service.delete(work.id, service.previewDelete(work.id).token)).rejects.toThrow(
       /vault/,
     );
