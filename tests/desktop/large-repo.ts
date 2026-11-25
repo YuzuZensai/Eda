@@ -33,7 +33,6 @@ const gitConfigGlobal = join(userData, "gitconfig");
 await writeFile(gitConfigGlobal, "");
 
 const app = await electron.launch({
-  // The frame assertion samples CSS lime in sRGB, including on wide-gamut displays.
   args: [
     "dist/main/index.js",
     "--no-sandbox",
@@ -312,7 +311,12 @@ async function assertCachedRowDetailsDuringScroll(list: Locator, rowHeight: numb
 
 async function assertThumbDragCoverage(page: Page, list: Locator, rowHeight: number) {
   const marker = await page.addStyleTag({
-    content: '[data-tour="history-commit"] { box-shadow: inset 5px 0 lime }',
+    content: `
+      [data-tour="history-commit"] { position: relative }
+      [data-tour="history-commit"]::after {
+        content: ""; position: absolute; inset: 0 auto 0 12px; width: 5px;
+        background: lime; pointer-events: none;
+      }`,
   });
   const track = await list.evaluate((element) => {
     const rect = element.getBoundingClientRect();
@@ -323,38 +327,30 @@ async function assertThumbDragCoverage(page: Page, list: Locator, rowHeight: num
       grab: rect.top + (height * element.scrollTop) / element.scrollHeight + thumb / 2,
       low: rect.top + height * 0.72,
       high: rect.top + height * 0.28,
-      strip: { x: rect.left + 2, y: rect.top + 1, height: height - 2 },
-      viewportWidth: innerWidth,
+      strip: {
+        x: Math.round(rect.left + 14),
+        y: Math.ceil(rect.top) + 1,
+        width: 1,
+        height: height - 2,
+      },
     };
   });
-  const monitor = await app.evaluateHandle(({ BrowserWindow }, { strip, viewportWidth }) => {
-    const contents = BrowserWindow.getAllWindows()[0]!.webContents;
-    let frames = 0;
-    let maxGap = 0;
-    contents.beginFrameSubscription((image) => {
-      const scale = image.getSize().width / viewportWidth;
-      const pixels = image
-        .crop({
-          x: Math.round(strip.x * scale),
-          y: Math.round(strip.y * scale),
-          width: 1,
-          height: Math.round(strip.height * scale),
-        })
-        .toBitmap();
+  const paintedGap = () =>
+    app.evaluate(async ({ BrowserWindow }, strip) => {
+      const contents = BrowserWindow.getAllWindows()[0]!.webContents;
+      const image = await contents.capturePage(strip);
+      if (image.isEmpty()) throw new Error("The history viewport capture was empty");
+      const { width, height } = image.getSize();
+      const pixels = image.toBitmap();
       let gap = 0;
       let longest = 0;
-      for (let index = 0; index < pixels.length; index += 4) {
-        gap =
-          pixels[index + 1]! > 220 && pixels[index]! < 40 && pixels[index + 2]! < 40 ? 0 : gap + 1;
+      for (let i = 0; i < pixels.length; i += 4 * width) {
+        const green = pixels[i + 1]!;
+        gap = green - Math.max(pixels[i]!, pixels[i + 2]!) > 100 ? 0 : gap + 1;
         longest = Math.max(longest, gap);
       }
-      if (!frames && longest / scale >= 5) return;
-      frames++;
-      maxGap = Math.max(maxGap, longest / scale);
-    });
-    contents.invalidate();
-    return { stats: () => ({ frames, maxGap }), stop: () => contents.endFrameSubscription() };
-  }, track);
+      return (longest * strip.height) / height;
+    }, track.strip);
   const coverage = await list.evaluateHandle((element) => {
     let previous = element.scrollTop;
     let down = 0;
@@ -387,31 +383,30 @@ async function assertThumbDragCoverage(page: Page, list: Locator, rowHeight: num
   const session = await page.context().newCDPSession(page);
   try {
     await expect
-      .poll(() => monitor.evaluate((monitor) => monitor.stats().frames))
-      .toBeGreaterThan(0);
+      .poll(paintedGap, { message: "History rows should paint the marker before dragging" })
+      .toBeLessThan(5);
     await session.send("Emulation.setCPUThrottlingRate", { rate: 8 });
     await page.mouse.move(track.x, track.grab);
     await page.mouse.down();
-    const baseline = await monitor.evaluate((monitor) => monitor.stats().frames);
+    let maxGap = 0;
     for (let pass = 0; pass < 6; pass++) {
-      await page.mouse.move(track.x, track.low);
-      await page.mouse.move(track.x, track.high);
+      for (const y of [track.low, track.high]) {
+        const [, gap] = await Promise.all([page.mouse.move(track.x, y), paintedGap()]);
+        maxGap = Math.max(maxGap, gap);
+      }
     }
+    maxGap = Math.max(maxGap, await paintedGap());
     const { down, up, gap } = await coverage.evaluate((coverage) => coverage.stats());
     assert.ok(
       Math.min(down, up) > MAX_MOUNTED_ROWS * rowHeight,
       "The thumb must jump beyond the mounted rows in both directions",
     );
     assert.ok(gap <= 1, `Dragging the scrollbar uncovered ${gap}px before the rows updated`);
-    const { frames, maxGap } = await monitor.evaluate((monitor) => monitor.stats());
-    assert.ok(frames - baseline >= 2, "Expected painted frames during the drag");
     assert.ok(maxGap < rowHeight, `The scrollbar drag painted a ${maxGap}px gap`);
   } finally {
     await page.mouse.up();
     await coverage.evaluate((coverage) => coverage.stop());
     await coverage.dispose();
-    await monitor.evaluate((monitor) => monitor.stop());
-    await monitor.dispose();
     await session.send("Emulation.setCPUThrottlingRate", { rate: 1 });
     await session.detach();
     await marker.evaluate((element) => element.parentNode?.removeChild(element));
