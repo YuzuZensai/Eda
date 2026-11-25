@@ -1,4 +1,5 @@
 import { workingFilePath } from "../../filesystem/working-file-path";
+import { readActiveRepository } from "../lifecycle/repository-context";
 import type { GitHosts } from "../../providers/git-hosts";
 import { isFullObjectId } from "@shared/repository/object-id";
 import { errorText } from "@shared/error-codes";
@@ -132,62 +133,64 @@ export class RemoteService {
     );
   }
 
-  async inspect(id: string): Promise<RemoteState> {
-    const { path } = this.repositories.resolveActiveRepository(id);
+  inspect(id: string): Promise<RemoteState> {
+    return readActiveRepository(this.repositories, id, async (path) => {
+      const [remotes, branches, states] = await Promise.all([
+        this.remotes.list(path),
+        this.git.listBranches(path),
+        this.remotes.upstreamStates(path),
+      ]);
 
-    const [remotes, branches, states] = await Promise.all([
-      this.remotes.list(path),
-      this.git.listBranches(path),
-      this.remotes.upstreamStates(path),
-    ]);
-
-    return {
-      remotes,
-      branches: branches.map((branch) => ({
-        ...branch,
-        upstreamState: states.get(branch.name) ?? "",
-      })),
-    };
+      return {
+        remotes,
+        branches: branches.map((branch) => ({
+          ...branch,
+          upstreamState: states.get(branch.name) ?? "",
+        })),
+      };
+    });
   }
 
   primaryFetchUrl(id: string, { refresh = false } = {}): Promise<string | undefined> {
-    const repository = this.repositories.resolveActiveRepository(id);
-    const key = `${repository.identityId}:${repository.id}:${repository.path}`;
-    const cached = this.primaryFetchUrls.get(key);
-    if (!refresh && cached && cached.expiresAt > Date.now()) return cached.value;
+    return readActiveRepository(this.repositories, id, (path, identityId) => {
+      const key = JSON.stringify([identityId, id, path]);
+      const cached = this.primaryFetchUrls.get(key);
+      if (!refresh && cached && cached.expiresAt > Date.now()) return cached.value;
 
-    const value = (async () => {
-      const origin = await this.git.readConfig("remote.origin.url", { cwd: repository.path });
-      if (origin) return origin;
-
-      const result = await this.git.exec(["remote"], {
-        cwd: repository.path,
-        operation: t("operations.readRemoteNames"),
-        maxStdoutBytes: 64 * 1024,
+      const value = this.loadPrimaryFetchUrl(path).catch((error: unknown) => {
+        if (this.primaryFetchUrls.get(key)?.value === value) this.primaryFetchUrls.delete(key);
+        throw error;
       });
-      const name = result.stdout.trim().split("\n").find(Boolean);
-      return name ? this.git.readConfig(`remote.${name}.url`, { cwd: repository.path }) : undefined;
-    })();
 
-    this.primaryFetchUrls.delete(key);
-    this.primaryFetchUrls.set(key, { expiresAt: Date.now() + 60_000, value });
-    while (this.primaryFetchUrls.size > 128)
-      this.primaryFetchUrls.delete(this.primaryFetchUrls.keys().next().value!);
-    return value;
+      this.primaryFetchUrls.delete(key);
+      this.primaryFetchUrls.set(key, { expiresAt: Date.now() + 60_000, value });
+      while (this.primaryFetchUrls.size > 128)
+        this.primaryFetchUrls.delete(this.primaryFetchUrls.keys().next().value!);
+      return value;
+    });
+  }
+
+  private async loadPrimaryFetchUrl(path: string) {
+    const origin = await this.git.readConfig("remote.origin.url", { cwd: path });
+    if (origin) return origin;
+    const [name] = await this.git.remoteNames(path);
+    return name ? this.git.readConfig(`remote.${name}.url`, { cwd: path }) : undefined;
   }
 
   async listTags(request: RemoteTagsRequest): Promise<RemoteTagSummary[]> {
     remoteName(request.remote);
-    const { path, identityId } = this.repositories.resolveActiveRepository(request.repositoryId);
-    const identity = this.identities.findById(identityId);
+    const repository = this.repositories.resolveActiveRepository(request.repositoryId);
+    const identity = this.identities.findById(repository.identityId);
     if (!identity)
       throw remoteError(errorText("main.remoteService.theOriginatingProfileNoLongerExists"));
-    const url = await this.remotes.destination(path, request.remote, true);
+    const url = await this.remotes.destination(repository.path, request.remote, true);
+    this.repositories.assertCurrentRepository(repository);
     const credentials = await this.resolveCredentials(identity.id, url, request.credentials);
+    this.repositories.assertCurrentRepository(repository);
 
     const result = await this.git
       .exec(["ls-remote", "--upload-pack=git-upload-pack", "--refs", "--tags", "--", url], {
-        cwd: path,
+        cwd: repository.path,
         operation: t("main.remoteService.inspectRemoteTags"),
         maxStdoutBytes: 4 * 1024 * 1024,
         ...this.transport(url, identity, credentials),
@@ -196,6 +199,7 @@ export class RemoteService {
         throw this.githubFailure(error, url, !!request.credentials);
       });
 
+    this.repositories.assertCurrentRepository(repository);
     return result.stdout
       .split("\n")
       .filter(Boolean)
@@ -209,19 +213,14 @@ export class RemoteService {
       });
   }
 
-  async fetchStates(id: string) {
-    const repository = this.repositories.resolveActiveRepository(id);
-
-    return (await this.remotes.list(repository.path)).map((remote) => ({
-      name: remote.name,
-      supported: remote.fetchUrls.length === 1,
-      history: this.fetchHistory.read(
-        repository.identityId,
-        id,
-        remote.name,
-        remote.fetchUrls[0] ?? "",
-      ),
-    }));
+  fetchStates(id: string) {
+    return readActiveRepository(this.repositories, id, async (path, identityId) =>
+      (await this.remotes.list(path)).map((remote) => ({
+        name: remote.name,
+        supported: remote.fetchUrls.length === 1,
+        history: this.fetchHistory.read(identityId, id, remote.name, remote.fetchUrls[0] ?? ""),
+      })),
+    );
   }
 
   change(id: string, change: RemoteChange): Promise<void> {

@@ -135,8 +135,12 @@ export class BackgroundFetchService {
 
     if (!profile) return;
 
+    const isCurrent = () => !this.stopping && this.identity.getActive()?.id === profile.id;
+    const reportFailure = (error: unknown) => {
+      if (isCurrent()) reportUnexpectedFailure(error);
+    };
     for (const repositoryId of this.sessions.openRepositoryIds(profile.id)) {
-      if (this.stopping || this.identity.getActive()?.id !== profile.id) return;
+      if (!isCurrent()) return;
 
       try {
         if (this.paused()) return;
@@ -144,7 +148,7 @@ export class BackgroundFetchService {
         if (!interval) continue;
 
         for (const remote of await this.remoteStates(repositoryId, interval)) {
-          if (this.stopping || this.identity.getActive()?.id !== profile.id) return;
+          if (!isCurrent()) return;
 
           if (this.paused()) return;
 
@@ -160,14 +164,15 @@ export class BackgroundFetchService {
               "main.backgroundFetchService.backgroundFetch",
             );
           } catch (error) {
-            reportUnexpectedFailure(error);
+            reportFailure(error);
           } finally {
             this.fetching = null;
-            this.changed(repositoryId);
           }
+          if (!isCurrent()) return;
+          this.changed(repositoryId);
         }
       } catch (error) {
-        reportUnexpectedFailure(error);
+        reportFailure(error);
       }
     }
   }

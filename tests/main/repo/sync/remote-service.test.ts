@@ -34,60 +34,77 @@ import { isGitHubHttps } from "@shared/integrations/github";
 const fixtures: TempRepo[] = [];
 const databases: Database[] = [];
 
-it.each(["session", "inspection", "fetch", "expected-fetch"] as const)(
-  "recovers from a %s scheduler failure without leaking diagnostics",
-  async (stage) => {
-    const { service, client, profile, identity, repositories, db } = await setup();
-    const sessions = new ProfileSessionRepository(db);
-    const settings = new SettingsRepository(db);
-    const changed = vi.fn();
-    const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const scheduler = new BackgroundFetchService(
-      identity,
-      sessions,
-      settings,
-      repositories,
-      service,
-      () => ({ online: true, suspended: false }),
-      changed,
-    );
-    sessions.change(profile.id, "main", {
-      kind: "tabs",
-      tabs: [client.id],
-      selectedRepositoryId: client.id,
-    });
-    scheduler.configure(client.id, 1);
-    const failure = new Error("https://user:private-token@example.com/repo.git");
+it.each([
+  "session",
+  "inspection",
+  "fetch",
+  "expected-fetch",
+  "switched-inspection",
+  "switched-fetch",
+] as const)("recovers from a %s scheduler failure without leaking diagnostics", async (stage) => {
+  const { service, client, profile, identity, identities, repositories, db } = await setup();
+  const sessions = new ProfileSessionRepository(db);
+  const settings = new SettingsRepository(db);
+  const changed = vi.fn();
+  const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  const scheduler = new BackgroundFetchService(
+    identity,
+    sessions,
+    settings,
+    repositories,
+    service,
+    () => ({ online: true, suspended: false }),
+    changed,
+  );
+  sessions.change(profile.id, "main", {
+    kind: "tabs",
+    tabs: [client.id],
+    selectedRepositoryId: client.id,
+  });
+  scheduler.configure(client.id, 1);
+  const failure = new Error("https://user:private-token@example.com/repo.git");
 
-    try {
-      if (stage === "session") {
-        vi.spyOn(sessions, "openRepositoryIds").mockImplementationOnce(() => {
-          throw failure;
-        });
-      } else if (stage === "inspection") {
-        vi.spyOn(service, "fetchStates").mockRejectedValueOnce(failure);
-      } else {
-        vi.spyOn(service, "fetch").mockRejectedValueOnce(
-          stage === "expected-fetch"
-            ? new GitError(errorFixture({ kind: "network-failed", message: "Offline" }))
-            : failure,
-        );
-      }
-
-      await expect(scheduler.tick()).resolves.toBeUndefined();
-      expect((await scheduler.inspect(client.id)).fetching).toBe(false);
-      if (stage === "expected-fetch") expect(report).not.toHaveBeenCalled();
-      else expect(report).toHaveBeenCalledExactlyOnceWith("Background fetch failed unexpectedly.");
-
-      await scheduler.tick();
-      expect((await scheduler.inspect(client.id)).remotes[0]?.history?.lastSuccess).toBeTruthy();
-      expect(changed).toHaveBeenCalledWith(client.id);
-    } finally {
-      vi.restoreAllMocks();
-      await scheduler.stop();
+  try {
+    if (stage === "session") {
+      vi.spyOn(sessions, "openRepositoryIds").mockImplementationOnce(() => {
+        throw failure;
+      });
+    } else if (stage === "inspection") {
+      vi.spyOn(service, "fetchStates").mockRejectedValueOnce(failure);
+    } else if (stage === "switched-fetch") {
+      const fetch = service.fetch.bind(service);
+      vi.spyOn(service, "fetch").mockImplementationOnce((...args) => {
+        identities.setActiveId(null);
+        return fetch(...args);
+      });
+    } else if (stage !== "switched-inspection") {
+      vi.spyOn(service, "fetch").mockRejectedValueOnce(
+        stage === "expected-fetch"
+          ? new GitError(errorFixture({ kind: "network-failed", message: "Offline" }))
+          : failure,
+      );
     }
-  },
-);
+
+    const pending = scheduler.tick();
+    if (stage === "switched-inspection") identities.setActiveId(null);
+    await expect(pending).resolves.toBeUndefined();
+    if (stage === "switched-inspection" || stage === "switched-fetch") {
+      expect(changed).not.toHaveBeenCalled();
+      identities.setActiveId(profile.id);
+    }
+    expect((await scheduler.inspect(client.id)).fetching).toBe(false);
+    if (["expected-fetch", "switched-inspection", "switched-fetch"].includes(stage))
+      expect(report).not.toHaveBeenCalled();
+    else expect(report).toHaveBeenCalledExactlyOnceWith("Background fetch failed unexpectedly.");
+
+    await scheduler.tick();
+    expect((await scheduler.inspect(client.id)).remotes[0]?.history?.lastSuccess).toBeTruthy();
+    expect(changed).toHaveBeenCalledWith(client.id);
+  } finally {
+    vi.restoreAllMocks();
+    await scheduler.stop();
+  }
+});
 
 afterEach(async () => {
   for (const db of databases.splice(0)) db.close();
@@ -158,27 +175,32 @@ async function setup(
   });
 
   const run = (args: string[]) => source.run(args, client.path);
-  const journal = new WorkflowJournal(db);
-  const recovery = new ContentRecoveryRepository(db);
+  const openWorkflows = () => {
+    const journal = new WorkflowJournal(db);
+    const recovery = new ContentRecoveryRepository(db);
 
-  const workflows = new WorkflowService(
-    source.git,
-    repositories,
-    writer,
-    identity,
-    journal,
-    recovery,
-  );
+    const workflows = new WorkflowService(
+      source.git,
+      repositories,
+      writer,
+      identity,
+      journal,
+      recovery,
+    );
 
-  const rebase = new RebaseService(
-    source.git,
-    repositories,
-    writer,
-    identity,
-    workflows,
-    journal,
-    recovery,
-  );
+    const rebase = new RebaseService(
+      source.git,
+      repositories,
+      writer,
+      identity,
+      workflows,
+      journal,
+      recovery,
+    );
+
+    return { workflows, rebase };
+  };
+  const { workflows, rebase } = openWorkflows();
 
   const pull = new PullService(
     source.git,
@@ -201,6 +223,7 @@ async function setup(
     identities,
     operations,
     pull,
+    openWorkflows,
     workflows,
     rebase,
     identity,
@@ -334,6 +357,32 @@ it("links completed clone activity to the registered repository", async () => {
       repositoryId: client.id,
     }),
   );
+});
+
+it.each(["inspect", "primaryFetchUrl", "fetchStates", "listTags"] as const)(
+  "drops %s results if the repository moves during remote inspection",
+  async (method) => {
+    const { service, client, db } = await setup();
+    const pending =
+      method === "listTags"
+        ? service.listTags({ repositoryId: client.id, remote: "origin" })
+        : service[method](client.id);
+    new RepositoryMemberships(db).relocate(client.id, client.path + "-moved", "moved");
+    await expect(pending).rejects.toMatchObject({
+      code: "main.repositoryManager.theRepositoryChangedRefreshAndTryAgain",
+    });
+  },
+);
+
+it("retries primary remote discovery immediately after a transient config read failure", async () => {
+  const { service, client, source, server } = await setup();
+  vi.spyOn(source.git, "readConfig").mockRejectedValueOnce(
+    new Error("config temporarily unavailable"),
+  );
+  await expect(service.primaryFetchUrl(client.id)).rejects.toThrow(
+    "config temporarily unavailable",
+  );
+  await expect(service.primaryFetchUrl(client.id)).resolves.toBe(server.path);
 });
 
 it("uses origin for commit avatars and switches to another remote after origin is removed", async () => {
@@ -480,18 +529,20 @@ it("schedules only open repositories, pauses when offline or suspended, backs of
 }, 60_000);
 
 it("pulls a pinned upstream with fast-forward and rebase policies while preserving merge recovery and scoped defaults", async () => {
-  const { source, client, run, pull, workflows, rebase, service } = await setup();
+  const { source, client, run, pull, workflows, rebase, service, profile, db } = await setup();
 
   expect(pull.preference(client.id).value).toBe("ff");
 
-  pull.setPreference(client.id, "ff-only");
+  const settings = new SettingsRepository(db);
+  const scope = { kind: "repository" as const, profileId: profile.id, repositoryId: client.id };
+  settings.set("pullStrategy", scope, "ff-only");
 
   expect(pull.preference(client.id)).toMatchObject({
     value: "ff-only",
     source: { kind: "repository" },
   });
 
-  pull.setPreference(client.id, null);
+  settings.reset("pullStrategy", scope);
   expect(pull.preference(client.id).value).toBe("ff");
 
   await source.writeFile("remote.txt", "remote addition\n");
@@ -1190,18 +1241,19 @@ it("rejects a changed branch between preparing and applying a fast-forward pull"
   expect((await run(["rev-parse", "HEAD"])).trim()).toBe(preview.head);
 });
 
-async function divergentPullFixture() {
+async function divergentPullFixture({ conflict = false } = {}) {
   const fixture = await setup();
   const { source, client, run } = fixture;
-  await writeFile(join(client.path, "client.txt"), "local commit\n");
+  const edited = conflict ? "notes.txt" : "file.txt";
+  await writeFile(join(client.path, conflict ? "file.txt" : "client.txt"), "local commit\n");
   await run(["add", "."]);
   await run(["commit", "-m", "local commit"]);
-  await source.writeFile("remote.txt", "remote commit\n");
+  await source.writeFile(conflict ? "file.txt" : "remote.txt", "remote commit\n");
   await source.commit("remote commit");
   await source.run(["push", "origin", "main"]);
-  await writeFile(join(client.path, "file.txt"), "staged edit\n");
-  await run(["add", "file.txt"]);
-  await writeFile(join(client.path, "file.txt"), "unstaged edit\n");
+  await writeFile(join(client.path, edited), "staged edit\n");
+  await run(["add", edited]);
+  await writeFile(join(client.path, edited), "unstaged edit\n");
   await writeFile(join(client.path, "untracked.txt"), "untracked work\n");
   return fixture;
 }
@@ -1219,8 +1271,7 @@ it("autostashes a divergent rebase and restores the exact staged and unstaged co
 });
 
 it("retains a divergent merge's autostash across service restart and restores it after committing", async () => {
-  const { source, client, run, pull, repositories, writer, identity, db } =
-    await divergentPullFixture();
+  const { client, run, pull, openWorkflows } = await divergentPullFixture();
   const before = await run(["status", "--porcelain"]);
   const preview = await pull.prepare({ repositoryId: client.id, strategy: "ff" });
 
@@ -1231,15 +1282,7 @@ it("retains a divergent merge's autostash across service restart and restores it
   expect(await run(["stash", "list"])).toContain("Eda pull autostash");
   expect(await readFile(join(client.path, "file.txt"), "utf8")).toBe("initial\n");
 
-  const workflows = new WorkflowService(
-    source.git,
-    repositories,
-    writer,
-    identity,
-    new WorkflowJournal(db),
-    new ContentRecoveryRepository(db),
-  );
-
+  const { workflows } = openWorkflows();
   const merge = await workflows.prepareMerge(client.id);
   await workflows.continueMerge(client.id, merge.id, "Merge upstream");
   expect(await run(["status", "--porcelain"])).toBe(before);
@@ -1312,54 +1355,18 @@ it("preserves existing user stashes and restores local work when fast-forward ex
   expect(await run(["stash", "list"])).not.toContain("Eda pull autostash");
 });
 
-async function conflictingRebaseFixture() {
-  const fixture = await setup();
-  const { source, client, run } = fixture;
-  await writeFile(join(client.path, "file.txt"), "local commit\n");
-  await run(["add", "."]);
-  await run(["commit", "-m", "local commit"]);
-  await source.writeFile("file.txt", "remote commit\n");
-  await source.commit("remote commit");
-  await source.run(["push", "origin", "main"]);
-  await writeFile(join(client.path, "notes.txt"), "staged note\n");
-  await run(["add", "notes.txt"]);
-  await writeFile(join(client.path, "notes.txt"), "unstaged note\n");
-  await writeFile(join(client.path, "untracked.txt"), "untracked work\n");
-  return fixture;
-}
-
 it.each(["continue", "abort"] as const)(
   "restores the saved index and files after a conflicted rebase is restarted and %sd",
   async (action) => {
-    const fixture = await conflictingRebaseFixture();
-    const { source, client, run, pull, repositories, writer, identity, db } = fixture;
+    const fixture = await divergentPullFixture({ conflict: true });
+    const { client, run, pull, openWorkflows } = fixture;
     const head = await run(["rev-parse", "HEAD"]);
     const before = await run(["status", "--porcelain"]);
     const preview = await pull.prepare({ repositoryId: client.id, strategy: "rebase" });
     expect(await pull.execute(client.id, preview.token)).toContain("Pull paused");
     expect(await run(["stash", "list"])).toContain("Eda pull autostash");
 
-    const journal = new WorkflowJournal(db);
-    const recovery = new ContentRecoveryRepository(db);
-
-    const workflows = new WorkflowService(
-      source.git,
-      repositories,
-      writer,
-      identity,
-      journal,
-      recovery,
-    );
-
-    const rebase = new RebaseService(
-      source.git,
-      repositories,
-      writer,
-      identity,
-      workflows,
-      journal,
-      recovery,
-    );
+    const { rebase } = openWorkflows();
 
     if (action === "continue") {
       await writeFile(join(client.path, "file.txt"), "resolved commit\n");
@@ -1370,8 +1377,8 @@ it.each(["continue", "abort"] as const)(
     expect((await rebase.execute(client.id, review.token)).state).toBe("completed");
     if (action === "abort") expect(await run(["rev-parse", "HEAD"])).toBe(head);
     expect(await run(["status", "--porcelain"])).toBe(before);
-    expect(await run(["show", ":notes.txt"])).toBe("staged note\n");
-    expect(await readFile(join(client.path, "notes.txt"), "utf8")).toBe("unstaged note\n");
+    expect(await run(["show", ":notes.txt"])).toBe("staged edit\n");
+    expect(await readFile(join(client.path, "notes.txt"), "utf8")).toBe("unstaged edit\n");
     expect(await readFile(join(client.path, "untracked.txt"), "utf8")).toBe("untracked work\n");
     expect(await run(["stash", "list"])).toBe("");
   },
