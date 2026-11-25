@@ -1,4 +1,4 @@
-import { RepositoryMemberships } from "@main/persistence/repository-memberships";
+import { activateTestProfile, workflowFixture } from "../../../helpers/workflow-fixture";
 import { afterEach, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
@@ -6,13 +6,7 @@ import { join } from "node:path";
 import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 import { openDatabase } from "@main/persistence/database";
 import type { Database } from "@main/persistence/types";
-import { IdentityRepository } from "@main/persistence/identity-repository";
-import { IdentityManager } from "@main/identity/identity-manager";
 import { ContentRecoveryRepository } from "@main/persistence/content-recovery-repository";
-import { WorkflowJournal } from "@main/persistence/workflow-journal";
-import { RepositoryManager } from "@main/repo/lifecycle/repository-manager";
-import { RepositoryWriter } from "@main/repo/working-tree/repository-writer";
-import { WorkflowService } from "@main/repo/workflows/workflow-service";
 import { ResetService } from "@main/repo/workflows/reset-service";
 import { DiscardService } from "@main/repo/working-tree/discard-service";
 import { HistoryRecoveryService } from "@main/repo/history/history-recovery-service";
@@ -29,24 +23,9 @@ afterEach(async () => {
 function services() {
   db = openDatabase(join(repo.home, "reset.db"));
 
-  const identities = new IdentityRepository(db);
-  const identity = new IdentityManager(identities, repo.git);
-  const repositories = new RepositoryManager(
-    new RepositoryMemberships(db),
+  const { identities, repositories, writer, workflows, journal, recovery } = workflowFixture(
+    db,
     repo.git,
-    identity,
-    identities,
-  );
-  const writer = new RepositoryWriter(repo.git, repositories, identity, identities);
-  const journal = new WorkflowJournal(db);
-  const recovery = new ContentRecoveryRepository(db);
-  const workflows = new WorkflowService(
-    repo.git,
-    repositories,
-    writer,
-    identity,
-    journal,
-    recovery,
   );
 
   return {
@@ -72,14 +51,7 @@ it.each(["original", "applied", "undoing"] as const)(
   async (state) => {
     repo = await createTempRepo();
     const context = services();
-    const profile = context.identities.create({
-      name: "Eda",
-      gitName: "Eda",
-      gitEmail: "test@eda.invalid",
-      hue: 0,
-      signing: { format: "none", signCommits: false },
-    });
-    context.identities.setActiveId(profile.id);
+    activateTestProfile(context.identities);
 
     const repository = await context.repositories.open(repo.path);
     await repo.writeFile("file.txt", "base\n");
@@ -127,15 +99,7 @@ it("reviews all reset modes and preserves index/content recovery across restart 
   repo = await createTempRepo();
 
   let context = services();
-  const profile = context.identities.create({
-    name: "Eda",
-    gitName: "Eda",
-    gitEmail: "test@eda.invalid",
-    hue: 0,
-    signing: { format: "none", signCommits: false },
-  });
-
-  context.identities.setActiveId(profile.id);
+  const profile = activateTestProfile(context.identities);
 
   const repository = await context.repositories.open(repo.path);
 
@@ -623,15 +587,7 @@ it("resumes the original reset intent before Git runs or after Git reached the t
   repo = await createTempRepo();
 
   let context = services();
-  const profile = context.identities.create({
-    name: "Eda",
-    gitName: "Eda",
-    gitEmail: "test@eda.invalid",
-    hue: 0,
-    signing: { format: "none", signCommits: false },
-  });
-
-  context.identities.setActiveId(profile.id);
+  const profile = activateTestProfile(context.identities);
 
   const repository = await context.repositories.open(repo.path);
 
@@ -852,14 +808,7 @@ it("resumes the original reset intent before Git runs or after Git reached the t
 it("clears loose and packed dangling commits while preserving refs, reflogs, linked worktrees and staged work", async () => {
   repo = await createTempRepo();
   const context = services();
-  const profile = context.identities.create({
-    name: "Eda",
-    gitName: "Eda",
-    gitEmail: "test@eda.invalid",
-    hue: 0,
-    signing: { format: "none", signCommits: false },
-  });
-  context.identities.setActiveId(profile.id);
+  activateTestProfile(context.identities);
   const repository = await context.repositories.open(repo.path);
   await repo.writeFile("file.txt", "base\n");
   await repo.commit("base");
@@ -915,14 +864,7 @@ it("clears loose and packed dangling commits while preserving refs, reflogs, lin
 it("requires a fresh dangling-object review after objects change or the profile switches", async () => {
   repo = await createTempRepo();
   const context = services();
-  const profile = context.identities.create({
-    name: "Eda",
-    gitName: "Eda",
-    gitEmail: "test@eda.invalid",
-    hue: 0,
-    signing: { format: "none", signCommits: false },
-  });
-  context.identities.setActiveId(profile.id);
+  const profile = activateTestProfile(context.identities);
   const repository = await context.repositories.open(repo.path);
   await repo.writeFile("file.txt", "base\n");
   await repo.commit("base");
@@ -970,14 +912,7 @@ it("requires a fresh dangling-object review after objects change or the profile 
 it("blocks dangling cleanup during a Git workflow and paginates every scanned commit", async () => {
   repo = await createTempRepo();
   const context = services();
-  const profile = context.identities.create({
-    name: "Eda",
-    gitName: "Eda",
-    gitEmail: "test@eda.invalid",
-    hue: 0,
-    signing: { format: "none", signCommits: false },
-  });
-  context.identities.setActiveId(profile.id);
+  activateTestProfile(context.identities);
   const repository = await context.repositories.open(repo.path);
   await repo.writeFile("file.txt", "base\n");
   await repo.commit("base");
@@ -1003,14 +938,7 @@ it("blocks dangling cleanup during a Git workflow and paginates every scanned co
 it("scans objects despite a stale commit-graph cache and still rejects damaged Git objects", async () => {
   repo = await createTempRepo();
   const context = services();
-  const profile = context.identities.create({
-    name: "Eda",
-    gitName: "Eda",
-    gitEmail: "test@eda.invalid",
-    hue: 0,
-    signing: { format: "none", signCommits: false },
-  });
-  context.identities.setActiveId(profile.id);
+  activateTestProfile(context.identities);
   const repository = await context.repositories.open(repo.path);
   await repo.writeFile("file.txt", "base\n");
   await repo.commit("base");

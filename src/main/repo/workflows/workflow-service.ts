@@ -23,10 +23,11 @@ import { assertFullObjectId } from "../../git/validation";
 import type { IdentityManager } from "../../identity/identity-manager";
 import type { ContentRecoveryRepository } from "../../persistence/content-recovery-repository";
 import type { WorkflowJournal, WorkflowJournalRecord } from "../../persistence/workflow-journal";
-import { PreviewStore } from "../preview-store";
+import { matchesReviewContext, PreviewStore } from "../preview-store";
 import type { RepositoryManager } from "../lifecycle/repository-manager";
 import { DiscardService } from "../working-tree/discard-service";
 import type { RepositoryWriter } from "../working-tree/repository-writer";
+import { addRecoveryDiffPaths, trackedChangePaths } from "./recovery-paths";
 
 const invalid = (message: ErrorText) =>
   new GitError({
@@ -468,12 +469,7 @@ export class WorkflowService {
     const repository = this.repositories.resolveActiveRepository(repositoryId);
     const pending = this.starts.get(token);
 
-    if (
-      !pending ||
-      pending.repositoryId !== repositoryId ||
-      pending.root !== repository.path ||
-      pending.identity.id !== repository.identityId
-    )
+    if (!pending || !matchesReviewContext(pending, repository))
       throw invalid(
         errorText(
           "main.workflowService.thisMergeReviewExpiredOrBelongsToAnotherContextReviewAgain",
@@ -636,34 +632,16 @@ export class WorkflowService {
 
         this.requireWorkflowOwner(workflow, repository.identityId);
 
-        const paths = new Set(
-          status.changes
-            .filter((item) => item.kind !== "untracked" && item.kind !== "ignored")
-            .flatMap((item) => (item.originalPath ? [item.path, item.originalPath] : [item.path])),
-        );
+        const paths = trackedChangePaths(status.changes);
 
         if (workflow.kind === "stash")
           for (const path of this.journal.activeLocal(root)?.introducedPaths ?? []) paths.add(path);
 
-        const affected = await this.git.exec(
-          [
-            "diff",
-            "--name-only",
-            "-z",
-            "--no-renames",
-            "--no-ext-diff",
-            "--no-textconv",
-            workflow.originalHead,
-            "--",
-          ],
-          {
-            cwd: root,
-            operation: t("operations.inspectAbortPaths"),
-            maxStdoutBytes: 1024 * 1024,
-          },
-        );
-
-        for (const path of affected.stdout.split("\0").filter(Boolean)) paths.add(path);
+        await addRecoveryDiffPaths(this.git, paths, [workflow.originalHead], {
+          cwd: root,
+          operation: t("operations.inspectAbortPaths"),
+          maxStdoutBytes: 1024 * 1024,
+        });
 
         const autostash = await this.git.exec(
           ["rev-parse", "--verify", "--quiet", "MERGE_AUTOSTASH"],
@@ -684,26 +662,11 @@ export class WorkflowService {
               ),
             );
 
-          const changed = await this.git.exec(
-            [
-              "diff",
-              "--name-only",
-              "-z",
-              "--no-renames",
-              "--no-ext-diff",
-              "--no-textconv",
-              `${oid}^1`,
-              oid,
-              "--",
-            ],
-            {
-              cwd: root,
-              operation: t("operations.inspectAutostashPaths"),
-              maxStdoutBytes: 1024 * 1024,
-            },
-          );
-
-          for (const path of changed.stdout.split("\0").filter(Boolean)) paths.add(path);
+          await addRecoveryDiffPaths(this.git, paths, [`${oid}^1`, oid], {
+            cwd: root,
+            operation: t("operations.inspectAutostashPaths"),
+            maxStdoutBytes: 1024 * 1024,
+          });
         }
 
         const snapshot = await this.recovery.prepareOperation(

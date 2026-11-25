@@ -1,4 +1,4 @@
-import { RepositoryMemberships } from "@main/persistence/repository-memberships";
+import { activateTestProfile, workflowFixture } from "../../../helpers/workflow-fixture";
 import { afterEach, expect, it } from "vitest";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
@@ -6,13 +6,6 @@ import { join } from "node:path";
 import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 import { openDatabase } from "@main/persistence/database";
 import type { Database } from "@main/persistence/types";
-import { IdentityRepository } from "@main/persistence/identity-repository";
-import { ContentRecoveryRepository } from "@main/persistence/content-recovery-repository";
-import { WorkflowJournal } from "@main/persistence/workflow-journal";
-import { IdentityManager } from "@main/identity/identity-manager";
-import { RepositoryManager } from "@main/repo/lifecycle/repository-manager";
-import { RepositoryWriter } from "@main/repo/working-tree/repository-writer";
-import { WorkflowService } from "@main/repo/workflows/workflow-service";
 import { RebaseService } from "@main/repo/workflows/rebase-service";
 import { DiscardService } from "@main/repo/working-tree/discard-service";
 import { autosquashPlan } from "@shared/workflows/rebase";
@@ -28,25 +21,8 @@ afterEach(async () => {
 function services() {
   db = openDatabase(join(repo.home, "rebase.db"));
 
-  const identities = new IdentityRepository(db);
-  const identity = new IdentityManager(identities, repo.git);
-  const repositories = new RepositoryManager(
-    new RepositoryMemberships(db),
-    repo.git,
-    identity,
-    identities,
-  );
-  const writer = new RepositoryWriter(repo.git, repositories, identity, identities);
-  const journal = new WorkflowJournal(db);
-  const recovery = new ContentRecoveryRepository(db);
-  const workflows = new WorkflowService(
-    repo.git,
-    repositories,
-    writer,
-    identity,
-    journal,
-    recovery,
-  );
+  const { identities, identity, repositories, writer, workflows, journal, recovery } =
+    workflowFixture(db, repo.git);
 
   return {
     identities,
@@ -70,15 +46,7 @@ it("reviews a rebase, resumes conflicts after database reopen, preserves authors
   repo = await createTempRepo();
 
   let context = services();
-  const profile = context.identities.create({
-    name: "Eda",
-    gitName: "Eda",
-    gitEmail: "test@eda.invalid",
-    hue: 0,
-    signing: { format: "none", signCommits: false },
-  });
-
-  context.identities.setActiveId(profile.id);
+  const profile = activateTestProfile(context.identities);
 
   const repository = await context.repositories.open(repo.path);
 
@@ -324,15 +292,7 @@ it("applies reviewed history plans and resumes autosquash/edit stops without los
   repo = await createTempRepo();
 
   let context = services();
-  const profile = context.identities.create({
-    name: "Eda",
-    gitName: "Eda",
-    gitEmail: "test@eda.invalid",
-    hue: 0,
-    signing: { format: "none", signCommits: false },
-  });
-
-  context.identities.setActiveId(profile.id);
+  const profile = activateTestProfile(context.identities);
 
   const repository = await context.repositories.open(repo.path);
 

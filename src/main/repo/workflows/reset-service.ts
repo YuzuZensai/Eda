@@ -9,13 +9,14 @@ import type { GitService } from "../../git/git-service";
 import { assertFullObjectId } from "../../git/validation";
 import type { ContentRecoveryRepository } from "../../persistence/content-recovery-repository";
 import type { WorkflowJournal, WorkflowJournalRecord } from "../../persistence/workflow-journal";
-import { PreviewStore } from "../preview-store";
+import { matchesReviewContext, PreviewStore } from "../preview-store";
 import { pruneHistoryRecords } from "../history/history-retention";
 import { publishedRangeCount } from "../history/shared-history";
 import { repositoryCommonDirectory } from "../lifecycle/repository-location";
 import type { RepositoryManager } from "../lifecycle/repository-manager";
 import { DiscardService, type OperationSnapshot } from "../working-tree/discard-service";
 import type { RepositoryWriter } from "../working-tree/repository-writer";
+import { trackedChangePaths } from "./recovery-paths";
 import {
   fingerprintContents,
   readWorkflowContents,
@@ -158,18 +159,7 @@ export class ResetService {
 
     const indexPaths = changedIndex.split("\0").filter(Boolean);
     const workingPaths =
-      mode === "hard"
-        ? [
-            ...new Set([
-              ...indexPaths,
-              ...status.changes
-                .filter((item) => item.kind !== "untracked" && item.kind !== "ignored")
-                .flatMap((item) =>
-                  item.originalPath ? [item.path, item.originalPath] : [item.path],
-                ),
-            ]),
-          ]
-        : [];
+      mode === "hard" ? [...new Set([...indexPaths, ...trackedChangePaths(status.changes)])] : [];
 
     if (Math.max(indexPaths.length, workingPaths.length) > 256)
       throw invalid(
@@ -246,12 +236,7 @@ export class ResetService {
     const repository = this.repositories.resolveActiveRepository(repositoryId);
     const pending = this.reviews.get(token);
 
-    if (
-      !pending ||
-      pending.repositoryId !== repositoryId ||
-      pending.root !== repository.path ||
-      pending.identity.id !== repository.identityId
-    )
+    if (!pending || !matchesReviewContext(pending, repository))
       throw invalid(
         errorText("main.resetService.thisResetReviewExpiredOrBelongsToAnotherContextReviewAgain"),
       );

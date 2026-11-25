@@ -1,3 +1,16 @@
+import type { RepositorySummary } from "@shared/repository/repository";
+
+export function matchesReviewContext(
+  review: { repositoryId: string; root: string; identity: { id: string } },
+  repository: Pick<RepositorySummary, "id" | "path" | "identityId">,
+) {
+  return (
+    review.repositoryId === repository.id &&
+    review.root === repository.path &&
+    review.identity.id === repository.identityId
+  );
+}
+
 export class PreviewStore<T> {
   private readonly entries = new Map<string, { value: T; expires: number }>();
 

@@ -25,13 +25,14 @@ import { assertSafeRebaseState } from "../../git/security/rebase-state";
 import type { IdentityManager } from "../../identity/identity-manager";
 import type { ContentRecoveryRepository } from "../../persistence/content-recovery-repository";
 import type { WorkflowJournal, WorkflowJournalRecord } from "../../persistence/workflow-journal";
-import { PreviewStore } from "../preview-store";
+import { matchesReviewContext, PreviewStore } from "../preview-store";
 import { captureRewriteStart, finalizeRewrite } from "../history/rewrite-history";
 import { CommitHistory } from "../history/commit-history";
 import { isPublishedCommit, publishedRangeCount } from "../history/shared-history";
 import type { RepositoryManager } from "../lifecycle/repository-manager";
 import { DiscardService, type OperationSnapshot } from "../working-tree/discard-service";
 import type { RepositoryWriter } from "../working-tree/repository-writer";
+import { addRecoveryDiffPaths, trackedChangePaths } from "./recovery-paths";
 import { workflowFingerprint } from "./workflow-fingerprint";
 import { matchesNativeWorkflow, type WorkflowService } from "./workflow-service";
 
@@ -157,31 +158,12 @@ export class RebaseService {
         let snapshot: OperationSnapshot | undefined;
 
         if (action === "skip" || action === "abort") {
-          const paths = new Set(
-            status.changes
-              .filter((item) => item.kind !== "untracked" && item.kind !== "ignored")
-              .flatMap((item) =>
-                item.originalPath ? [item.path, item.originalPath] : [item.path],
-              ),
-          );
-
-          if (action === "abort") {
-            const changed = await this.git.exec(
-              [
-                "diff",
-                "--name-only",
-                "-z",
-                "--no-renames",
-                "--no-ext-diff",
-                "--no-textconv",
-                workflow!.originalHead!,
-                "--",
-              ],
-              { cwd: root, operation: t("operations.reviewRebaseAbortPaths") },
-            );
-
-            for (const path of changed.stdout.split("\0").filter(Boolean)) paths.add(path);
-          }
+          const paths = trackedChangePaths(status.changes);
+          if (action === "abort")
+            await addRecoveryDiffPaths(this.git, paths, [workflow!.originalHead!], {
+              cwd: root,
+              operation: t("operations.reviewRebaseAbortPaths"),
+            });
 
           snapshot = await this.recovery.prepareOperation(root, identity.id, repositoryId, [
             ...paths,
@@ -353,12 +335,7 @@ export class RebaseService {
     const repository = this.repositories.resolveActiveRepository(repositoryId);
     const pending = this.reviews.get(token);
 
-    if (
-      !pending ||
-      pending.repositoryId !== repositoryId ||
-      pending.root !== repository.path ||
-      pending.identity.id !== repository.identityId
-    )
+    if (!pending || !matchesReviewContext(pending, repository))
       throw invalid(
         errorText("main.rebaseService.thisRebaseReviewExpiredOrBelongsToAnotherContextReviewAgain"),
       );

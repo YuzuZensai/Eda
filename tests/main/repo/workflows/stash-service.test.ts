@@ -1,16 +1,12 @@
-import { RepositoryMemberships } from "@main/persistence/repository-memberships";
+import { activateTestProfile, workflowFixture } from "../../../helpers/workflow-fixture";
 import { afterEach, expect, it, vi } from "vitest";
 import { readFile, writeFile, unlink, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 import { openInMemoryDatabase } from "@main/persistence/database";
-import { IdentityRepository } from "@main/persistence/identity-repository";
 import { ContentRecoveryRepository } from "@main/persistence/content-recovery-repository";
 import { WorkflowJournal } from "@main/persistence/workflow-journal";
-import { IdentityManager } from "@main/identity/identity-manager";
 import type { Database } from "@main/persistence/types";
-import { RepositoryManager } from "@main/repo/lifecycle/repository-manager";
-import { RepositoryWriter } from "@main/repo/working-tree/repository-writer";
 import { WorkflowService } from "@main/repo/workflows/workflow-service";
 import { StashService } from "@main/repo/workflows/stash-service";
 import { DiscardService } from "@main/repo/working-tree/discard-service";
@@ -93,42 +89,13 @@ async function setup() {
   repo = await createTempRepo();
   db = openInMemoryDatabase();
 
-  const identities = new IdentityRepository(db);
-  const profile = identities.create({
-    name: "Eda",
-    gitName: "Eda",
-    gitEmail: "test@eda.invalid",
-    hue: 0,
-    signing: { format: "none", signCommits: false },
-  });
-
-  identities.setActiveId(profile.id);
-
-  const identity = new IdentityManager(identities, repo.git);
-  const repositories = new RepositoryManager(
-    new RepositoryMemberships(db),
+  const { identities, identity, repositories, writer, workflows, recovery } = workflowFixture(
+    db,
     repo.git,
-    identity,
-    identities,
   );
-  const writer = new RepositoryWriter(repo.git, repositories, identity, identities);
-  const workflows = new WorkflowService(
-    repo.git,
-    repositories,
-    writer,
-    identity,
-    new WorkflowJournal(db),
-    new ContentRecoveryRepository(db),
-  );
+  const profile = activateTestProfile(identities);
 
-  const service = new StashService(
-    repo.git,
-    repositories,
-    writer,
-    identity,
-    workflows,
-    new ContentRecoveryRepository(db),
-  );
+  const service = new StashService(repo.git, repositories, writer, identity, workflows, recovery);
 
   const repository = await repositories.open(repo.path);
 
