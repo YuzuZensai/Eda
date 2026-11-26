@@ -102,6 +102,18 @@ export function CommitGraph({
     (request: { repositoryId: string }) => window.eda.repository.worktrees(request.repositoryId),
     linkedRequest,
   );
+  const branches = useRepositoryRead(
+    (request: { repositoryId: string }) => window.eda.repository.listBranches(request.repositoryId),
+    linkedRequest,
+  );
+  const upstreams = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const branch of branches.value ?? []) {
+      if (!branch.remote && branch.upstream) map.set(branch.name, branch.upstream);
+    }
+    return map;
+  }, [branches.value]);
+
   const [worktreeError, setWorktreeError] = useState("");
   const linkedChanges = worktrees.value?.filter(
     (entry) => !entry.current && entry.available && !!entry.changedPaths,
@@ -569,6 +581,8 @@ export function CommitGraph({
                   {...(repositoryId && { repositoryId })}
                   columns={columns}
                   gutter={gutter}
+                  checkedOut={headOid === row.commit.oid}
+                  upstreams={upstreams}
                   selected={selectedOid === row.commit.oid}
                   related={hoveredRefOid === row.commit.oid}
                   graphEmphasis={graphEmphasis}

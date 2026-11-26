@@ -77,6 +77,93 @@ function row(vigilantMode: boolean, oid = commit.oid, showSha = true) {
   );
 }
 
+it("keeps the checkout marker on HEAD while browsing and keeps synchronized branch labels together after detaching", async () => {
+  const other = { ...commit, oid: "b".repeat(40), subject: "Other commit" };
+  const tip: HistoryCommit = {
+    ...commit,
+    decorations: [
+      { type: "head", name: "main", target: "refs/heads/main" },
+      { type: "remote-branch", name: "origin/main" },
+      { type: "remote-branch", name: "fork/main" },
+    ],
+  };
+  const branch = {
+    oid: tip.oid,
+    head: "main",
+    upstream: "origin/main",
+    ahead: 0,
+    behind: 0,
+    detached: false,
+    unborn: false,
+  };
+  vi.stubGlobal("eda", {
+    repository: {
+      worktrees: async () => ok([]),
+      listBranches: async () =>
+        ok([{ name: "main", upstream: "origin/main", oid: tip.oid, remote: false, isHead: true }]),
+    },
+  });
+  useRepositoryStore.setState({
+    pages: [{ commits: [tip, other], nextOffset: null }],
+    status: { branch, changes: [] },
+    baseOffset: 0,
+    nextOffset: null,
+    selection: { kind: "commit", oid: other.oid },
+  });
+  await act(async () => root.render(<CommitGraph />));
+  const rows = () => container.querySelectorAll<HTMLElement>('[data-tour="history-commit"]');
+  const marker = "Checked out in this worktree";
+  expect(rows()[0]?.getAttribute("aria-description")).toContain(marker);
+  expect(rows()[1]?.getAttribute("aria-description")).not.toContain(marker);
+  expect(rows()[1]?.getAttribute("aria-pressed")).toBe("true");
+  expect(rows()[0]?.querySelector('[title="main · origin/main"]')?.textContent).toBe(
+    "main · origin",
+  );
+  expect(rows()[0]?.querySelector('[title="fork/main"]')).not.toBeNull();
+
+  await act(async () =>
+    useRepositoryStore.setState({
+      pages: [
+        {
+          commits: [
+            {
+              ...tip,
+              decorations: [{ type: "local-branch", name: "main" }, ...tip.decorations.slice(1)],
+            },
+            { ...other, decorations: [{ type: "ref", name: "HEAD" }] },
+          ],
+          nextOffset: null,
+        },
+      ],
+      status: {
+        branch: { oid: other.oid, detached: true, unborn: false, ahead: 0, behind: 0 },
+        changes: [],
+      },
+    }),
+  );
+  expect(rows()[0]?.getAttribute("aria-description")).not.toContain(marker);
+  expect(rows()[1]?.getAttribute("aria-description")).toContain(marker);
+  expect(rows()[0]?.querySelector('[title="main · origin/main"]')?.textContent).toBe(
+    "main · origin",
+  );
+
+  await act(async () =>
+    useRepositoryStore.setState({
+      pages: [
+        {
+          commits: [
+            { ...tip, decorations: [{ type: "local-branch", name: "main" }] },
+            { ...other, decorations: [{ type: "remote-branch", name: "origin/main" }] },
+          ],
+          nextOffset: null,
+        },
+      ],
+    }),
+  );
+  expect(rows()[0]?.querySelector('[title="main"]')?.textContent).toBe("main");
+  expect(rows()[1]?.querySelector('[title="origin/main"]')?.textContent).toBe("origin/main");
+});
+
 it("highlights only the branch tip when hovering its reference row", async () => {
   const parent = { ...commit, oid: "b".repeat(40), subject: "Parent commit" };
   const tip = { ...commit, subject: "Branch tip", parents: [parent.oid] };

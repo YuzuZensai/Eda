@@ -11,6 +11,7 @@ import type {
 import type { DagRow, GraphEmphasis } from "../../repository/dag-layout";
 import { ROW_HEIGHT, edgePath, laneColor, laneX } from "../../repository/graph-geometry";
 import { referenceLabel } from "../../repository/reference-label";
+import { MonitorIcon } from "../../components/ui/icons";
 import { TagIcon } from "../../components/ui/index";
 import { FileStatusIcon, fileStatusTone } from "../../components/ui/display/FileStatusIcon";
 import { CommitSignatureIcon } from "../../components/ui/display/CommitSignatureIcon";
@@ -22,6 +23,8 @@ const DIMMED_GRAPH_COLOR = "color-mix(in srgb, currentColor 45%, var(--bg-base))
 
 export function CommitRow({
   row,
+  checkedOut = false,
+  upstreams,
   loadedChildren,
   linkedWorktrees = [],
   rowHeight = ROW_HEIGHT,
@@ -40,6 +43,8 @@ export function CommitRow({
   onContextMenu,
 }: {
   row: DagRow;
+  checkedOut?: boolean;
+  upstreams?: ReadonlyMap<string, string>;
   rowHeight?: number;
   avatars?: boolean;
   dateStyle?: "short" | "local" | "iso";
@@ -68,6 +73,7 @@ export function CommitRow({
       data-tour="history-commit"
       aria-description={
         [
+          checkedOut && t("history.commitRow.checkedOut"),
           loadedChildren &&
             t("commitGraph.loadedChildren", {
               children: loadedChildren.join(", ") || t("common.none"),
@@ -142,6 +148,12 @@ export function CommitRow({
           stroke={nodeColor}
           strokeWidth="2"
         />
+        {checkedOut && (
+          <g className="text-accent-text">
+            <title>{t("history.commitRow.checkedOut")}</title>
+            <MonitorIcon x={gutter - 17} y={center - 7} size={14} />
+          </g>
+        )}
       </svg>
       <div className="flex min-w-0 flex-1 items-center gap-3 pr-3">
         <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
@@ -164,7 +176,7 @@ export function CommitRow({
             {linkedWorktrees.join(", ")}
           </span>
         )}
-        <Decorations decorations={row.commit.decorations} />
+        <Decorations decorations={row.commit.decorations} upstreams={upstreams} />
         {columns
           .filter((column) => column.visible)
           .map((column) => (
@@ -352,16 +364,42 @@ function HistorySignatureIcon({ oid }: { oid: string }) {
   );
 }
 
-function Decorations({ decorations }: { decorations: CommitDecoration[] }) {
-  if (decorations.length === 0) return null;
+function Decorations({
+  decorations,
+  upstreams,
+}: {
+  decorations: CommitDecoration[];
+  upstreams: ReadonlyMap<string, string> | undefined;
+}) {
+  if (!decorations.length) return null;
 
-  const rank = (decoration: CommitDecoration) =>
-    decoration.type === "head" ? 0 : decoration.type === "tag" ? 2 : 1;
+  const remoteNames = new Set(
+    decorations.filter((ref) => ref.type === "remote-branch").map((ref) => ref.name),
+  );
+  const paired = new Map<string, string>();
+  for (const ref of decorations) {
+    if (ref.type !== "head" && ref.type !== "local-branch") continue;
+    const upstream = upstreams?.get(ref.name);
+    if (upstream && remoteNames.has(upstream) && !upstream.endsWith("/HEAD"))
+      paired.set(ref.name, upstream);
+  }
+  const groupedRemotes = new Set(paired.values());
+  const rank = (ref: CommitDecoration) => (ref.type === "head" ? 0 : ref.type === "tag" ? 2 : 1);
   const ordered = decorations
-    .filter(
-      (decoration) => !(decoration.type === "remote-branch" && decoration.name.endsWith("/HEAD")),
-    )
-    .sort((a, b) => rank(a) - rank(b));
+    .filter((ref) => {
+      if (ref.type === "remote-branch")
+        return !groupedRemotes.has(ref.name) && !ref.name.endsWith("/HEAD");
+      return !((ref.type === "head" || ref.type === "ref") && ref.name === "HEAD");
+    })
+    .sort((a, b) => rank(a) - rank(b))
+    .map((ref) => {
+      const upstream =
+        ref.type === "head" || ref.type === "local-branch" ? paired.get(ref.name) : undefined;
+      const suffix = "/" + ref.name;
+      const remoteLabel = upstream?.endsWith(suffix) ? upstream.slice(0, -suffix.length) : upstream;
+      return { ...ref, remoteLabel, title: upstream ? `${ref.name} · ${upstream}` : ref.name };
+    });
+  if (!ordered.length) return null;
   const shown = ordered.slice(0, 2);
   const overflow = ordered.length - shown.length;
 
@@ -370,7 +408,7 @@ function Decorations({ decorations }: { decorations: CommitDecoration[] }) {
       {shown.map((decoration) => (
         <span
           key={`${decoration.type}:${decoration.name}`}
-          title={decoration.name}
+          title={decoration.title}
           className={`max-w-36 truncate rounded-sm border px-1.5 py-0.5 text-xs leading-tight ${
             decoration.type === "head"
               ? "border-accent-border bg-accent-muted font-medium text-accent-text"
@@ -379,7 +417,6 @@ function Decorations({ decorations }: { decorations: CommitDecoration[] }) {
                 : "border-border-default bg-bg-raised text-text-secondary"
           }`}
         >
-          {decoration.type === "head" && t("history.commitRow.head")}
           {decoration.type === "tag" && (
             <TagIcon size={10} className="inline shrink-0 align-[-1px]" aria-hidden />
           )}
@@ -388,13 +425,19 @@ function Decorations({ decorations }: { decorations: CommitDecoration[] }) {
           decoration.name.length > 24
             ? referenceLabel(decoration.name).name
             : decoration.name}
+          {decoration.remoteLabel && (
+            <span className="text-text-secondary">
+              {" · "}
+              {decoration.remoteLabel}
+            </span>
+          )}
         </span>
       ))}
       {overflow > 0 && (
         <span
           title={ordered
             .slice(2)
-            .map((item) => item.name)
+            .map((item) => item.title)
             .join("\n")}
           className="mono shrink-0 text-xs text-text-tertiary"
         >

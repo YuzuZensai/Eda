@@ -390,6 +390,7 @@ const COMMITS: HistoryCommit[] = [
     ),
     decorations: [
       { type: "head", name: "main" },
+      { type: "remote-branch", name: "origin/main" },
       { type: "tag", name: "v1.0" },
     ],
   },
@@ -470,7 +471,7 @@ export function RepositoryRowsPreview() {
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-md border border-border-default bg-bg-inset">
+      <div className="@container overflow-hidden rounded-md border border-border-default bg-bg-inset">
         <WorkingTreeRow
           title={workingTitle}
           titleDisabled={false}
@@ -489,6 +490,8 @@ export function RepositoryRowsPreview() {
             key={row.commit.oid}
             row={row}
             columns={[{ id: "sha", visible: true, width: 80 }]}
+            checkedOut={index === 0}
+            upstreams={new Map([["main", "origin/main"]])}
             vigilantMode
             signature={{
               status: index === 0 ? "verified" : "unsigned",
