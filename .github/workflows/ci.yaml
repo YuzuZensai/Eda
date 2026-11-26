@@ -30,6 +30,8 @@ jobs:
             command: pnpm typecheck
           - name: Lint
             command: pnpm lint
+          - name: Localization
+            command: pnpm localization:check
           - name: Tooling and architecture
             command: node --test tests/tooling/*.test.ts
     steps:
