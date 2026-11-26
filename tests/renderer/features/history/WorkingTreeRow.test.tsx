@@ -265,6 +265,26 @@ it("opens working changes and reveals their panel when the graph is maximized", 
   expect(workingButton().getAttribute("aria-pressed")).toBe("true");
 });
 
+it.each([
+  [
+    "change count",
+    () =>
+      workingRow()!.querySelector<HTMLElement>(
+        '[title="1 file change in working tree"]:not(button)',
+      )!,
+  ],
+  ["empty space", () => workingRow()!],
+])("opens the collapsed working tree when clicking the row's %s", async (_area, target) => {
+  await act(async () => useLayoutStore.getState().toggleCollapse("rail"));
+  expect(useLayoutStore.getState().isVisible("rail")).toBe(false);
+
+  await act(async () => target().click());
+
+  expect(useRepositoryStore.getState().selection).toBeNull();
+  expect(useLayoutStore.getState().isVisible("rail")).toBe(true);
+  expect(workingButton().getAttribute("aria-pressed")).toBe("true");
+});
+
 it("includes working changes in arrow and Home navigation without treating them as a commit", async () => {
   await key("ArrowUp");
   expect(useRepositoryStore.getState().selection).toBeNull();

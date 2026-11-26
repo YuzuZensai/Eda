@@ -247,15 +247,15 @@ export function WorkingTreeRow({
   return (
     <div
       data-tour="history-working-tree"
-      className={`flex w-full min-w-0 items-center border-b border-border-subtle text-left hover:bg-bg-raised ${selected ? "bg-accent-muted" : ""}`}
+      className={`flex w-full min-w-0 cursor-pointer items-center border-b border-border-subtle text-left hover:bg-bg-raised ${selected ? "bg-accent-muted" : ""}`}
       style={{ height: rowHeight }}
+      onClick={onSelect}
     >
       <ButtonBase
         aria-label={t("commitGraph.viewWorkingChanges", { description })}
         aria-pressed={selected}
         title={description}
         className="flex h-full shrink-0 items-center"
-        onClick={onSelect}
       >
         <svg width={gutter} height={rowHeight} className="shrink-0" aria-hidden="true">
           {lane !== undefined && (
@@ -279,10 +279,7 @@ export function WorkingTreeRow({
 
       <div className="w-80 min-w-0 shrink pr-3">
         {conflicts > 0 ? (
-          <ButtonBase
-            onClick={onSelect}
-            className="w-full truncate text-left text-xs font-medium text-git-conflict"
-          >
+          <ButtonBase className="w-full truncate text-left text-xs font-medium text-git-conflict">
             {t("commitGraph.conflictedFiles", { count: conflicts })}
           </ButtonBase>
         ) : (
@@ -294,6 +291,7 @@ export function WorkingTreeRow({
             disabled={titleDisabled}
             onChange={onTitleChange}
             onFocus={onSelect}
+            onClick={(event) => event.stopPropagation()}
           />
         )}
       </div>

@@ -181,12 +181,13 @@ try {
     name: "View working changes: 1 file change in working tree",
     exact: true,
   });
-  const workingBounds = await page.locator('[data-tour="history-working-tree"]').boundingBox();
+  const workingRow = page.locator('[data-tour="history-working-tree"]');
+  const workingBounds = await workingRow.boundingBox();
   const headBounds = await page.locator('[data-tour="history-commit"]').first().boundingBox();
   assert.ok(workingBounds && headBounds);
   assert.equal(workingBounds.height, headBounds.height);
   assert.equal(workingBounds.y + workingBounds.height, headBounds.y);
-  await expectEntry(() => workingChanges.click(), "section");
+  await expectEntry(() => workingRow.getByText("1", { exact: true }).click(), "section");
   await expect(workingChanges).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("searchbox", { name: "Filter changed files", exact: true }).waitFor();
   await expectEntry(
@@ -314,7 +315,7 @@ try {
 
   const graphDraft = page.getByRole("textbox", { name: "Working tree title", exact: true });
   const editorBounds = await graphDraft.boundingBox();
-  const rowBounds = await page.locator('[data-tour="history-working-tree"]').boundingBox();
+  const rowBounds = await workingRow.boundingBox();
   assert.ok(editorBounds && rowBounds);
   assert.ok(editorBounds.width <= 320, "Graph title stays compact on wide layouts");
   assert.ok(editorBounds.x + editorBounds.width <= rowBounds.x + rowBounds.width);
