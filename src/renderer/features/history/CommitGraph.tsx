@@ -153,9 +153,10 @@ export function CommitGraph({
   const { rows } = useHistoryGraph(repositoryId);
   const headOid = status?.branch.oid;
   const selectedOid = selection?.kind === "commit" ? selection.oid : undefined;
-  const emphasizedCommits = useMemo(
-    () => firstParentPaths(rows, headOid, selectedOid, hoveredRefOid),
-    [rows, headOid, selectedOid, hoveredRefOid],
+  const pathBoundary = useRepositoryStore((state) => state.dagBoundary.paths);
+  const graphEmphasis = useMemo(
+    () => firstParentPaths(rows, [headOid, selectedOid, hoveredRefOid], pathBoundary),
+    [rows, headOid, selectedOid, hoveredRefOid, pathBoundary],
   );
 
   const childrenByParent = useMemo(() => {
@@ -570,7 +571,7 @@ export function CommitGraph({
                   gutter={gutter}
                   selected={selectedOid === row.commit.oid}
                   related={hoveredRefOid === row.commit.oid}
-                  emphasizedCommits={emphasizedCommits}
+                  graphEmphasis={graphEmphasis}
                   vigilantMode={vigilantMode && shaColumnVisible}
                   workingTreeConnection={
                     workingConnection && index - workingRowCount <= workingConnection.headIndex

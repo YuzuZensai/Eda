@@ -6,10 +6,9 @@ import type { GraphColumn } from "@shared/preferences/graph-view";
 import type {
   CommitDecoration,
   CommitSignatureVerification,
-  ObjectId,
   RepositoryChange,
 } from "@shared/repository/repository-read";
-import type { DagRow } from "../../repository/dag-layout";
+import type { DagRow, GraphEmphasis } from "../../repository/dag-layout";
 import { ROW_HEIGHT, edgePath, laneColor, laneX } from "../../repository/graph-geometry";
 import { referenceLabel } from "../../repository/reference-label";
 import { TagIcon } from "../../components/ui/index";
@@ -32,7 +31,7 @@ export function CommitRow({
   gutter,
   selected,
   related,
-  emphasizedCommits,
+  graphEmphasis,
   vigilantMode = false,
   signature,
   repositoryId,
@@ -50,7 +49,7 @@ export function CommitRow({
   gutter: number;
   selected: boolean;
   related: boolean;
-  emphasizedCommits?: ReadonlySet<ObjectId> | undefined;
+  graphEmphasis?: GraphEmphasis | undefined;
   vigilantMode?: boolean;
   signature?: CommitSignatureVerification;
   repositoryId?: string;
@@ -60,8 +59,8 @@ export function CommitRow({
 }) {
   const center = rowHeight / 2;
   const isMerge = row.commit.parents.length > 1;
-  const emphasis = row.topologyUnavailable ? undefined : emphasizedCommits;
-  const emphasized = !emphasis || emphasis.has(row.commit.oid);
+  const emphasis = row.topologyUnavailable ? undefined : graphEmphasis;
+  const emphasized = !emphasis || emphasis.commits.has(row.commit.oid);
   const nodeColor = emphasized ? "currentColor" : DIMMED_GRAPH_COLOR;
 
   return (
@@ -128,10 +127,7 @@ export function CommitRow({
                 color: laneColor(segment.fromLane === row.lane ? row.lane : segment.toLane),
               }}
               stroke={
-                emphasis &&
-                (!emphasis.has(segment.targetOid) || (segment.fromLane === row.lane && !emphasized))
-                  ? DIMMED_GRAPH_COLOR
-                  : "currentColor"
+                emphasis && !emphasis.segments.has(segment) ? DIMMED_GRAPH_COLOR : "currentColor"
               }
               strokeWidth="1.75"
               strokeLinecap="round"

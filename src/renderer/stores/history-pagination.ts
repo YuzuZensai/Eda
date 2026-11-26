@@ -6,8 +6,8 @@ import {
   type HistoryPage,
   type HistoryPageRequest,
 } from "@shared/repository/repository-read";
-import { layoutCommitPage, type DagBoundary } from "../repository/dag-layout";
-import { repositoryRequestFailure } from "./repository-state";
+import { firstParentPaths, layoutCommitPage, type DagBoundary } from "../repository/dag-layout";
+import { repositoryRequestFailure, type RepositoryReadState } from "./repository-state";
 import { useSessionStore } from "./session-store";
 
 export const MAX_HISTORY_PAGES = 3;
@@ -29,7 +29,7 @@ export function readHistory(request: HistoryPageRequest) {
 }
 
 export function createHistoryPagination(
-  get: () => HistoryWindow & { repositoryId: string | null; generation: number },
+  get: () => RepositoryReadState,
   set: (patch: Partial<HistoryWindow>) => void,
 ) {
   const boundaries = new Map<number, DagBoundary>();
@@ -124,7 +124,17 @@ export function createHistoryPagination(
         if (evicted) {
           boundaries.set(current.baseOffset, dagBoundary);
           if (boundaries.size > 128) boundaries.delete(boundaries.keys().next().value!);
-          dagBoundary = layoutCommitPage(evicted.commits, dagBoundary).boundary;
+          const layout = layoutCommitPage(evicted.commits, dagBoundary);
+          const paths = firstParentPaths(
+            layout.rows,
+            [
+              current.status?.branch.oid,
+              current.selection?.kind === "commit" ? current.selection.oid : null,
+              current.hoveredRefOid,
+            ],
+            dagBoundary.paths,
+          )?.boundary;
+          dagBoundary = { ...layout.boundary, ...(paths && { paths }) };
         }
         set({
           pages,

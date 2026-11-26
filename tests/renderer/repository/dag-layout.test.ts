@@ -130,10 +130,12 @@ describe("incremental DAG layout", () => {
       [commit("side", ["base"]), commit("base", ["older"]), commit("unrelated", [])],
     ]);
 
-    expect(firstParentPaths(rows, "merge")).toEqual(new Set(["merge", "main", "base", "older"]));
-    expect(firstParentPaths(rows, "merge", "side")).toEqual(
+    expect(firstParentPaths(rows, ["merge"])?.commits).toEqual(
+      new Set(["merge", "main", "base", "older"]),
+    );
+    expect(firstParentPaths(rows, ["merge", "side"])?.commits).toEqual(
       new Set(["merge", "main", "base", "older", "side"]),
     );
-    expect(firstParentPaths(rows, "not-loaded")).toBeUndefined();
+    expect(firstParentPaths(rows, ["not-loaded"])).toBeUndefined();
   });
 });

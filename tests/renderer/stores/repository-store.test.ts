@@ -6,7 +6,7 @@ import type { EdaApi } from "@shared/ipc";
 import type { HistoryCommit, UnifiedDiff } from "@shared/repository/repository-read";
 import type { Result } from "@shared/errors";
 import { err, ok } from "@shared/errors";
-import { layoutCommitPages } from "@renderer/repository/dag-layout";
+import { firstParentPaths, layoutCommitPages } from "@renderer/repository/dag-layout";
 import {
   HISTORY_PAGE_SIZE,
   MAX_HISTORY_PAGES,
@@ -223,22 +223,27 @@ describe("repository read store", () => {
     expect(useRepositoryStore.getState()).toBe(current);
   });
 
-  it("preserves topology after evicting and reloading a page with parallel ancestry", async () => {
+  it("preserves parallel lanes and their emphasis when evicting and reloading history pages", async () => {
     const commits = Array.from({ length: 600 }, (_, index) => ({
       ...makeCommit(index),
       parents: index < 598 ? [`oid-${index + 2}`] : [],
     }));
     const expected = layoutCommitPages([commits]);
 
-    Object.defineProperty(window, "eda", {
-      configurable: true,
-      value: api(async ({ offset = 0 }) =>
-        ok({
-          commits: commits.slice(offset, offset + 100),
-          nextOffset: offset + 100 < commits.length ? offset + 100 : null,
-        }),
-      ),
-    });
+    const head = commits[0]!.oid;
+    const bridge = api(async ({ offset = 0 }) =>
+      ok({
+        commits: commits.slice(offset, offset + 100),
+        nextOffset: offset + 100 < commits.length ? offset + 100 : null,
+      }),
+    );
+    vi.spyOn(bridge.repository, "status").mockResolvedValue(
+      ok({
+        branch: { head: "active", oid: head, ahead: 0, behind: 0, detached: false, unborn: false },
+        changes: [],
+      }),
+    );
+    vi.stubGlobal("eda", bridge);
     await useRepositoryStore.getState().open("repo", "identity", true);
 
     for (let page = 0; page < 4; page++) await useRepositoryStore.getState().loadMore();
@@ -250,6 +255,14 @@ describe("repository read store", () => {
         state.dagBoundary,
       );
       expect(rows).toEqual(expected.slice(state.baseOffset, state.baseOffset + rows.length));
+      const emphasis = firstParentPaths(rows, [head], state.dagBoundary.paths);
+      expect(emphasis).toBeDefined();
+      for (const row of rows) {
+        expect(emphasis!.commits.has(row.commit.oid)).toBe(row.lane === 0);
+        for (const segment of row.segments) {
+          expect(emphasis!.segments.has(segment)).toBe(segment.fromLane === 0);
+        }
+      }
     };
 
     assertTopology();

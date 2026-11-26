@@ -8,7 +8,11 @@ import type {
 import { CommitRow } from "@renderer/features/history/CommitRow";
 import { CommitGraph } from "@renderer/features/history/CommitGraph";
 import { ReferenceRow } from "@renderer/features/references/ReferenceRow";
-import { firstParentPaths, layoutCommitPage } from "@renderer/repository/dag-layout";
+import {
+  firstParentPaths,
+  layoutCommitPage,
+  layoutCommitPages,
+} from "@renderer/repository/dag-layout";
 import { cacheCommitSignature } from "@renderer/repository/hooks/useCommitSignature";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
 import { useAppStore } from "@renderer/stores/app-store";
@@ -129,7 +133,7 @@ it("dims inactive merge edges and circles with opaque colors", async () => {
           gutter={60}
           selected={false}
           related={false}
-          emphasizedCommits={firstParentPaths(rows, ...tips)}
+          graphEmphasis={firstParentPaths(rows, tips)}
           onSelect={vi.fn()}
           onContextMenu={vi.fn()}
         />,
@@ -150,6 +154,57 @@ it("dims inactive merge edges and circles with opaque colors", async () => {
   expect(node.getAttribute("opacity")).toBeNull();
   expect(node.getAttribute("fill")).toContain("var(--bg-base)");
   expect(node.getAttribute("stroke")).toBe(node.getAttribute("fill"));
+});
+
+it("keeps a side lane dim across intervening rows until the active branch joins it", async () => {
+  const history = (oid: string, ...parents: string[]) => ({
+    ...commit,
+    oid,
+    subject: oid,
+    parents,
+  });
+  const rows = layoutCommitPages([
+    [history("active", "next"), history("side", "base")],
+    [history("unrelated"), history("next", "base"), history("base")],
+  ]);
+  const renderHistory = (...tips: string[]) =>
+    act(async () => {
+      const emphasis = firstParentPaths(rows, tips);
+      root.render(
+        rows.map((row) => (
+          <CommitRow
+            key={row.commit.oid}
+            row={row}
+            columns={[]}
+            gutter={60}
+            selected={false}
+            related={false}
+            graphEmphasis={emphasis}
+            onSelect={vi.fn()}
+            onContextMenu={vi.fn()}
+          />
+        )),
+      );
+    });
+
+  await renderHistory("active");
+  const sideStroke = (subject: string) => {
+    const paths = container.querySelectorAll<SVGPathElement>(
+      `[aria-label^="${subject}."] svg > path`,
+    );
+    return Array.from(paths)
+      .find((path) => path.style.color === "var(--graph-lane-1)")
+      ?.getAttribute("stroke");
+  };
+
+  const inactive = sideStroke("side");
+  expect(inactive).toContain("var(--bg-base)");
+  expect(sideStroke("unrelated")).toBe(inactive);
+  expect(sideStroke("next")).toBe(inactive);
+  expect(sideStroke("base")).toBe("currentColor");
+
+  await renderHistory("active", "side");
+  expect(sideStroke("unrelated")).toBe("currentColor");
 });
 
 it.each([
