@@ -13,6 +13,7 @@
   "fields.filePath": "file path",
   "fields.filesToDiscard": "files to discard",
   "fields.folderName": "folder name",
+  "fields.gitLabInstanceUrl": "GitLab instance URL",
   "fields.graphReferences": "graph references",
   "fields.hiddenReferences": "hidden references",
   "fields.historyLimit": "history limit",
@@ -25,6 +26,7 @@
   "fields.newName": "new name",
   "fields.originalImagePath": "original image path",
   "fields.paths": "paths",
+  "fields.personalAccessToken": "Personal access token",
   "fields.profileId": "profile id",
   "fields.profileName": "profile name",
   "fields.rebaseBase": "rebase base",
@@ -34,6 +36,7 @@
   "fields.remoteName": "remote name",
   "fields.repositoryId": "repository id",
   "fields.repositoryName": "repository name",
+  "fields.repositoryPage": "repository page",
   "fields.resetTarget": "reset target",
   "fields.savedFile": "saved file",
   "fields.selectionIndex": "selection index",
@@ -54,8 +57,5 @@
   "fields.username": "username",
   "fields.value": "value",
   "fields.windowId": "window id",
-  "fields.workflowToken": "workflow token",
-  "fields.repositoryPage": "repository page",
-  "fields.gitLabInstanceUrl": "GitLab instance URL",
-  "fields.personalAccessToken": "Personal access token"
+  "fields.workflowToken": "workflow token"
 }

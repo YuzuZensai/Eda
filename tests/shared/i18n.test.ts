@@ -67,11 +67,11 @@ describe("localization", () => {
     const de = createTranslator("de-DE", {
       "common.cancel": "{name} to {name}, {count}",
       "common.close": "{missing} {empty}",
-      "common.done": "{baseToken}",
+      "common.save": "{baseToken}",
     });
     expect(de("common.cancel", { name: "{count}", count: 1234 })).toBe("{count} to {count}, 1.234");
     expect(de("common.close", { empty: null })).toBe("{missing} ");
-    expect(de("common.done", { baseToken: "{base}" })).toBe("{base}");
+    expect(de("common.save", { baseToken: "{base}" })).toBe("{base}");
     expect(t("profilesSettings.profileCount", { count: 1 })).toBe("1 profile");
     expect(t("profilesSettings.profileCount", { count: 0 })).toBe("0 profiles");
     expect(t("unknown.key" as MessageKey)).toBe("unknown.key");

@@ -1,9 +1,12 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import ts from "typescript";
+
 type Message = string | Record<string, string>;
 type Messages = Record<string, Message>;
 const categories = new Set(["zero", "one", "two", "few", "many", "other"]);
+const compareKeys = new Intl.Collator("en").compare;
 const parameters = (message: string): string[] =>
   [
     ...new Set([
@@ -14,23 +17,84 @@ const parameters = (message: string): string[] =>
 const variants = (message: Message): string[] =>
   typeof message === "string" ? [message] : Object.values(message);
 
-export function checkLocalization(root: string): string[] {
-  const issues: string[] = [];
-  const directory = join(root, "src/shared/locales");
+interface LocalizationReport {
+  files: { path: string; keyCount: number | null }[];
+  localeCount: number;
+  issues: string[];
+}
+
+interface LocalizationLogger {
+  log(message: string): void;
+  error(message: string): void;
+}
+
+function checkAlphabeticalOrder(
+  keys: string[],
+  location: string,
+  recordIssue: (message: string) => void,
+): void {
+  const index = keys.findIndex((key, i) => i > 0 && compareKeys(keys[i - 1]!, key) > 0);
+  if (index !== -1)
+    recordIssue(
+      `${location}: alphabetical order requires ${keys[index]} before ${keys[index - 1]}`,
+    );
+}
+
+export function checkLocalization(root: string, logger?: LocalizationLogger): LocalizationReport {
+  const report: LocalizationReport = { files: [], localeCount: 0, issues: [] };
+  const recordIssue = (message: string) => {
+    report.issues.push(message);
+    logger?.error(message);
+  };
+  const recordCatalog = (path: string, keyCount: number | null) => {
+    report.files.push({ path, keyCount });
+    logger?.log(`  ${path} (${keyCount === null ? "invalid catalog" : `${keyCount} keys`})`);
+  };
+
+  const catalogDirectory = "src/shared/locales";
+  const directory = join(root, catalogDirectory);
+  if (!existsSync(directory)) {
+    recordIssue(`${catalogDirectory}: localization directory is missing`);
+    return report;
+  }
+
   const catalogs = new Map<string, Messages>();
+  const keyLocations: { key: string; location: string }[] = [];
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
+    report.localeCount++;
+    const localePath = `${catalogDirectory}/${entry.name}`;
     try {
       if (Intl.getCanonicalLocales(entry.name)[0] !== entry.name)
-        issues.push(`${entry.name}: use a canonical BCP-47 locale directory`);
+        recordIssue(`${localePath}: use a canonical BCP-47 locale directory`);
     } catch {
-      issues.push(`${entry.name}: invalid BCP-47 locale directory`);
+      recordIssue(`${localePath}: invalid BCP-47 locale directory`);
     }
     const messages: Messages = {};
     for (const file of readdirSync(join(directory, entry.name)).filter((name) =>
       name.endsWith(".json"),
     )) {
-      const contents = readFileSync(join(directory, entry.name, file), "utf8");
+      const catalogPath = `${localePath}/${file}`;
+      const contents = readFileSync(join(root, catalogPath), "utf8");
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(contents);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        recordCatalog(catalogPath, null);
+        recordIssue(`${catalogPath}: invalid JSON (${detail})`);
+        continue;
+      }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        recordCatalog(catalogPath, null);
+        recordIssue(`${catalogPath}: expected a JSON object of message keys`);
+        continue;
+      }
+
+      const data = parsed as Messages;
+      const keys = Object.keys(data);
+      recordCatalog(catalogPath, keys.length);
+
       const json = ts.parseJsonText(file, contents);
       const statement = json.statements[0];
       if (
@@ -42,16 +106,17 @@ export function checkLocalization(root: string): string[] {
         for (const property of statement.expression.properties) {
           if (!property.name || !ts.isStringLiteral(property.name)) continue;
           if (keys.has(property.name.text))
-            issues.push(`${entry.name}/${file}: duplicate key ${property.name.text}`);
+            recordIssue(`${catalogPath}: duplicate key ${property.name.text}`);
           keys.add(property.name.text);
         }
       }
-      const data = JSON.parse(contents) as Messages;
+      checkAlphabeticalOrder(keys, catalogPath, recordIssue);
       for (const [key, message] of Object.entries(data)) {
-        const location = `${entry.name}/${file}: ${key}`;
-        if (Object.hasOwn(messages, key)) issues.push(`${location}: duplicate key across catalogs`);
+        const location = `${catalogPath}: ${key}`;
+        keyLocations.push({ key, location });
+        if (Object.hasOwn(messages, key)) recordIssue(`${location}: duplicate key across catalogs`);
         if (!/^(?:[a-z][a-zA-Z0-9]*\.)+[a-z][a-zA-Z0-9]*$/.test(key))
-          issues.push(`${location}: use dot-separated lowerCamelCase keys`);
+          recordIssue(`${location}: use dot-separated lowerCamelCase keys`);
         if (
           typeof message !== "string" &&
           (!message ||
@@ -59,40 +124,49 @@ export function checkLocalization(root: string): string[] {
             Array.isArray(message) ||
             !Object.hasOwn(message, "other"))
         ) {
-          issues.push(`${location}: plural messages require an other form`);
+          recordIssue(`${location}: plural messages require an other form`);
           continue;
         }
         if (
           typeof message !== "string" &&
           Object.keys(message).some((form) => !categories.has(form))
         )
-          issues.push(`${location}: invalid plural category`);
+          recordIssue(`${location}: invalid plural category`);
+        if (typeof message !== "string")
+          checkAlphabeticalOrder(Object.keys(message), location, recordIssue);
         const forms = variants(message);
-        if (forms.some((form) => typeof form !== "string" || !form.trim()))
-          issues.push(`${location}: empty or invalid message`);
-        else if (
+        if (forms.some((form) => typeof form !== "string" || !form.trim())) {
+          recordIssue(`${location}: empty or invalid message`);
+          continue;
+        }
+        if (
           forms.some(
             (form) => JSON.stringify(parameters(form)) !== JSON.stringify(parameters(forms[0]!)),
           )
         )
-          issues.push(`${location}: plural forms must preserve named parameters`);
+          recordIssue(`${location}: plural forms must preserve named parameters`);
         messages[key] = message;
       }
     }
     catalogs.set(entry.name, messages);
   }
-  const english = catalogs.get("en")!;
+  const english = catalogs.get("en");
+  if (!english) {
+    recordIssue(`${catalogDirectory}: missing English catalogs`);
+    return report;
+  }
   for (const [locale, messages] of catalogs) {
     if (locale === "en") continue;
+    const localePath = `${catalogDirectory}/${locale}`;
     for (const [key, message] of Object.entries(messages)) {
-      if (!Object.hasOwn(english, key)) issues.push(`${locale}: unknown key ${key}`);
+      if (!Object.hasOwn(english, key)) recordIssue(`${localePath}: unknown key ${key}`);
       else if (typeof english[key] !== "string" && typeof message === "string")
-        issues.push(`${locale}: ${key}: preserve plural message forms`);
+        recordIssue(`${localePath}: ${key}: preserve plural message forms`);
       else if (
         JSON.stringify(parameters(variants(message)[0]!)) !==
         JSON.stringify(parameters(variants(english[key]!)[0]!))
       )
-        issues.push(`${locale}: ${key}: parameters differ from English`);
+        recordIssue(`${localePath}: ${key}: parameters differ from English`);
     }
   }
 
@@ -100,6 +174,8 @@ export function checkLocalization(root: string): string[] {
   const files = readdirSync(src, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && /\.(ts|tsx)$/.test(entry.name))
     .map((entry) => join(entry.parentPath, entry.name));
+  logger?.log(`Checking application references in ${files.length} TypeScript files.`);
+
   const configPath = join(root, "tsconfig.json");
   const options: ts.CompilerOptions = existsSync(configPath)
     ? ts.parseJsonConfigFileContent(
@@ -110,6 +186,30 @@ export function checkLocalization(root: string): string[] {
     : { target: ts.ScriptTarget.ESNext, jsx: ts.JsxEmit.ReactJSX };
   const program = ts.createProgram(files, { ...options, noEmit: true });
   const checker = program.getTypeChecker();
+  const i18n = program.getSourceFile(join(src, "shared/i18n/index.ts"));
+  const module = i18n && checker.getSymbolAtLocation(i18n);
+  const keySymbol =
+    module && checker.getExportsOfModule(module).find((s) => s.name === "MessageKey");
+  const keyType = keySymbol && checker.getDeclaredTypeOfSymbol(keySymbol);
+  const usedKeys = new Set<string>();
+
+  const recordKeyReference = (expression: ts.Expression): void => {
+    if (ts.isStringLiteralLike(expression) && !Object.hasOwn(english, expression.text)) return;
+    const context = checker.getContextualType(expression);
+    if (!context || checker.getNonNullableType(context) !== keyType) return;
+    if (ts.isStringLiteralLike(expression)) {
+      usedKeys.add(expression.text);
+      return;
+    }
+    const type = checker.getTypeAtLocation(expression);
+    // A value typed as MessageKey can forward any key. Its inputs provide the actual references.
+    if (checker.getNonNullableType(type) === keyType) return;
+
+    for (const candidate of type.isUnion() ? type.types : [type]) {
+      if (candidate.isStringLiteral()) usedKeys.add(candidate.value);
+    }
+  };
+
   const reported = new Set<string>();
   for (const file of files) {
     const source = program.getSourceFile(file)!;
@@ -119,7 +219,7 @@ export function checkLocalization(root: string): string[] {
       if (reported.has(location)) return;
       reported.add(location);
       const { line } = owner.getLineAndCharacterOfPosition(node.getStart(owner));
-      issues.push(`${relative(root, owner.fileName)}:${line + 1}: ${message}`);
+      recordIssue(`${relative(root, owner.fileName)}:${line + 1}: ${message}`);
     };
     const human = isTranslatable;
     const checkVisibleExpression = (expression: ts.Expression): void => {
@@ -152,6 +252,17 @@ export function checkLocalization(root: string): string[] {
       }
     };
     const visit = (node: ts.Node): void => {
+      if (keyType) {
+        if (ts.isStringLiteralLike(node) || ts.isTemplateExpression(node)) recordKeyReference(node);
+        if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
+          for (const argument of node.arguments ?? []) {
+            if (!ts.isStringLiteralLike(argument) && !ts.isTemplateExpression(argument))
+              recordKeyReference(argument);
+          }
+        }
+        if (ts.isJsxExpression(node) && ts.isJsxAttribute(node.parent) && node.expression)
+          recordKeyReference(node.expression);
+      }
       if (
         ts.isJsxExpression(node) &&
         node.expression &&
@@ -208,7 +319,13 @@ export function checkLocalization(root: string): string[] {
         report(literal, `move ${sink.reason} text into a JSON catalog`);
     }
   }
-  return issues;
+  if (!keyType) recordIssue("src/shared/i18n/index.ts: cannot find the MessageKey type");
+  else {
+    for (const { key, location } of keyLocations) {
+      if (Object.hasOwn(english, key) && !usedKeys.has(key)) recordIssue(`${location}: unused key`);
+    }
+  }
+  return report;
 }
 
 const textProperties = new Set([
@@ -619,4 +736,19 @@ function textSinks(source: ts.SourceFile, checker: ts.TypeChecker): TextSink[] {
   };
   visit(source);
   return sinks;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  console.log("Checking localization key order, usage, message formats, and application text.");
+  const { files, localeCount, issues } = checkLocalization(process.cwd(), console);
+  const total = files.reduce((count, file) => count + (file.keyCount ?? 0), 0);
+  console.log(`Locales: ${localeCount} | Catalogs: ${files.length} | Keys: ${total}`);
+
+  if (issues.length) {
+    const count = issues.length === 1 ? "1 error" : `${issues.length} errors`;
+    console.error(`Localization checks failed (${count}).`);
+    process.exitCode = 1;
+  } else {
+    console.log("Localization checks passed.");
+  }
 }
