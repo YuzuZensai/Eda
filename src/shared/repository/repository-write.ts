@@ -26,6 +26,7 @@ export interface BranchSummary {
   name: string;
   oid: ObjectId;
   isHead: boolean;
+  isDefault?: true;
   remote: boolean;
   upstream?: string;
   worktreePath?: string;

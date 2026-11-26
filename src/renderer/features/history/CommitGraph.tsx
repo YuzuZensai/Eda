@@ -25,8 +25,9 @@ import { useLayoutTransition } from "../../components/layout/hooks/useLayoutTran
 import { VirtualRows } from "../../components/ui/display/VirtualRows";
 import { Skeleton } from "../../components/ui/feedback/Skeleton";
 import { ButtonBase, ErrorDialog, IconButton, TextButton } from "../../components/ui/index";
-import { layoutCommitPages } from "../../repository/dag-layout";
+import { firstParentPaths } from "../../repository/dag-layout";
 import { ROW_HEIGHT, graphColumnWidth } from "../../repository/graph-geometry";
+import { useHistoryGraph } from "../../repository/hooks/useHistoryGraph";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { usePreferencesStore } from "../../stores/preferences-store";
 import { useLayoutStore } from "../../stores/layout-store";
@@ -91,9 +92,7 @@ export function CommitGraph({
   const [contributorsOpen, setContributorsOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const dagBoundary = useRepositoryStore((state) => state.dagBoundary);
   const hoveredRefOid = useRepositoryStore((state) => state.hoveredRefOid);
-  const pages = useRepositoryStore((state) => state.pages);
   const status = useRepositoryStore((state) => state.status);
   const linkedRequest = useMemo(
     () => (repositoryId && status && !pending ? { repositoryId, status } : null),
@@ -151,13 +150,12 @@ export function CommitGraph({
   const transitionLayout = useLayoutTransition();
   const [menu, setMenu] = useState<CommitMenuTarget | null>(null);
 
-  const rows = useMemo(
-    () =>
-      layoutCommitPages(
-        pages.map((page) => page.commits),
-        dagBoundary,
-      ),
-    [pages, dagBoundary],
+  const { rows } = useHistoryGraph(repositoryId);
+  const headOid = status?.branch.oid;
+  const selectedOid = selection?.kind === "commit" ? selection.oid : undefined;
+  const emphasizedCommits = useMemo(
+    () => firstParentPaths(rows, headOid, selectedOid, hoveredRefOid),
+    [rows, headOid, selectedOid, hoveredRefOid],
   );
 
   const childrenByParent = useMemo(() => {
@@ -570,8 +568,9 @@ export function CommitGraph({
                   {...(repositoryId && { repositoryId })}
                   columns={columns}
                   gutter={gutter}
-                  selected={selection?.kind === "commit" && selection.oid === row.commit.oid}
+                  selected={selectedOid === row.commit.oid}
                   related={hoveredRefOid === row.commit.oid}
+                  emphasizedCommits={emphasizedCommits}
                   vigilantMode={vigilantMode && shaColumnVisible}
                   workingTreeConnection={
                     workingConnection && index - workingRowCount <= workingConnection.headIndex

@@ -63,8 +63,10 @@ describe("branches against real Git", () => {
     const repo = await seeded();
     await repo.git.createBranch(repo.path, "work", { checkout: true });
 
-    const head = (await repo.git.listBranches(repo.path)).find((b) => b.isHead);
+    const branches = await repo.git.listBranches(repo.path);
+    const head = branches.find((b) => b.isHead);
     expect(head?.name).toBe("work");
+    expect(branches.some((branch) => branch.isDefault)).toBe(false);
     expect((await repo.git.status(repo.path)).branch.head).toBe("work");
   });
 
@@ -195,17 +197,32 @@ describe("tags against real Git", () => {
     ]);
   });
 
-  it("omits remote HEAD aliases from the branch navigator", async () => {
+  it("identifies remote defaults without listing HEAD aliases or treating the checkout as default", async () => {
     const repo = await seeded();
 
-    await repo.run(["update-ref", "refs/remotes/origin/main", "HEAD"]);
-    await repo.run(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
+    await repo.run(["branch", "release/stable"]);
+    await repo.run(["update-ref", "refs/remotes/origin/release/stable", "HEAD"]);
+    await repo.run([
+      "symbolic-ref",
+      "refs/remotes/origin/HEAD",
+      "refs/remotes/origin/release/stable",
+    ]);
+    await repo.run(["update-ref", "refs/remotes/fork/main", "HEAD"]);
+    await repo.run(["symbolic-ref", "refs/remotes/fork/HEAD", "refs/remotes/fork/main"]);
 
-    const names = (await repo.git.listBranches(repo.path)).map((branch) => branch.name);
-
-    expect(names).toContain("origin/main");
-    expect(names).not.toContain("origin");
-    expect(names).not.toContain("origin/HEAD");
+    const branches = await repo.git.listBranches(repo.path);
+    expect(branches.map((branch) => branch.name)).toEqual([
+      "main",
+      "release/stable",
+      "fork/main",
+      "origin/release/stable",
+    ]);
+    expect(branches.filter((branch) => branch.isDefault).map((branch) => branch.name)).toEqual([
+      "release/stable",
+      "fork/main",
+      "origin/release/stable",
+    ]);
+    expect(branches.find((branch) => branch.isHead)?.name).toBe("main");
   });
 
   it("creates a lightweight tag and lists it", async () => {

@@ -6,6 +6,7 @@ import {
 import type { BranchSummary } from "@shared/repository/repository-write";
 import { useEffect, useId, useRef, useState } from "react";
 import { CommitSignatureIcon } from "../../components/ui/display/CommitSignatureIcon";
+import { CircleIcon } from "../../components/ui/icons";
 import { cx, ListItemButton } from "../../components/ui/index";
 import { useTagSignature } from "../../repository/hooks/useCommitSignature";
 import { useRepositoryStore } from "../../stores/repository-store";
@@ -19,6 +20,7 @@ interface SignatureContext {
 
 export function ReferenceRow({
   item,
+  graphColor,
   selected,
   onActions,
   onCheckout,
@@ -26,6 +28,7 @@ export function ReferenceRow({
   signatureContext,
 }: {
   item: BranchSummary | TagReference;
+  graphColor?: string | undefined;
   selected: boolean;
   onActions: (target: ReferenceTarget) => void;
   onCheckout: (branch: BranchSummary) => void;
@@ -126,8 +129,18 @@ export function ReferenceRow({
         }
       }}
       selected={selected}
-      className="py-1.5 pl-[51px] text-xs"
+      className="branch-option relative py-1.5 pl-[51px] text-xs"
     >
+      {!tag && graphColor && (
+        <CircleIcon
+          size={8}
+          strokeWidth={4}
+          className="branch-marker absolute left-[35px]"
+          data-emphasized={head || selected}
+          style={{ color: graphColor }}
+          aria-hidden="true"
+        />
+      )}
       <span className={cx("min-w-0 flex-1 truncate", head && "font-medium text-accent-text")}>
         {displayName}
       </span>

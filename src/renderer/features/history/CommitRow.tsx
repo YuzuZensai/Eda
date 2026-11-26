@@ -6,6 +6,7 @@ import type { GraphColumn } from "@shared/preferences/graph-view";
 import type {
   CommitDecoration,
   CommitSignatureVerification,
+  ObjectId,
   RepositoryChange,
 } from "@shared/repository/repository-read";
 import type { DagRow } from "../../repository/dag-layout";
@@ -16,6 +17,9 @@ import { FileStatusIcon, fileStatusTone } from "../../components/ui/display/File
 import { CommitSignatureIcon } from "../../components/ui/display/CommitSignatureIcon";
 import { useCommitSignature } from "../../repository/hooks/useCommitSignature";
 import { CommitTitleInput } from "../../components/ui/forms/CommitTitleInput";
+
+// Use an opaque tint so overlapping line caps at row boundaries do not brighten the lane.
+const DIMMED_GRAPH_COLOR = "color-mix(in srgb, currentColor 45%, var(--bg-base))";
 
 export function CommitRow({
   row,
@@ -28,6 +32,7 @@ export function CommitRow({
   gutter,
   selected,
   related,
+  emphasizedCommits,
   vigilantMode = false,
   signature,
   repositoryId,
@@ -45,6 +50,7 @@ export function CommitRow({
   gutter: number;
   selected: boolean;
   related: boolean;
+  emphasizedCommits?: ReadonlySet<ObjectId> | undefined;
   vigilantMode?: boolean;
   signature?: CommitSignatureVerification;
   repositoryId?: string;
@@ -54,6 +60,9 @@ export function CommitRow({
 }) {
   const center = rowHeight / 2;
   const isMerge = row.commit.parents.length > 1;
+  const emphasis = row.topologyUnavailable ? undefined : emphasizedCommits;
+  const emphasized = !emphasis || emphasis.has(row.commit.oid);
+  const nodeColor = emphasized ? "currentColor" : DIMMED_GRAPH_COLOR;
 
   return (
     <ButtonBase
@@ -115,7 +124,15 @@ export function CommitRow({
               key={index}
               d={edgePath(segment, row.lane, center)}
               fill="none"
-              stroke={laneColor(segment.fromLane === row.lane ? row.lane : segment.toLane)}
+              style={{
+                color: laneColor(segment.fromLane === row.lane ? row.lane : segment.toLane),
+              }}
+              stroke={
+                emphasis &&
+                (!emphasis.has(segment.targetOid) || (segment.fromLane === row.lane && !emphasized))
+                  ? DIMMED_GRAPH_COLOR
+                  : "currentColor"
+              }
               strokeWidth="1.75"
               strokeLinecap="round"
             />
@@ -124,8 +141,9 @@ export function CommitRow({
           cx={laneX(row.lane)}
           cy={center}
           r={isMerge ? 4.5 : 3.75}
-          fill={isMerge ? laneColor(row.lane) : "var(--bg-base)"}
-          stroke={laneColor(row.lane)}
+          style={{ color: laneColor(row.lane) }}
+          fill={isMerge ? nodeColor : "var(--bg-base)"}
+          stroke={nodeColor}
           strokeWidth="2"
         />
       </svg>

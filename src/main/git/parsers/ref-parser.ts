@@ -15,11 +15,18 @@ export const TAG_ARGUMENTS = [
 
 export function parseBranches(fields: readonly string[]): BranchSummary[] {
   const branches: BranchSummary[] = [];
+  const defaults: { remote: string; name: string }[] = [];
 
   for (let index = 0; index + 6 < fields.length; index += 7) {
-    if (fields[index + 5]) continue;
-
     const fullRef = fields[index + 4]!;
+    const target = fields[index + 5];
+
+    if (target) {
+      const remote = /^refs\/remotes\/(.+)\/HEAD$/.exec(fullRef)?.[1];
+      if (remote && target.startsWith(`refs/remotes/${remote}/`))
+        defaults.push({ remote, name: target.slice("refs/remotes/".length) });
+      continue;
+    }
 
     branches.push({
       name: fullRef.replace(/^refs\/(?:heads|remotes)\//, ""),
@@ -31,7 +38,28 @@ export function parseBranches(fields: readonly string[]): BranchSummary[] {
     });
   }
 
-  return branches;
+  if (!defaults.length) return branches;
+
+  const remoteDefaults = new Set(defaults.map(({ name }) => name));
+  const primary =
+    defaults.find(({ remote }) => remote === "origin") ??
+    (defaults.length === 1 ? defaults[0] : undefined);
+  const localName = primary?.name.slice(primary.remote.length + 1);
+  const tracking = primary
+    ? branches.filter((branch) => !branch.remote && branch.upstream === primary.name)
+    : [];
+  const localDefault =
+    branches.find(
+      (branch) =>
+        !branch.remote &&
+        branch.name === localName &&
+        (!branch.upstream || branch.upstream === primary?.name),
+    ) ?? (tracking.length === 1 ? tracking[0] : undefined);
+
+  return branches.map((branch) => {
+    const isDefault = branch.remote ? remoteDefaults.has(branch.name) : branch === localDefault;
+    return isDefault ? { ...branch, isDefault: true } : branch;
+  });
 }
 
 export function parseTags(fields: readonly string[]): TagSummary[] {

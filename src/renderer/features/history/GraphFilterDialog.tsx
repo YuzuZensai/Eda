@@ -3,9 +3,12 @@ import { t } from "@shared/i18n";
 import { useState } from "react";
 import { defaultGraphFilter, type GraphFilter } from "@shared/preferences/graph-view";
 import { useLocalReferences } from "../../repository/hooks/useLocalReferences";
+import { useHistoryGraph } from "../../repository/hooks/useHistoryGraph";
+import { defaultBranchesFirst } from "../../repository/branch-order";
 import { useSessionStore } from "../../stores/session-store";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { usePreferencesStore } from "../../stores/preferences-store";
+import { CircleIcon } from "../../components/ui/icons";
 import {
   Button,
   Dialog,
@@ -30,13 +33,14 @@ export function GraphFilterDialog({
       defaultGraphFilter(),
   );
   const { references, loadError, retry } = useLocalReferences(repositoryId);
+  const { commitColors } = useHistoryGraph(repositoryId);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const globalDefault = usePreferencesStore((state) => state.values.showInternalRefs.value);
 
   const refs: { name: string; oid: string; head?: boolean; upstream?: string }[] = references
     ? [
-        ...references.branches.map((branch) => ({
+        ...defaultBranchesFirst(references.branches).map((branch) => ({
           name: `refs/${branch.remote ? "remotes" : "heads"}/${branch.name}`,
           oid: branch.oid,
           head: branch.isHead,
@@ -205,8 +209,21 @@ export function GraphFilterDialog({
           {matches.slice(0, 200).map((ref) => (
             <div
               key={ref.name}
-              className="flex items-center gap-2 border-b border-border-subtle py-2"
+              className="branch-option flex items-center gap-2 border-b border-border-subtle py-2"
             >
+              <span className="w-2 shrink-0" aria-hidden="true">
+                {!ref.name.startsWith("refs/tags/") && commitColors.has(ref.oid) && (
+                  <CircleIcon
+                    size={8}
+                    strokeWidth={4}
+                    className="branch-marker"
+                    data-emphasized={
+                      ref.head || filter.refs.includes(ref.name) || filter.pinnedRef === ref.name
+                    }
+                    style={{ color: commitColors.get(ref.oid) }}
+                  />
+                )}
+              </span>
               <span className="min-w-0 flex-1 truncate text-xs" title={ref.name}>
                 {ref.name.replace(/^refs\/(heads|remotes|tags)\//, "")}
               </span>

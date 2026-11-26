@@ -21,6 +21,8 @@ import {
   AnchoredPopover,
 } from "../../components/ui/index";
 import { useRepositoryRead } from "../../repository/hooks/useRepositoryRead";
+import { useHistoryGraph } from "../../repository/hooks/useHistoryGraph";
+import { defaultBranchesFirst } from "../../repository/branch-order";
 import { useAppStore } from "../../stores/app-store";
 import { openSettings } from "../../stores/shell-store";
 import { useRepositoryStore } from "../../stores/repository-store";
@@ -33,6 +35,7 @@ export function BranchMenu({ head }: { head: string }) {
   const refresh = useRepositoryStore((state) => state.refresh);
   const upstream = useRepositoryStore((state) => state.status?.branch.upstream);
   const [open, setOpen] = useState(false);
+  const { commitColors } = useHistoryGraph(open ? repositoryId : null);
   const {
     value: branches,
     error: readError,
@@ -78,7 +81,7 @@ export function BranchMenu({ head }: { head: string }) {
     }
   };
 
-  const local = branches?.filter((branch) => !branch.remote) ?? [];
+  const local = defaultBranchesFirst(branches?.filter((branch) => !branch.remote) ?? []);
   const needle = query.trim().toLowerCase();
   const matches = needle ? local.filter((b) => b.name.toLowerCase().includes(needle)) : local;
   const renderedMatches = matches.slice(0, 200);
@@ -147,7 +150,7 @@ export function BranchMenu({ head }: { head: string }) {
 
           <ul className="min-h-0 flex-1 overflow-y-auto p-1">
             {renderedMatches.map((branch, position) => (
-              <li key={branch.name} className="group/branch flex items-center gap-1">
+              <li key={branch.name} className="branch-option group/branch flex items-center gap-1">
                 <ListItemButton
                   disabled={
                     !!commandUnavailable || busy || (!!branch.worktreePath && !branch.isHead)
@@ -170,7 +173,17 @@ export function BranchMenu({ head }: { head: string }) {
                   onMouseEnter={() => setHighlight(position)}
                 >
                   <span className="w-2 shrink-0">
-                    {branch.isHead && <Circle size={8} fill="currentColor" aria-hidden="true" />}
+                    {(branch.isHead || commitColors.has(branch.oid)) && (
+                      <Circle
+                        size={8}
+                        strokeWidth={4}
+                        fill={branch.isHead ? "currentColor" : "none"}
+                        className="branch-marker"
+                        data-emphasized={index === position || branch.isHead}
+                        style={{ color: commitColors.get(branch.oid) }}
+                        aria-hidden="true"
+                      />
+                    )}
                   </span>
                   <span className="min-w-0 truncate">{branch.name}</span>
                 </ListItemButton>

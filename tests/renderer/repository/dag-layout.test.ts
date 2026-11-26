@@ -1,5 +1,6 @@
 import type { HistoryCommit } from "@shared/repository/repository-read";
 import {
+  firstParentPaths,
   layoutCommitPage,
   layoutCommitPages,
   MAX_DAG_LANES,
@@ -64,7 +65,7 @@ describe("incremental DAG layout", () => {
 
     expect(row.lane).toBe(1);
     expect(row.segments.filter((segment) => segment.continues && !segment.incoming)).toEqual([
-      { fromLane: 0, toLane: 0, continues: true },
+      { fromLane: 0, toLane: 0, targetOid: "main", continues: true },
     ]);
   });
 
@@ -76,6 +77,7 @@ describe("incremental DAG layout", () => {
 
     expect(edges).toHaveLength(2);
     expect(new Set(edges.map((edge) => edge.toLane)).size).toBe(2);
+    expect(edges.map((edge) => edge.targetOid)).toEqual(["a", "b"]);
   });
 
   it("preserves an unrelated lane while advancing another branch", () => {
@@ -83,7 +85,7 @@ describe("incremental DAG layout", () => {
     const row = layout.rows[0]!;
     const other = row.segments.find((segment) => segment.fromLane === 1);
 
-    expect(other).toEqual({ fromLane: 1, toLane: 1, continues: true });
+    expect(other).toEqual({ fromLane: 1, toLane: 1, targetOid: "other", continues: true });
     expect(layout.boundary.lanes[1]).toBe("other");
   });
 
@@ -91,7 +93,7 @@ describe("incremental DAG layout", () => {
     const layout = layoutCommitPage([commit("root", [])], { lanes: ["root", "x"] });
     const passthrough = layout.rows[0]!.segments.find((segment) => segment.fromLane === 1);
 
-    expect(passthrough).toEqual({ fromLane: 1, toLane: 1, continues: true });
+    expect(passthrough).toEqual({ fromLane: 1, toLane: 1, targetOid: "x", continues: true });
     expect(layout.boundary.lanes[1]).toBe("x");
   });
 
@@ -102,6 +104,7 @@ describe("incremental DAG layout", () => {
     expect(row.segments).toContainEqual({
       fromLane: 0,
       toLane: 0,
+      targetOid: "tip",
       continues: true,
       incoming: true,
     });
@@ -119,5 +122,18 @@ describe("incremental DAG layout", () => {
     layoutCommitPage(input, boundary);
     expect(boundary).toEqual({ lanes: ["tip"] });
     expect(input[0]?.parents).toEqual(["parent"]);
+  });
+
+  it("tracks first-parent paths by commit across page boundaries and lane reuse", () => {
+    const rows = layoutCommitPages([
+      [commit("merge", ["main", "side"]), commit("main", ["base"])],
+      [commit("side", ["base"]), commit("base", ["older"]), commit("unrelated", [])],
+    ]);
+
+    expect(firstParentPaths(rows, "merge")).toEqual(new Set(["merge", "main", "base", "older"]));
+    expect(firstParentPaths(rows, "merge", "side")).toEqual(
+      new Set(["merge", "main", "base", "older", "side"]),
+    );
+    expect(firstParentPaths(rows, "not-loaded")).toBeUndefined();
   });
 });

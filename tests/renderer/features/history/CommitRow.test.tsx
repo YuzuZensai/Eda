@@ -8,7 +8,7 @@ import type {
 import { CommitRow } from "@renderer/features/history/CommitRow";
 import { CommitGraph } from "@renderer/features/history/CommitGraph";
 import { ReferenceRow } from "@renderer/features/references/ReferenceRow";
-import { layoutCommitPage } from "@renderer/repository/dag-layout";
+import { firstParentPaths, layoutCommitPage } from "@renderer/repository/dag-layout";
 import { cacheCommitSignature } from "@renderer/repository/hooks/useCommitSignature";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
 import { useAppStore } from "@renderer/stores/app-store";
@@ -112,6 +112,44 @@ it("highlights only the branch tip when hovering its reference row", async () =>
   await act(async () => reference.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
 
   expect(rows[0]!.classList.contains("bg-accent-muted")).toBe(false);
+});
+
+it("dims inactive merge edges and circles with opaque colors", async () => {
+  const main = { ...commit, oid: "b".repeat(40) };
+  const side = { ...commit, oid: "c".repeat(40) };
+  const merge = { ...commit, parents: [main.oid, side.oid] };
+  const { rows } = layoutCommitPage([merge, main, side]);
+
+  const renderMerge = (...tips: string[]) =>
+    act(async () =>
+      root.render(
+        <CommitRow
+          row={rows[0]!}
+          columns={[]}
+          gutter={60}
+          selected={false}
+          related={false}
+          emphasizedCommits={firstParentPaths(rows, ...tips)}
+          onSelect={vi.fn()}
+          onContextMenu={vi.fn()}
+        />,
+      ),
+    );
+
+  await renderMerge(merge.oid);
+  const [mainEdge, sideEdge] = container.querySelectorAll("svg > path");
+  expect(sideEdge?.getAttribute("opacity")).toBeNull();
+  expect(sideEdge?.getAttribute("stroke")).toContain("var(--bg-base)");
+  expect(mainEdge?.getAttribute("stroke")).toBe("currentColor");
+
+  await renderMerge(merge.oid, side.oid);
+  expect(sideEdge?.getAttribute("stroke")).toBe("currentColor");
+
+  await renderMerge(side.oid);
+  const node = container.querySelector("svg > circle")!;
+  expect(node.getAttribute("opacity")).toBeNull();
+  expect(node.getAttribute("fill")).toContain("var(--bg-base)");
+  expect(node.getAttribute("stroke")).toBe(node.getAttribute("fill"));
 });
 
 it.each([

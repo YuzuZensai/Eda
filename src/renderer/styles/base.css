@@ -293,6 +293,15 @@
     overflow-y: hidden;
   }
 
+  .branch-marker {
+    opacity: 0.7;
+  }
+
+  .branch-marker[data-emphasized="true"],
+  .branch-option:is(:hover, :focus-within) .branch-marker {
+    opacity: 1;
+  }
+
   .profile-avatar {
     color: oklch(0.82 var(--avatar-chroma, 0.1) var(--avatar-hue));
     background: var(--bg-raised);

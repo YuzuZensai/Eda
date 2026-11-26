@@ -25,6 +25,8 @@ import {
   SearchField,
   TextButton,
 } from "../../components/ui/index";
+import { useHistoryGraph } from "../../repository/hooks/useHistoryGraph";
+import { defaultBranchesFirst } from "../../repository/branch-order";
 import { useAppStore } from "../../stores/app-store";
 import { usePreferencesStore } from "../../stores/preferences-store";
 import { useRepositoryStore } from "../../stores/repository-store";
@@ -57,6 +59,7 @@ export function ReferenceSidebar({
   const vigilantMode = usePreferencesStore((state) => state.values.vigilantMode.value);
   const status = useRepositoryStore((state) => state.status);
   const selection = useRepositoryStore((state) => state.selection);
+  const { commitColors } = useHistoryGraph(pending ? null : repositoryId);
 
   const saved = useSessionStore(
     (state) => state.snapshot?.session.views[repositoryId]?.references ?? defaults,
@@ -198,13 +201,13 @@ export function ReferenceSidebar({
       key: "locals" as const,
       label: t("referenceSidebar.localBranches"),
       icon: GitBranch,
-      items: branches.filter((branch) => !branch.remote),
+      items: defaultBranchesFirst(branches.filter((branch) => !branch.remote)),
     },
     {
       key: "remotes" as const,
       label: t("referenceSidebar.remoteBranches"),
       icon: Globe,
-      items: branches.filter((branch) => branch.remote),
+      items: defaultBranchesFirst(branches.filter((branch) => branch.remote)),
     },
     { key: "tags" as const, label: t("referenceSidebar.tags"), icon: Tag, items: tags },
   ];
@@ -370,6 +373,7 @@ export function ReferenceSidebar({
                         <ReferenceRow
                           key={item.name}
                           item={item}
+                          graphColor={commitColors.get(item.oid)}
                           {...(group.key === "tags" &&
                             showTagSignatures && {
                               signatureContext: { repositoryId, identityId: profileId ?? null },

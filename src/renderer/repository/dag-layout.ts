@@ -9,6 +9,7 @@ export interface DagBoundary {
 export interface DagSegment {
   fromLane: number;
   toLane: number;
+  targetOid: ObjectId;
   continues: boolean;
   incoming?: boolean;
 }
@@ -92,7 +93,13 @@ export function layoutCommitPage(
     const segments: DagSegment[] = [];
 
     if (hasParentAbove) {
-      segments.push({ fromLane: lane, toLane: lane, continues: true, incoming: true });
+      segments.push({
+        fromLane: lane,
+        toLane: lane,
+        targetOid: commit.oid,
+        continues: true,
+        incoming: true,
+      });
     }
 
     for (const [fromLane, oid] of before.entries()) {
@@ -100,11 +107,11 @@ export function layoutCommitPage(
       if (fromLane === lane) continue;
       const toLane = lanes.indexOf(oid);
       if (toLane < 0) continue;
-      segments.push({ fromLane, toLane, continues: true });
+      segments.push({ fromLane, toLane, targetOid: oid, continues: true });
     }
 
-    for (const toLane of parentLanes) {
-      segments.push({ fromLane: lane, toLane, continues: true });
+    for (const [index, toLane] of parentLanes.entries()) {
+      segments.push({ fromLane: lane, toLane, targetOid: parents[index]!, continues: true });
     }
 
     const width = Math.max(before.length, lanes.length, 1);
@@ -133,4 +140,24 @@ export function layoutCommitPages(
   }
 
   return rows;
+}
+
+export function firstParentPaths(
+  rows: readonly DagRow[],
+  ...tips: (ObjectId | null | undefined)[]
+): ReadonlySet<ObjectId> | undefined {
+  const firstParents = new Map(rows.map(({ commit }) => [commit.oid, commit.parents[0]]));
+  const emphasized = new Set<ObjectId>();
+
+  for (const tip of tips) {
+    if (!tip || !firstParents.has(tip)) continue;
+
+    let oid: ObjectId | undefined = tip;
+    while (oid !== undefined && !emphasized.has(oid)) {
+      emphasized.add(oid);
+      oid = firstParents.get(oid);
+    }
+  }
+
+  return emphasized.size > 0 ? emphasized : undefined;
 }

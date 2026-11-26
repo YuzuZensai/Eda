@@ -276,17 +276,101 @@ try {
     "1",
   );
 
+  const graph = page.getByTestId("commit-graph");
+  const featureBranch = "feature/clear-branch-navigation";
+  const graphNode = (subject: RegExp) =>
+    graph.getByRole("button", { name: subject }).locator("svg > circle");
+  const graphColor = (subject: RegExp) =>
+    graphNode(subject).evaluate((node) => getComputedStyle(node).color);
+  const mainColor = await graphColor(/Keep working changes beside the commit editor/);
+  const featureColor = await graphColor(/Make branch navigation visible/);
+  assert.notEqual(mainColor, featureColor, "Divergent branch tips use different graph colors");
+  const mainNode = graphNode(/Keep working changes beside the commit editor/);
+  const featureNode = graphNode(/Make branch navigation visible/);
+  const featureEdge = featureNode.locator("..").locator(":scope > path").last();
+  await expect(mainNode).toHaveCSS("stroke", mainColor);
+  await expect(featureNode).not.toHaveCSS("stroke", featureColor);
+  await expect(featureNode).toHaveCSS("opacity", "1");
+  await expect(featureNode).toHaveCSS("fill-opacity", "1");
+  await expect(featureEdge).not.toHaveCSS("stroke", featureColor);
+  await expect(featureEdge).toHaveCSS("opacity", "1");
+  await expect(featureEdge).toHaveCSS("stroke-opacity", "1");
+
+  const references = page.getByRole("complementary", { name: "Repository references" });
+  const branchRow = (name: string) =>
+    references.getByRole("button", { name: `Inspect branch ${name}`, exact: true });
+  const branchMarker = (name: string) => branchRow(name).locator("svg");
+  await expect(references.getByRole("button", { name: /^Inspect branch / })).toHaveText([
+    "main",
+    featureBranch,
+    "origin/main",
+    `origin/${featureBranch}`,
+  ]);
+  await expect(branchMarker("main")).toHaveCSS("color", mainColor);
+  await expect(branchMarker(featureBranch)).toHaveCSS("color", featureColor);
+  await expect(branchMarker(`origin/${featureBranch}`)).toHaveCSS("color", featureColor);
+  await expect(branchMarker("main")).toHaveCSS("opacity", "1");
+  await expect(branchMarker(featureBranch)).toHaveCSS("opacity", "0.7");
+  await branchRow(featureBranch).hover();
+  await expect(branchMarker(featureBranch)).toHaveCSS("opacity", "1");
+  await expect(featureNode).toHaveCSS("stroke", featureColor);
+  await expect(featureEdge).toHaveCSS("stroke", featureColor);
+  await overview.hover();
+  await expect(branchMarker(featureBranch)).toHaveCSS("opacity", "0.7");
+  await expect(featureNode).not.toHaveCSS("stroke", featureColor);
+  await branchRow(featureBranch).focus();
+  await expect(branchMarker(featureBranch)).toHaveCSS("opacity", "1");
+
   await overview.getByRole("button", { name: "On branch main. Switch or create a branch" }).click();
-  await page
-    .getByRole("dialog", { name: "Branches", exact: true })
-    .getByText("Tracking origin/main")
-    .waitFor();
+  const branchSwitcher = page.getByRole("dialog", { name: "Branches", exact: true });
+  await branchSwitcher.getByText("Tracking origin/main").waitFor();
+  await expect(
+    branchSwitcher.getByRole("button", { name: /^(main|feature\/clear-branch-navigation)$/ }),
+  ).toHaveText(["main", featureBranch]);
+  const switcherMarker = branchSwitcher
+    .getByRole("button", { name: featureBranch, exact: true })
+    .locator("svg");
+  await expect(switcherMarker).toHaveCSS("color", featureColor);
+  await expect(switcherMarker).toHaveCSS("opacity", "0.7");
+  await branchSwitcher
+    .getByRole("textbox", { name: "Find or create a branch", exact: true })
+    .press("ArrowDown");
+  await expect(switcherMarker).toHaveCSS("opacity", "1");
   await page.keyboard.press("Escape");
+
+  await graph.getByRole("button", { name: "All branches...", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Filter and pin references...", exact: true }).click();
+  const graphFilter = page.getByRole("dialog", { name: "Graph visibility", exact: true });
+  const remoteRef = `refs/remotes/origin/${featureBranch}`;
+  await expect(graphFilter.getByRole("checkbox", { name: /^Hide refs\// }).first()).toHaveAttribute(
+    "aria-label",
+    "Hide refs/heads/main",
+  );
+  const filterMarker = graphFilter
+    .getByTitle(remoteRef, { exact: true })
+    .locator("..")
+    .locator(":scope > span > svg");
+  await expect(filterMarker).toHaveCSS("color", featureColor);
+  await expect(filterMarker).toHaveCSS("opacity", "0.7");
+  await graphFilter.getByRole("checkbox", { name: `Solo ${remoteRef}`, exact: true }).check();
+  const applyGraphView = graphFilter.getByRole("button", { name: "Apply graph view", exact: true });
+  await applyGraphView.hover();
+  await applyGraphView.focus();
+  await expect(filterMarker).toHaveCSS("opacity", "1");
+  await applyGraphView.click();
+  await expect(branchMarker("main")).toHaveCount(0);
+  await expect(branchMarker(`origin/${featureBranch}`)).toHaveCSS(
+    "color",
+    await graphColor(/Make branch navigation visible/),
+  );
+
+  await graph.getByRole("button", { name: "Filtered graph...", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Use global default (Branches and tags)" }).click();
+  await expect(branchMarker("main")).toHaveCSS("color", mainColor);
 
   await page.getByRole("button", { name: "Staged file.txt, status M", exact: true }).waitFor();
   await page.getByRole("button", { name: "Unstaged main.txt, status M", exact: true }).waitFor();
 
-  const graph = page.getByTestId("commit-graph");
   const initialGraph = await graph.boundingBox();
 
   const mainHeight = await graph.evaluate(
@@ -341,6 +425,12 @@ try {
   assert.equal(await page.getByRole("button", { name: /^Inspect branch / }).count(), 2);
 
   await filter.fill("");
+  await branchRow(featureBranch).click();
+  await filter.hover();
+  await filter.focus();
+  await expect(branchRow(featureBranch)).toHaveAttribute("aria-pressed", "true");
+  await expect(branchMarker(featureBranch)).toHaveCSS("opacity", "1");
+  await expect(featureNode).toHaveCSS("stroke", featureColor);
   await page.getByRole("button", { name: "Inspect branch main", exact: true }).click();
 
   await commitFiles.waitFor();

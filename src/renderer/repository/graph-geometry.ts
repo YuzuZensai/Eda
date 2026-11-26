@@ -18,7 +18,11 @@ export function graphColumnWidth(rows: readonly DagRow[], minimumLanes = 1): num
   return rowGraphWidth(widest);
 }
 
-export function edgePath(segment: DagSegment, commitLane: number, center: number): string {
+export function edgePath(
+  segment: Pick<DagSegment, "fromLane" | "toLane" | "incoming">,
+  commitLane: number,
+  center: number,
+): string {
   const from = laneX(segment.fromLane);
   const to = laneX(segment.toLane);
 
