@@ -581,7 +581,9 @@ export function CommitGraph({
                   {...(repositoryId && { repositoryId })}
                   columns={columns}
                   gutter={gutter}
-                  checkedOut={headOid === row.commit.oid}
+                  checkoutRef={
+                    headOid === row.commit.oid ? (status?.branch.head ?? "HEAD") : undefined
+                  }
                   upstreams={upstreams}
                   selected={selectedOid === row.commit.oid}
                   related={hoveredRefOid === row.commit.oid}

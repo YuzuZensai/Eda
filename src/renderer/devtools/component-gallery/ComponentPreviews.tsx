@@ -490,7 +490,7 @@ export function RepositoryRowsPreview() {
             key={row.commit.oid}
             row={row}
             columns={[{ id: "sha", visible: true, width: 80 }]}
-            checkedOut={index === 0}
+            checkoutRef={index === 0 ? "main" : undefined}
             upstreams={new Map([["main", "origin/main"]])}
             vigilantMode
             signature={{

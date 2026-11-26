@@ -23,7 +23,7 @@ const DIMMED_GRAPH_COLOR = "color-mix(in srgb, currentColor 45%, var(--bg-base))
 
 export function CommitRow({
   row,
-  checkedOut = false,
+  checkoutRef,
   upstreams,
   loadedChildren,
   linkedWorktrees = [],
@@ -43,7 +43,7 @@ export function CommitRow({
   onContextMenu,
 }: {
   row: DagRow;
-  checkedOut?: boolean;
+  checkoutRef?: string | undefined;
   upstreams?: ReadonlyMap<string, string>;
   rowHeight?: number;
   avatars?: boolean;
@@ -73,7 +73,7 @@ export function CommitRow({
       data-tour="history-commit"
       aria-description={
         [
-          checkedOut && t("history.commitRow.checkedOut"),
+          checkoutRef && t("history.commitRow.checkedOut"),
           loadedChildren &&
             t("commitGraph.loadedChildren", {
               children: loadedChildren.join(", ") || t("common.none"),
@@ -148,12 +148,6 @@ export function CommitRow({
           stroke={nodeColor}
           strokeWidth="2"
         />
-        {checkedOut && (
-          <g className="text-accent-text">
-            <title>{t("history.commitRow.checkedOut")}</title>
-            <MonitorIcon x={gutter - 17} y={center - 7} size={14} />
-          </g>
-        )}
       </svg>
       <div className="flex min-w-0 flex-1 items-center gap-3 pr-3">
         <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
@@ -176,7 +170,11 @@ export function CommitRow({
             {linkedWorktrees.join(", ")}
           </span>
         )}
-        <Decorations decorations={row.commit.decorations} upstreams={upstreams} />
+        <Decorations
+          decorations={row.commit.decorations}
+          upstreams={upstreams}
+          checkoutRef={checkoutRef}
+        />
         {columns
           .filter((column) => column.visible)
           .map((column) => (
@@ -367,17 +365,27 @@ function HistorySignatureIcon({ oid }: { oid: string }) {
 function Decorations({
   decorations,
   upstreams,
+  checkoutRef,
 }: {
   decorations: CommitDecoration[];
+  checkoutRef: string | undefined;
   upstreams: ReadonlyMap<string, string> | undefined;
 }) {
-  if (!decorations.length) return null;
+  if (!decorations.length && !checkoutRef) return null;
+
+  const refs: CommitDecoration[] = [];
+  if (checkoutRef) refs.push({ type: "head", name: checkoutRef });
+  for (const ref of decorations) {
+    if ((ref.type === "head" || ref.type === "ref") && ref.name === "HEAD") continue;
+    if ((ref.type === "head" || ref.type === "local-branch") && ref.name === checkoutRef) continue;
+    refs.push(ref.type === "head" ? { ...ref, type: "local-branch" } : ref);
+  }
 
   const remoteNames = new Set(
-    decorations.filter((ref) => ref.type === "remote-branch").map((ref) => ref.name),
+    refs.filter((ref) => ref.type === "remote-branch").map((ref) => ref.name),
   );
   const paired = new Map<string, string>();
-  for (const ref of decorations) {
+  for (const ref of refs) {
     if (ref.type !== "head" && ref.type !== "local-branch") continue;
     const upstream = upstreams?.get(ref.name);
     if (upstream && remoteNames.has(upstream) && !upstream.endsWith("/HEAD"))
@@ -385,12 +393,12 @@ function Decorations({
   }
   const groupedRemotes = new Set(paired.values());
   const rank = (ref: CommitDecoration) => (ref.type === "head" ? 0 : ref.type === "tag" ? 2 : 1);
-  const ordered = decorations
-    .filter((ref) => {
-      if (ref.type === "remote-branch")
-        return !groupedRemotes.has(ref.name) && !ref.name.endsWith("/HEAD");
-      return !((ref.type === "head" || ref.type === "ref") && ref.name === "HEAD");
-    })
+  const ordered = refs
+    .filter(
+      (ref) =>
+        ref.type !== "remote-branch" ||
+        (!groupedRemotes.has(ref.name) && !ref.name.endsWith("/HEAD")),
+    )
     .sort((a, b) => rank(a) - rank(b))
     .map((ref) => {
       const upstream =
@@ -404,30 +412,32 @@ function Decorations({
   const overflow = ordered.length - shown.length;
 
   return (
-    <span className="hidden max-w-[32%] shrink-0 items-center gap-1 @sm:flex">
+    <span
+      className={`min-w-0 max-w-[32%] items-baseline gap-2 text-xs ${checkoutRef ? "flex" : "hidden @sm:flex"}`}
+    >
       {shown.map((decoration) => (
         <span
           key={`${decoration.type}:${decoration.name}`}
           title={decoration.title}
-          className={`max-w-36 truncate rounded-sm border px-1.5 py-0.5 text-xs leading-tight ${
-            decoration.type === "head"
-              ? "border-accent-border bg-accent-muted font-medium text-accent-text"
-              : decoration.type === "tag"
-                ? "border-git-modified/40 bg-git-modified/10 text-git-modified"
-                : "border-border-default bg-bg-raised text-text-secondary"
-          }`}
+          className={`min-w-0 max-w-48 items-center gap-1 ${decoration.type === "head" ? "inline-flex font-medium text-accent-text" : "hidden text-text-secondary @sm:inline-flex"}`}
         >
-          {decoration.type === "tag" && (
-            <TagIcon size={10} className="inline shrink-0 align-[-1px]" aria-hidden />
+          {decoration.type === "head" && (
+            <span title={t("history.commitRow.checkedOut")} className="shrink-0">
+              <MonitorIcon size={12} aria-hidden />
+            </span>
           )}
-          {decoration.type === "tag" ? " " : ""}
-          {(decoration.type === "remote-branch" || decoration.type === "local-branch") &&
-          decoration.name.length > 24
-            ? referenceLabel(decoration.name).name
-            : decoration.name}
+          {decoration.type === "tag" && (
+            <TagIcon size={10} className="shrink-0 text-git-modified" aria-hidden />
+          )}
+          <span className="truncate">
+            {(decoration.type === "remote-branch" || decoration.type === "local-branch") &&
+            decoration.name.length > 24
+              ? referenceLabel(decoration.name).name
+              : decoration.name}
+          </span>
           {decoration.remoteLabel && (
-            <span className="text-text-secondary">
-              {" · "}
+            <span className="hidden min-w-0 truncate font-normal text-text-tertiary @sm:inline">
+              {" "}
               {decoration.remoteLabel}
             </span>
           )}
@@ -439,7 +449,7 @@ function Decorations({
             .slice(2)
             .map((item) => item.title)
             .join("\n")}
-          className="mono shrink-0 text-xs text-text-tertiary"
+          className="mono hidden shrink-0 text-xs text-text-tertiary @sm:inline"
         >
           +{overflow}
         </span>
