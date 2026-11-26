@@ -131,16 +131,20 @@ export function ReferenceRow({
       selected={selected}
       className="branch-option relative py-1.5 pl-[51px] text-xs"
     >
-      {!tag && graphColor && (
-        <CircleIcon
-          size={8}
-          strokeWidth={4}
-          className="branch-marker absolute left-[35px]"
-          data-emphasized={head || selected}
-          style={{ color: graphColor }}
-          aria-hidden="true"
-        />
-      )}
+      <span className="absolute left-[39px] flex -translate-x-1/2">
+        {!tag && graphColor && (
+          <CircleIcon
+            size={8}
+            strokeWidth={4}
+            className="branch-marker"
+            data-emphasized={head || selected}
+            style={{ color: graphColor }}
+            aria-hidden="true"
+          />
+        )}
+        {showSignature && <TagSignature tag={tag} id={signatureId} context={signatureContext} />}
+      </span>
+
       <span className={cx("min-w-0 flex-1 truncate", head && "font-medium text-accent-text")}>
         {displayName}
       </span>
@@ -153,8 +157,6 @@ export function ReferenceRow({
           {t("referenceSidebar.localLocation")}
         </span>
       )}
-
-      {showSignature && <TagSignature tag={tag} id={signatureId} context={signatureContext} />}
     </ListItemButton>
   );
 }
@@ -193,7 +195,7 @@ function TagSignature({
     tag.local && !tag.annotated ? UNSIGNED_COMMIT_SIGNATURE : UNVERIFIED_COMMIT_SIGNATURE;
 
   return (
-    <span id={id} ref={anchor} className="shrink-0">
+    <span id={id} ref={anchor} className="[&_svg]:size-2.5">
       <CommitSignatureIcon signature={objectOid ? signature : knownStatus} focusable={false} />
     </span>
   );
