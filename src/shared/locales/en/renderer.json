@@ -2746,6 +2746,7 @@
   "workspace.fileChanges": "File changes",
   "workspace.history": "History",
   "workspace.repositoryCouldNotBeRead": "Repository could not be read",
+  "workspace.resizeTheReferencesSidebar": "Resize the references sidebar",
   "workspace.resizeTheWorkingTreePanel": "Resize the working tree panel",
   "workspace.tryAgain": "Try again",
   "workspace.workingTree": "Working tree",

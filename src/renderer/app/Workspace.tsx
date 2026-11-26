@@ -20,6 +20,7 @@ import { RepositoryOverview } from "../features/repositories/RepositoryOverview"
 import { useAppStore } from "../stores/app-store";
 import { useLayoutStore, type PanelId } from "../stores/layout-store";
 import { useRepositoryStore } from "../stores/repository-store";
+import { useSessionStore } from "../stores/session-store";
 
 const WorkspaceDialogs = lazy(() =>
   import("./WorkspaceDialogs").then((module) => ({ default: module.WorkspaceDialogs })),
@@ -44,6 +45,8 @@ const RevisionComparison = lazy(() =>
 );
 
 const PANELS: readonly PanelId[] = ["graph", "diff", "rail"];
+const MAIN_PANEL_MIN_WIDTH = 340;
+const WORKING_TREE_MIN_WIDTH = 260;
 
 export function Workspace() {
   const profileId = useAppStore((state) => state.activeIdentity?.id);
@@ -70,6 +73,9 @@ function WorkspaceContent() {
   const repositories = useAppStore((state) => state.repositories);
   const selectedId = useAppStore((state) => state.selectedRepositoryId);
   const active = useAppStore((state) => state.activeIdentity);
+  const referencesHidden = useSessionStore((state) =>
+    selectedId ? state.snapshot?.session.views[selectedId]?.references?.hidden : false,
+  );
 
   const phase = useRepositoryStore((state) =>
     state.repositoryId === selectedId && state.identityId === active?.id ? state.phase : "loading",
@@ -104,6 +110,7 @@ function WorkspaceContent() {
   const contentView = useRepositoryStore((state) => state.contentView);
   const selection = useRepositoryStore((state) => state.selection);
   const showingDiff = !loading && contentView === "diff";
+  const compactReferences = narrow || showingDiff;
   const review = !loading && typeof contentView === "object" ? contentView : null;
   const backToHistory = () => {
     useRepositoryStore.getState().showHistory();
@@ -270,72 +277,88 @@ function WorkspaceContent() {
           )}
 
           <div className={conflictPath || review ? "hidden" : "flex min-h-0 flex-1"}>
-            <ReferenceSidebar
-              key={`${active?.id}:${selected.id}`}
-              repositoryId={selected.id}
-              compact={narrow || showingDiff}
-              pending={loading}
-              onExpand={() => setDrawer({ owner, kind: "references" })}
-            />
-
             <Split
               direction="horizontal"
               className="flex-1"
-              storageKey="eda.layout.rail"
-              label={t("workspace.resizeTheWorkingTreePanel")}
-              defaultFraction={0.73}
-              minFirst={340}
-              minSecond={260}
-              collapsed={!contentVisible ? "first" : railVisible ? undefined : "second"}
+              storageKey="eda.layout.references"
+              label={t("workspace.resizeTheReferencesSidebar")}
+              defaultFirstSize={200}
+              minFirst={160}
+              minSecond={MAIN_PANEL_MIN_WIDTH + WORKING_TREE_MIN_WIDTH}
+              collapsed={compactReferences || referencesHidden ? "first" : undefined}
+              collapsedSize="36px"
               first={
-                <CollapsiblePanel
-                  collapsed={!contentVisible}
-                  name={showingDiff ? t("workspace.diffViewer") : t("workspace.history")}
-                  onExpand={contentPanel.toggleCollapse}
-                >
-                  <ViewTransition
-                    key={owner}
-                    viewKey={showingDiff ? "diff" : "history"}
-                    motion={showingDiff ? "forward" : "back"}
-                    className="h-full w-full"
-                  >
-                    <div className="h-full w-full" hidden={showingDiff} inert={showingDiff}>
-                      <CommitGraph key={owner} pending={loading} ref={graph} />
-                    </div>
-                    <div className="h-full w-full" hidden={!showingDiff} inert={!showingDiff}>
-                      {showingDiff && !conflictPath && <DiffViewer key={owner} />}
-                    </div>
-                  </ViewTransition>
-                </CollapsiblePanel>
+                <ReferenceSidebar
+                  key={owner}
+                  repositoryId={selected.id}
+                  compact={compactReferences}
+                  pending={loading}
+                  onExpand={() => setDrawer({ owner, kind: "references" })}
+                />
               }
               second={
-                <CollapsiblePanel
-                  collapsed={!railVisible}
-                  name={inspectingCommit ? t("workspace.fileChanges") : t("workspace.workingTree")}
-                  onExpand={railPanel.toggleCollapse}
-                  badge={changeCount ? String(changeCount) : undefined}
-                >
-                  <ViewTransition
-                    key={owner}
-                    viewKey={inspectingCommit ? "commit" : "working"}
-                    className="app-canvas flex h-full min-h-0 w-full flex-col border-l border-border-subtle bg-bg-surface"
-                  >
-                    {inspectingCommit ? (
-                      <CommitChangesPanel key={owner} />
-                    ) : (
-                      <>
-                        <div className="min-h-0 flex-1">
-                          <ChangesPanel ref={filesPanel} key={owner} pending={loading} />
+                <Split
+                  direction="horizontal"
+                  className="flex-1"
+                  storageKey="eda.layout.rail"
+                  label={t("workspace.resizeTheWorkingTreePanel")}
+                  defaultFraction={0.73}
+                  minFirst={MAIN_PANEL_MIN_WIDTH}
+                  minSecond={WORKING_TREE_MIN_WIDTH}
+                  collapsed={!contentVisible ? "first" : railVisible ? undefined : "second"}
+                  first={
+                    <CollapsiblePanel
+                      collapsed={!contentVisible}
+                      name={showingDiff ? t("workspace.diffViewer") : t("workspace.history")}
+                      onExpand={contentPanel.toggleCollapse}
+                    >
+                      <ViewTransition
+                        key={owner}
+                        viewKey={showingDiff ? "diff" : "history"}
+                        motion={showingDiff ? "forward" : "back"}
+                        className="h-full w-full"
+                      >
+                        <div className="h-full w-full" hidden={showingDiff} inert={showingDiff}>
+                          <CommitGraph key={owner} pending={loading} ref={graph} />
                         </div>
-                        {!workflow && (
-                          <div className="max-h-3/5 shrink-0 overflow-y-auto">
-                            <CommitBox key={owner} pending={loading} />
-                          </div>
+                        <div className="h-full w-full" hidden={!showingDiff} inert={!showingDiff}>
+                          {showingDiff && !conflictPath && <DiffViewer key={owner} />}
+                        </div>
+                      </ViewTransition>
+                    </CollapsiblePanel>
+                  }
+                  second={
+                    <CollapsiblePanel
+                      collapsed={!railVisible}
+                      name={
+                        inspectingCommit ? t("workspace.fileChanges") : t("workspace.workingTree")
+                      }
+                      onExpand={railPanel.toggleCollapse}
+                      badge={changeCount ? String(changeCount) : undefined}
+                    >
+                      <ViewTransition
+                        key={owner}
+                        viewKey={inspectingCommit ? "commit" : "working"}
+                        className="app-canvas flex h-full min-h-0 w-full flex-col border-l border-border-subtle bg-bg-surface"
+                      >
+                        {inspectingCommit ? (
+                          <CommitChangesPanel key={owner} />
+                        ) : (
+                          <>
+                            <div className="min-h-0 flex-1">
+                              <ChangesPanel ref={filesPanel} key={owner} pending={loading} />
+                            </div>
+                            {!workflow && (
+                              <div className="max-h-3/5 shrink-0 overflow-y-auto">
+                                <CommitBox key={owner} pending={loading} />
+                              </div>
+                            )}
+                          </>
                         )}
-                      </>
-                    )}
-                  </ViewTransition>
-                </CollapsiblePanel>
+                      </ViewTransition>
+                    </CollapsiblePanel>
+                  }
+                />
               }
             />
           </div>

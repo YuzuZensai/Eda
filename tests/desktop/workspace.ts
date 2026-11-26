@@ -754,7 +754,7 @@ try {
   await page.getByRole("button", { name: "Unstaged main.txt, status M", exact: true }).click();
   assert.equal(git("show", ":main.txt"), git("show", "HEAD:main.txt"));
 
-  const divider = page.getByRole("separator").first();
+  const divider = page.getByRole("separator", { name: "Resize the working tree panel" });
   const oldSize = Number(await divider.getAttribute("aria-valuenow"));
 
   await divider.focus();
@@ -766,10 +766,44 @@ try {
   assert.ok(Number(await divider.getAttribute("aria-valuenow")) > oldSize);
 
   await expect(page.getByRole("button", { name: "Show branches and tags" })).toBeVisible();
+  const referencesDivider = () =>
+    page.getByRole("separator", { name: "Resize the references sidebar", exact: true });
+  const referenceWidth = () =>
+    page.getByRole("complementary", { name: "Repository references" }).evaluate((element) => {
+      return element.getBoundingClientRect().width;
+    });
+
+  await expect(referencesDivider()).toHaveCount(0);
   await page.getByRole("button", { name: "Back to history", exact: true }).click();
+
+  const branchName = page
+    .getByRole("button", { name: "Inspect branch origin/feature/clear-branch-navigation" })
+    .getByText("origin/feature/clear-branch-navigation", { exact: true });
+  const branchNameFits = () =>
+    branchName.evaluate((element) => element.scrollWidth <= element.clientWidth);
+
+  assert.equal(await branchNameFits(), false, "The long remote branch starts truncated");
+  const originalWidth = await referenceWidth();
+  const handle = await referencesDivider().boundingBox();
+  assert.ok(handle);
+  const x = handle.x + handle.width / 2;
+  const y = handle.y + handle.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 220, y, { steps: 8 });
+  await expect.poll(branchNameFits).toBe(true);
+  const draggedWidth = await referenceWidth();
+  assert.ok(draggedWidth > originalWidth);
+  await page.mouse.up();
+
+  await referencesDivider().press("ArrowRight");
+  const savedWidth = await referenceWidth();
+  assert.ok(savedWidth > draggedWidth, "The keyboard can also widen the references sidebar");
+
   await page.locator("summary").filter({ hasText: "Remote branches" }).click();
   await page.getByRole("button", { name: "Hide branches and tags", exact: true }).click();
   await page.getByRole("button", { name: "Show branches and tags", exact: true }).waitFor();
+  await expect(referencesDivider()).toHaveCount(0);
 
   if (process.platform === "darwin") {
     const closed = page.waitForEvent("close");
@@ -798,6 +832,8 @@ try {
       document.querySelector('.reference-sidebar[data-collapsed="false"]') !== null &&
       document.documentElement.dataset["navigationMotion"] === undefined,
   );
+
+  await expect.poll(async () => Math.abs((await referenceWidth()) - savedWidth)).toBeLessThan(1);
 
   assert.equal(
     await page

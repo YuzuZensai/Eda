@@ -18,7 +18,6 @@ import {
 } from "../../commands/repository-commands";
 import { Skeleton, SkeletonRows } from "../../components/ui/feedback/Skeleton";
 import {
-  cx,
   Disclosure,
   ErrorDialog,
   IconButton,
@@ -179,8 +178,6 @@ export function ReferenceSidebar({
 
   const collapsed = !forceExpanded && (saved.hidden || compact);
   const showTagSignatures = vigilantMode && !pending && !collapsed && saved.tags;
-  const sidebarWidth = forceExpanded ? "w-full" : collapsed ? "w-9" : "w-[200px]";
-  const contentWidth = forceExpanded ? "w-full" : "w-[200px]";
   const sidebar = useRef<HTMLElement>(null);
   const expandButton = useRef<HTMLButtonElement>(null);
   const collapseButton = useRef<HTMLButtonElement>(null);
@@ -227,13 +224,10 @@ export function ReferenceSidebar({
       aria-label={t("referenceSidebar.repositoryReferences")}
       data-layout-region=""
       data-collapsed={collapsed}
-      className={cx(
-        "reference-sidebar app-surface-panel relative min-h-0 shrink-0 overflow-hidden border-r border-border-subtle",
-        sidebarWidth,
-      )}
+      className="reference-sidebar app-surface-panel relative min-h-0 w-full overflow-hidden border-border-subtle data-[collapsed=true]:border-r"
     >
       <div
-        className="reference-sidebar-rail absolute inset-y-0 left-0 flex w-9 flex-col items-center pt-3"
+        className="reference-sidebar-rail absolute inset-0 flex flex-col items-center pt-3"
         inert={!collapsed}
         aria-hidden={!collapsed}
       >
@@ -269,7 +263,7 @@ export function ReferenceSidebar({
       </div>
 
       <div
-        className={cx("reference-sidebar-content flex h-full min-h-0 flex-col", contentWidth)}
+        className="reference-sidebar-content flex h-full min-h-0 flex-col"
         inert={collapsed}
         aria-hidden={collapsed}
       >

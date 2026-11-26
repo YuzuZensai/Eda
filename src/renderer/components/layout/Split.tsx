@@ -11,18 +11,21 @@ export function Split({
   first,
   second,
   defaultFraction = 0.5,
+  defaultFirstSize,
   minFirst = 140,
   minSecond = 140,
   storageKey,
   label,
   className = "",
   collapsed,
+  collapsedSize = "var(--panel-rail-size)",
   persist = true,
 }: {
   direction: "horizontal" | "vertical";
   first: ReactNode;
   second: ReactNode;
   defaultFraction?: number;
+  defaultFirstSize?: number;
   minFirst?: number;
   minSecond?: number;
   storageKey: string;
@@ -30,6 +33,7 @@ export function Split({
   className?: string;
   persist?: boolean;
   collapsed?: "first" | "second" | undefined;
+  collapsedSize?: string;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [extent, setExtent] = useState(0);
@@ -41,13 +45,15 @@ export function Split({
   );
   const [dragFraction, setFraction] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
-  const fraction =
-    (dragging || !persist) && dragFraction !== null
-      ? dragFraction
-      : (savedFraction ?? defaultFraction);
 
   const isHorizontal = direction === "horizontal";
   const total = Math.max(0, extent - DIVIDER);
+  const initialFraction =
+    defaultFirstSize !== undefined && total > 0 ? defaultFirstSize / total : defaultFraction;
+  const adjustedFraction =
+    (dragging || !persist) && dragFraction !== null ? dragFraction : savedFraction;
+  const fraction = adjustedFraction ?? initialFraction;
+
   const bounds = { total, minFirst, minSecond };
   const firstSize = resolveSplit(fraction, bounds);
 
@@ -55,12 +61,12 @@ export function Split({
 
   fractionRef.current = fraction;
 
-  const firstPaneBasis =
-    collapsed === "first"
-      ? "var(--panel-rail-size)"
-      : collapsed === "second"
-        ? "calc(100% - var(--panel-rail-size))"
-        : `calc((100% - ${DIVIDER}px) * ${total > 0 ? firstSize / total : defaultFraction})`;
+  let firstPaneBasis = `calc((100% - ${DIVIDER}px) * ${total > 0 ? firstSize / total : fraction})`;
+
+  if (collapsed === "first") firstPaneBasis = collapsedSize;
+  else if (collapsed === "second") firstPaneBasis = `calc(100% - ${collapsedSize})`;
+  else if (defaultFirstSize !== undefined && adjustedFraction === undefined && total === 0)
+    firstPaneBasis = `${defaultFirstSize}px`;
 
   useEffect(() => {
     const element = container.current;
@@ -160,7 +166,9 @@ export function Split({
         aria-hidden={!!collapsed}
         inert={!!collapsed}
         onPointerDown={(event) => {
+          if (event.button !== 0) return;
           event.preventDefault();
+          setFraction(fraction);
           setDragging(true);
         }}
         onKeyDown={(event) => {
@@ -172,7 +180,7 @@ export function Split({
           event.preventDefault();
         }}
         className={cx(
-          "panel-split-divider group relative shrink-0 bg-border-subtle",
+          "panel-split-divider group relative shrink-0 touch-none bg-border-subtle",
           "focus-visible:outline-none focus-visible:bg-accent",
           isHorizontal ? "cursor-col-resize" : "cursor-row-resize",
           dragging ? "bg-accent" : "hover:bg-accent-border",
