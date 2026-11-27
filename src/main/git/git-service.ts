@@ -1202,8 +1202,13 @@ export class GitService {
     await this.exec(args, { cwd: path, operation: t("operations.createBranch") });
   }
 
-  async checkoutBranch(path: string, name: string): Promise<void> {
-    assertValidRefName(name, t("operations.checkoutBranch"));
+  async checkoutBranch(
+    path: string,
+    target: string,
+    { detach = false }: { detach?: boolean } = {},
+  ): Promise<void> {
+    if (detach) assertFullObjectId(target, t("operations.checkoutBranch"));
+    else assertValidRefName(target, t("operations.checkoutBranch"));
 
     const automatic = (await this.readConfig("eda.updateSubmodules", { cwd: path })) === "true";
     if (automatic) {
@@ -1220,7 +1225,8 @@ export class GitService {
         "checkout",
         "--no-overwrite-ignore",
         ...(automatic ? ["--recurse-submodules"] : []),
-        name,
+        ...(detach ? ["--detach"] : []),
+        target,
         "--",
       ],
       {

@@ -110,8 +110,7 @@ export function ReferenceRow({
         }
       }}
       onDoubleClick={() => {
-        if ("isHead" in item && !item.remote && !item.isHead && !item.worktreePath)
-          onCheckout(item);
+        if ("isHead" in item && !item.isHead && !item.worktreePath) onCheckout(item);
       }}
       onMouseEnter={() => useRepositoryStore.setState({ hoveredRefOid: item.oid })}
       onMouseLeave={() => useRepositoryStore.setState({ hoveredRefOid: null })}

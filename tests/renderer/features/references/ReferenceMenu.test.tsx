@@ -224,6 +224,22 @@ it("checks out a local branch on double-click while a single click still inspect
   expect(vi.mocked(window.eda.repository.listBranches).mock.calls.length).toBeGreaterThan(1);
 });
 
+it("checks out the remote branch from both its row and its menu", async () => {
+  await act(async () => root.render(<ReferenceSidebar repositoryId="repo" />));
+  const row = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Inspect branch upstream/review/topic"]',
+  )!;
+
+  await act(async () => row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  const request = { repositoryId: "repo", name: remote.name, remote: true };
+  expect(checkoutBranch).toHaveBeenCalledExactlyOnceWith(request);
+
+  await render(remote);
+  await click("Check out branch (detached HEAD)");
+  expect(checkoutBranch).toHaveBeenCalledTimes(2);
+  expect(checkoutBranch).toHaveBeenLastCalledWith(request);
+});
+
 it("highlights only the inspected reference when branches and tags share a commit", async () => {
   const jumpToCommit = vi.fn(async (oid: string) => {
     useRepositoryStore.setState({ selection: { kind: "commit", oid } });
@@ -255,7 +271,6 @@ it("highlights only the inspected reference when branches and tags share a commi
 it.each([
   { name: "current branch", branch: { ...local, isHead: true } },
   { name: "branch in another worktree", branch: { ...local, worktreePath: "/elsewhere" } },
-  { name: "remote branch", branch: remote },
 ])("does not check out a $name on double-click", async ({ branch }) => {
   vi.mocked(window.eda.repository.listBranches).mockResolvedValue(ok([branch]));
   await act(async () => root.render(<ReferenceSidebar repositoryId="repo" />));

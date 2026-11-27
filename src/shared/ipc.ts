@@ -122,7 +122,7 @@ import type {
   PatchExportRequest,
 } from "./repository/repository-read";
 import type {
-  BranchRequest,
+  CheckoutBranchRequest,
   BranchSummary,
   CommitRequest,
   CommitPreview,
@@ -564,7 +564,7 @@ export interface EdaApi {
 
     listBranches(id: string): Promise<Result<BranchSummary[]>>;
     createBranch(request: CreateBranchRequest): Promise<Result<void>>;
-    checkoutBranch(request: BranchRequest): Promise<Result<void>>;
+    checkoutBranch(request: CheckoutBranchRequest): Promise<Result<void>>;
     deleteBranch(request: DeleteBranchRequest): Promise<Result<void>>;
     renameBranch(request: RenameBranchRequest): Promise<Result<void>>;
 

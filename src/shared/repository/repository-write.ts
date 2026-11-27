@@ -63,6 +63,10 @@ export interface BranchRequest {
   name: string;
 }
 
+export interface CheckoutBranchRequest extends BranchRequest {
+  remote?: boolean;
+}
+
 export interface CreateBranchRequest extends BranchRequest {
   checkout?: boolean;
   startPoint?: ObjectId;

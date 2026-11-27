@@ -34,6 +34,7 @@ import { broadcast, handle, withRepositoryChange } from "../transport";
 import {
   optionalInteger,
   requireAbsolutePath,
+  requireBoolean,
   requireId,
   requireRecord,
   requireString,
@@ -1016,6 +1017,7 @@ export function registerRepositoryHandlers(services: Services): void {
       writer.checkoutBranch(
         repositoryId,
         requireString(input["name"], t("fields.branchName"), 255),
+        input["remote"] === undefined ? false : requireBoolean(input["remote"], t("fields.remote")),
       ),
     );
 

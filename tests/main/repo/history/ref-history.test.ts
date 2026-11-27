@@ -562,6 +562,33 @@ it("recovers a rename that combines pre-existing destination settings", async ()
   expect((await repo.run(["branch", "--show-current"])).trim()).toBe("settings-target");
 }, 30_000);
 
+it("checks out the remote tip even with a same-named local branch and can undo and redo it", async () => {
+  const { repository, context } = await setup();
+  const name = "origin/branches";
+  const remoteTip = (await repo.run(["rev-parse", "HEAD"])).trim();
+  await repo.run(["update-ref", `refs/remotes/${name}`, remoteTip]);
+  await repo.run(["commit", "--allow-empty", "-m", "Local commit"]);
+  await repo.run(["branch", name]);
+
+  await context.writer.checkoutBranch(repository.id, name, true);
+  expect((await repo.git.status(repo.path)).branch).toMatchObject({
+    detached: true,
+    oid: remoteTip,
+  });
+
+  const [action] = await context.reversal.list(repository.id);
+  expect(action).toMatchObject({ kind: "checkout", available: true });
+  await context.reversal.execute(repository.id, action!.id, "undo");
+  expect((await repo.git.status(repo.path)).branch.head).toBe("main");
+
+  await repo.run(["update-ref", `refs/remotes/${name}`, "HEAD"]);
+  await context.reversal.execute(repository.id, action!.id, "redo");
+  expect((await repo.git.status(repo.path)).branch).toMatchObject({
+    detached: true,
+    oid: remoteTip,
+  });
+});
+
 it("reverses branch and tag checkout and blocks a changed checkout", async () => {
   const run = await setup();
   const { repository } = run;

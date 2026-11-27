@@ -161,6 +161,7 @@ export function ReferenceSidebar({
       const result = await repositoryCommandDispatcher(context)("checkoutBranch", {
         repositoryId,
         name: branch.name,
+        ...(branch.remote && { remote: true }),
       });
 
       if (!result.ok) {

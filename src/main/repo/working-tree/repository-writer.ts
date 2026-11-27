@@ -503,28 +503,31 @@ export class RepositoryWriter {
     );
   }
 
-  checkoutBranch(repositoryId: string, name: string): Promise<void> {
+  checkoutBranch(repositoryId: string, name: string, remote = false): Promise<void> {
     const expected = this.requireActiveIdentity(repositoryId);
 
     return this.write(
       repositoryId,
       async (path) => {
-        const checkout = () => this.git.checkoutBranch(path, name);
+        if (!remote && !this.refHistory) return this.git.checkoutBranch(path, name);
 
-        if (!this.refHistory) return checkout();
-
+        const ref = `refs/${remote ? "remotes" : "heads"}/${name}`;
         const tip = (
-          await this.git.exec(["rev-parse", "--verify", `refs/heads/${name}`], {
+          await this.git.exec(["show-ref", "--verify", "--hash", ref], {
             cwd: path,
             operation: t("operations.reviewCheckoutBranch"),
           })
         ).stdout.trim();
+        const checkout = () =>
+          this.git.checkoutBranch(path, remote ? tip : name, { detach: remote });
+
+        if (!this.refHistory) return checkout();
 
         await this.refHistory.run(
           path,
           repositoryId,
           expected,
-          { kind: "checkout", name, tip },
+          { kind: "checkout", name: remote ? null : name, tip },
           checkout,
         );
       },

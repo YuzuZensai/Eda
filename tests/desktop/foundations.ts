@@ -482,6 +482,14 @@ try {
   assert.equal(git("branch", "--show-current").trim(), "feature/new");
 
   git("commit", "--allow-empty", "-m", "Unmerged fixture commit");
+  git("update-ref", "refs/remotes/origin/branches", head);
+  await page
+    .getByRole("button", { name: "Inspect branch origin/branches", exact: true })
+    .dblclick();
+  await page.getByText(`Detached HEAD ${head.slice(0, 7)}`, { exact: true }).waitFor();
+  assert.equal(git("branch", "--show-current").trim(), "");
+  assert.equal(git("rev-parse", "HEAD").trim(), head);
+
   await page.getByRole("button", { name: "Inspect branch main", exact: true }).dblclick();
   await page.getByRole("button", { name: /On branch main/ }).waitFor();
   assert.equal(git("branch", "--show-current").trim(), "main");

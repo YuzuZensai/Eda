@@ -216,6 +216,7 @@ export function ReferenceMenu({
                   await dispatch(target.kind === "tag" ? "checkoutTag" : "checkoutBranch", {
                     repositoryId,
                     name: target.ref.name,
+                    ...(target.kind === "branch" && target.ref.remote && { remote: true }),
                   }),
                 );
 
@@ -227,7 +228,8 @@ export function ReferenceMenu({
 
             {t("referenceMenu.checkOut", {
               kind: target.kind,
-              value2: target.kind === "tag" ? t("referenceMenu.detachedHead") : "",
+              value2:
+                target.kind === "tag" || target.ref.remote ? t("referenceMenu.detachedHead") : "",
             })}
           </MenuItem>
 
