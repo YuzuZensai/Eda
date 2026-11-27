@@ -11,8 +11,7 @@ import type {
 import type { DagRow, GraphEmphasis } from "../../repository/dag-layout";
 import { ROW_HEIGHT, edgePath, laneColor, laneX } from "../../repository/graph-geometry";
 import { referenceLabel } from "../../repository/reference-label";
-import { MonitorIcon } from "../../components/ui/icons";
-import { TagIcon } from "../../components/ui/index";
+import { GlobeIcon, MonitorIcon, TagIcon } from "../../components/ui/icons";
 import { FileStatusIcon, fileStatusTone } from "../../components/ui/display/FileStatusIcon";
 import { CommitSignatureIcon } from "../../components/ui/display/CommitSignatureIcon";
 import { useCommitSignature } from "../../repository/hooks/useCommitSignature";
@@ -440,8 +439,9 @@ function Decorations({
               <MonitorIcon size={12} aria-hidden />
             </span>
           )}
-          {decoration.type === "tag" && (
-            <TagIcon size={10} className="shrink-0 text-git-modified" aria-hidden />
+          {decoration.type === "tag" && <TagIcon size={10} className="shrink-0" aria-hidden />}
+          {decoration.type === "remote-branch" && (
+            <GlobeIcon size={12} className="shrink-0" aria-hidden />
           )}
           <span className="truncate">
             {(decoration.type === "remote-branch" || decoration.type === "local-branch") &&
@@ -450,9 +450,10 @@ function Decorations({
               : decoration.name}
           </span>
           {decoration.remoteLabel && (
-            <span className="hidden min-w-0 truncate font-normal text-text-tertiary @sm:inline">
+            <span className="hidden min-w-0 items-center gap-1 font-normal text-text-tertiary @sm:inline-flex">
               {" "}
-              {decoration.remoteLabel}
+              <GlobeIcon size={12} className="shrink-0" aria-hidden />
+              <span className="truncate">{decoration.remoteLabel}</span>
             </span>
           )}
         </span>
