@@ -132,15 +132,9 @@ export function ConflictBlockEditor({
             </Button>
           </div>
 
-          <div className="grid min-h-0 flex-1 grid-cols-2 gap-3">
+          <div className="grid min-h-0 flex-1 grid-cols-2 divide-x divide-border-subtle overflow-hidden rounded border border-border-subtle bg-bg-inset">
             {(["current", "incoming"] as const).map((side) => (
-              <section
-                key={side}
-                className={cx(
-                  "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border-default border-t-2 bg-bg-inset",
-                  side === "current" ? "border-t-accent" : "border-t-git-modified",
-                )}
-              >
+              <section key={side} className="flex min-h-0 min-w-0 flex-col overflow-hidden">
                 <div className="flex items-center justify-between gap-2 border-b border-border-subtle bg-bg-surface px-3 py-1">
                   <h4 className="flex min-w-0 items-baseline gap-2 whitespace-nowrap text-xs font-semibold">
                     <span className="truncate" title={sides[side]}>
