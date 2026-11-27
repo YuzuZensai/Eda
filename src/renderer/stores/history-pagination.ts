@@ -6,7 +6,12 @@ import {
   type HistoryPage,
   type HistoryPageRequest,
 } from "@shared/repository/repository-read";
-import { firstParentPaths, layoutCommitPage, type DagBoundary } from "../repository/dag-layout";
+import {
+  checkoutAncestry,
+  firstParentPaths,
+  layoutCommitPage,
+  type DagBoundary,
+} from "../repository/dag-layout";
 import { repositoryRequestFailure, type RepositoryReadState } from "./repository-state";
 import { useSessionStore } from "./session-store";
 
@@ -142,7 +147,16 @@ export function createHistoryPagination(
             ],
             dagBoundary.paths,
           )?.boundary;
-          dagBoundary = { ...layout.boundary, ...(paths && { paths }) };
+          const ancestry = checkoutAncestry(
+            layout.rows,
+            current.status?.branch.oid,
+            dagBoundary.ancestry,
+          )?.boundary;
+          dagBoundary = {
+            ...layout.boundary,
+            ...(paths && { paths }),
+            ...(ancestry && { ancestry }),
+          };
         }
         set({
           pages,

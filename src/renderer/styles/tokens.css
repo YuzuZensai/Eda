@@ -77,6 +77,7 @@
   --diff-added-emphasis: oklch(0.72 0.15 150 / 0.28);
   --diff-deleted-emphasis: oklch(0.68 0.17 25 / 0.28);
 
+  --graph-inactive-opacity: 45%;
   --graph-lane-l: 0.72;
   --graph-lane-0: oklch(var(--graph-lane-l) 0.14 250);
   --graph-lane-1: oklch(var(--graph-lane-l) 0.14 295);

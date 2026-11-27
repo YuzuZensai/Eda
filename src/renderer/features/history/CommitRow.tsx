@@ -18,7 +18,8 @@ import { useCommitSignature } from "../../repository/hooks/useCommitSignature";
 import { CommitTitleInput } from "../../components/ui/forms/CommitTitleInput";
 
 // Use an opaque tint so overlapping line caps at row boundaries do not brighten the lane.
-const DIMMED_GRAPH_COLOR = "color-mix(in srgb, currentColor 45%, var(--bg-base))";
+const DIMMED_GRAPH_COLOR =
+  "color-mix(in srgb, currentColor var(--graph-inactive-opacity), var(--bg-base))";
 
 export function CommitRow({
   row,
@@ -32,6 +33,7 @@ export function CommitRow({
   columns,
   gutter,
   selected,
+  outsideCheckout = false,
   related,
   graphEmphasis,
   vigilantMode = false,
@@ -52,6 +54,7 @@ export function CommitRow({
   columns: GraphColumn[];
   gutter: number;
   selected: boolean;
+  outsideCheckout?: boolean;
   related: boolean;
   graphEmphasis?: GraphEmphasis | undefined;
   vigilantMode?: boolean;
@@ -70,6 +73,7 @@ export function CommitRow({
   return (
     <ButtonBase
       data-tour="history-commit"
+      data-outside-checkout={(outsideCheckout && !selected && !related) || undefined}
       aria-description={
         [
           checkoutRef && t("history.commitRow.checkedOut"),

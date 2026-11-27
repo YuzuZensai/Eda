@@ -26,7 +26,7 @@ import { useLayoutTransition } from "../../components/layout/hooks/useLayoutTran
 import { VirtualRows } from "../../components/ui/display/VirtualRows";
 import { Skeleton } from "../../components/ui/feedback/Skeleton";
 import { ButtonBase, ErrorDialog, IconButton, TextButton } from "../../components/ui/index";
-import { firstParentPaths } from "../../repository/dag-layout";
+import { checkoutAncestry, firstParentPaths } from "../../repository/dag-layout";
 import { ROW_HEIGHT, graphColumnWidth } from "../../repository/graph-geometry";
 import { useHistoryGraph } from "../../repository/hooks/useHistoryGraph";
 import { useRepositoryStore } from "../../stores/repository-store";
@@ -168,6 +168,11 @@ export function CommitGraph({
   const headOid = status?.branch.oid;
   const selectedOid = selection?.kind === "commit" ? selection.oid : undefined;
   const pathBoundary = useRepositoryStore((state) => state.dagBoundary.paths);
+  const ancestryBoundary = useRepositoryStore((state) => state.dagBoundary.ancestry);
+  const checkoutCommits = useMemo(
+    () => checkoutAncestry(rows, headOid, ancestryBoundary)?.commits,
+    [rows, headOid, ancestryBoundary],
+  );
   const graphEmphasis = useMemo(
     () => firstParentPaths(rows, [headOid, selectedOid, hoveredRefOid], pathBoundary),
     [rows, headOid, selectedOid, hoveredRefOid, pathBoundary],
@@ -607,6 +612,9 @@ export function CommitGraph({
                   }
                   upstreams={upstreams}
                   selected={selectedOid === row.commit.oid}
+                  outsideCheckout={
+                    checkoutCommits !== undefined && !checkoutCommits.has(row.commit.oid)
+                  }
                   related={hoveredRefOid === row.commit.oid}
                   graphEmphasis={graphEmphasis}
                   vigilantMode={vigilantMode && shaColumnVisible}

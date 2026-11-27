@@ -289,6 +289,10 @@
     @apply flex shrink-0 items-center justify-end gap-1 overflow-hidden pl-1;
   }
 
+  [data-outside-checkout]:not(:hover, :focus-visible) > :not(svg) {
+    opacity: var(--graph-inactive-opacity);
+  }
+
   .history > :is([role="row"], [role="status"], [data-virtual-list]) {
     scrollbar-gutter: stable;
   }

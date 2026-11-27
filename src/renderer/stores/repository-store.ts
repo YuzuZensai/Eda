@@ -243,9 +243,13 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     const previousTips = get().dagBoundary.defaultBranchTips ?? [];
     const defaultsChanged =
       tips.length !== previousTips.length || tips.some((oid) => !previousTips.includes(oid));
+    const checkoutChanged = get().status?.branch.oid !== statusResult.value.branch.oid;
     const replaceHistory =
       historyResult.ok &&
-      (resetHistory || defaultsChanged || history.firstPageChanged(historyResult.value));
+      (resetHistory ||
+        defaultsChanged ||
+        checkoutChanged ||
+        history.firstPageChanged(historyResult.value));
 
     if (replaceHistory) {
       history.replaceFirst(historyResult.value);

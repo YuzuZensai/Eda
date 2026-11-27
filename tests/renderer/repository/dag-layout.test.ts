@@ -1,6 +1,7 @@
 import { graphColor } from "@renderer/repository/graph-colors";
 import type { HistoryCommit } from "@shared/repository/repository-read";
 import {
+  checkoutAncestry,
   firstParentPaths,
   layoutCommitPage,
   layoutCommitPages,
@@ -199,5 +200,21 @@ describe("incremental DAG layout", () => {
       new Set(["merge", "main", "base", "older", "side"]),
     );
     expect(firstParentPaths(rows, ["not-loaded"])).toBeUndefined();
+  });
+
+  it("keeps both sides of a checkout's merge in its ancestry across pages", () => {
+    const first = layoutCommitPage([commit("head", ["main", "topic"]), commit("main", ["base"])]);
+    const next = layoutCommitPage(
+      [commit("other", ["base"]), commit("topic", ["base"]), commit("base", [])],
+      first.boundary,
+    );
+    const checkpoint = checkoutAncestry(first.rows, "head")?.boundary;
+
+    expect(checkoutAncestry(next.rows, "head", checkpoint)?.commits).toEqual(
+      new Set(["topic", "base"]),
+    );
+    expect(checkoutAncestry(next.rows, "other", checkpoint)?.commits).toEqual(
+      new Set(["other", "base"]),
+    );
   });
 });

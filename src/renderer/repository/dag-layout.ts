@@ -6,6 +6,7 @@ export interface DagBoundary {
   colors?: { lanes: (number | undefined)[]; recent: number[] };
   lanes: (ObjectId | undefined)[];
   paths?: PathBoundary;
+  ancestry?: { head: ObjectId; pending: ReadonlySet<ObjectId> };
   pinned?: boolean;
   overflow?: boolean;
 }
@@ -187,6 +188,27 @@ export function layoutCommitPages(
   }
 
   return rows;
+}
+
+export function checkoutAncestry(
+  rows: readonly DagRow[],
+  head: ObjectId | undefined,
+  boundary?: DagBoundary["ancestry"],
+) {
+  if (!head) return undefined;
+
+  const previous = boundary?.head === head ? boundary : undefined;
+  const pending = new Set(previous?.pending ?? [head]);
+  const commits = new Set<ObjectId>();
+  for (const { commit, topologyUnavailable } of rows) {
+    if (topologyUnavailable) return undefined;
+    if (!pending.delete(commit.oid)) continue;
+    commits.add(commit.oid);
+    for (const parent of commit.parents) pending.add(parent);
+  }
+
+  if (!previous && !commits.size) return undefined;
+  return { commits, boundary: { head, pending } };
 }
 
 // Each tip keeps its own checkpoint so changing selection or hover can drop just that path.
