@@ -129,6 +129,18 @@ try {
   const firstRowHeight = () => firstRow.evaluate((row) => row.getBoundingClientRect().height);
   const refsWidth = page.getByRole("separator", { name: "refs column width" });
 
+  await refsWidth.press("Home");
+  for (const index of [0, 1]) {
+    const refs = list.locator('[data-tour="history-commit"] .history-ref-column').nth(index);
+    const lines = await refs.evaluate((cell) => {
+      const style = getComputedStyle(cell);
+      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      const lineHeight = parseFloat(getComputedStyle(cell.firstElementChild!).lineHeight);
+      return (cell.getBoundingClientRect().height - padding) / lineHeight;
+    });
+    assert.ok(lines <= 2, `Narrow history refs should occupy at most two lines, saw ${lines}`);
+  }
+
   const wrappedHeight = await firstRowHeight();
   await assertCachedRowDetailsDuringScroll(list, wrappedHeight);
   await refsWidth.press("End");

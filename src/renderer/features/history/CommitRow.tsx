@@ -443,57 +443,61 @@ function Decorations({
   const overflow = ordered.filter((item) => !shown.includes(item));
 
   return (
-    <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-1 text-xs">
-      {shown.map((decoration) => (
-        <span
-          key={`${decoration.type}:${decoration.name}`}
-          title={decoration.title}
-          style={
-            decoration.type === "head" ||
-            decoration.type === "local-branch" ||
-            decoration.type === "remote-branch"
-              ? { color: graphColor(color) }
-              : undefined
-          }
-          className={`inline-flex min-w-0 max-w-full flex-wrap items-start justify-end gap-x-1 overflow-clip text-right text-text-secondary ${decoration.type === "head" ? "font-medium" : ""}`}
-        >
-          <span className="min-w-0 max-w-full whitespace-normal [overflow-wrap:anywhere]">
-            {decoration.type === "head" && (
-              <span
-                title={t("history.commitRow.checkedOut")}
-                className="mr-1 inline-flex align-[-2px]"
-              >
-                <MonitorIcon size={12} aria-hidden />
+    <>
+      <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-1 text-xs">
+        {shown.map((decoration) => (
+          <span
+            key={`${decoration.type}:${decoration.name}`}
+            title={decoration.title}
+            style={
+              decoration.type === "head" ||
+              decoration.type === "local-branch" ||
+              decoration.type === "remote-branch"
+                ? { color: graphColor(color) }
+                : undefined
+            }
+            className={`inline-flex min-w-0 max-w-full flex-wrap items-start justify-end gap-x-1 overflow-clip text-right text-text-secondary ${decoration.type === "head" ? "font-medium" : ""}`}
+          >
+            <span
+              className={`min-w-0 max-w-full [overflow-wrap:anywhere] ${shown.length === 1 ? "line-clamp-2" : "line-clamp-1"}`}
+            >
+              {decoration.type === "head" && (
+                <span
+                  title={t("history.commitRow.checkedOut")}
+                  className="mr-1 inline-flex align-[-2px]"
+                >
+                  <MonitorIcon size={12} aria-hidden />
+                </span>
+              )}
+              {decoration.type === "tag" && (
+                <TagIcon size={10} className="mr-1 inline align-[-1px]" aria-hidden />
+              )}
+              {decoration.type === "remote-branch" && (
+                <GlobeIcon size={12} className="mr-1 inline align-[-2px]" aria-hidden />
+              )}
+              {decoration.upstream && (
+                <span title={decoration.upstream} className="mr-1 inline-flex align-[-2px]">
+                  <GlobeIcon size={12} aria-hidden />
+                </span>
+              )}
+              <span>
+                {decoration.name.split(/(?<=\/)/).map((part, index) => (
+                  <Fragment key={index}>
+                    {index > 0 && <wbr />}
+                    {part}
+                  </Fragment>
+                ))}
               </span>
-            )}
-            {decoration.type === "tag" && (
-              <TagIcon size={10} className="mr-1 inline align-[-1px]" aria-hidden />
-            )}
-            {decoration.type === "remote-branch" && (
-              <GlobeIcon size={12} className="mr-1 inline align-[-2px]" aria-hidden />
-            )}
+            </span>
             {decoration.upstream && (
-              <span title={decoration.upstream} className="mr-1 inline-flex align-[-2px]">
-                <GlobeIcon size={12} aria-hidden />
+              <span className="h-0 shrink-0 whitespace-nowrap font-normal text-text-tertiary">
+                {" "}
+                <span>{decoration.upstream}</span>
               </span>
             )}
-            <span>
-              {decoration.name.split(/(?<=\/)/).map((part, index) => (
-                <Fragment key={index}>
-                  {index > 0 && <wbr />}
-                  {part}
-                </Fragment>
-              ))}
-            </span>
           </span>
-          {decoration.upstream && (
-            <span className="h-0 shrink-0 whitespace-nowrap font-normal text-text-tertiary">
-              {" "}
-              <span>{decoration.upstream}</span>
-            </span>
-          )}
-        </span>
-      ))}
+        ))}
+      </span>
       {overflow.length > 0 && (
         <span
           title={overflow.map((item) => item.title).join("\n")}
@@ -502,7 +506,7 @@ function Decorations({
           +{overflow.length}
         </span>
       )}
-    </span>
+    </>
   );
 }
 
