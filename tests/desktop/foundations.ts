@@ -166,6 +166,21 @@ try {
   assert.ok(refBounds.width <= 96);
   assert.equal(refBounds.x + refBounds.width, laneBounds.x);
 
+  const refsDivider = graph.getByRole("separator", { name: "refs column width" });
+  const handle = await refsDivider.boundingBox();
+  assert.ok(handle);
+  const x = handle.x + handle.width / 2;
+  const y = handle.y + handle.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 64, y);
+  await expect(refs).toHaveCSS("width", `${refBounds.width + 64}px`);
+  await page.mouse.up();
+  await refsDivider.press("ArrowRight");
+  const resizedRefsWidth = refBounds.width + 72;
+  await expect(refs).toHaveCSS("width", `${resizedRefsWidth}px`);
+  await expect(refsDivider.locator("..")).toHaveCSS("width", `${resizedRefsWidth}px`);
+
   const overflowStyle = await page.addStyleTag({
     content: '[data-testid="commit-graph"] [data-virtual-list] { max-height: 1px; }',
   });
@@ -401,6 +416,8 @@ try {
   await expect(settings).toHaveCount(0);
 
   const savedColumns = saved.views[repositoryId]?.graphColumns;
+  assert.equal(saved.views[repositoryId]?.refsColumnWidth, resizedRefsWidth);
+  await expect(refs).toHaveCSS("width", `${resizedRefsWidth}px`);
 
   assert.ok(savedColumns?.[0] && savedColumns[1]);
   const columnSetting = await page.evaluate(() =>

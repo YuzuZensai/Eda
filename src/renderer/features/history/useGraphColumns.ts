@@ -7,8 +7,9 @@ import {
   type DragEvent,
 } from "react";
 import {
+  MAX_GRAPH_COLUMN_WIDTH,
+  MIN_GRAPH_COLUMN_WIDTH,
   resolveGraphColumns,
-  type GraphColumn,
   type GraphColumnId,
 } from "@shared/preferences/graph-view";
 import type { SessionContext } from "@shared/identity/profile-session";
@@ -16,17 +17,20 @@ import { usePreferencesStore } from "../../stores/preferences-store";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { useSessionStore } from "../../stores/session-store";
 
-interface ColumnDrag {
+export interface ResizableColumn {
+  id: GraphColumnId | "refs";
+  width: number;
+}
+
+interface ColumnDrag extends ResizableColumn {
   repositoryId: string;
-  id: GraphColumnId;
   pointerId: number;
   target: HTMLElement;
   x: number;
-  width: number;
   context: SessionContext;
 }
 
-type ColumnReorder = Pick<ColumnDrag, "id" | "repositoryId" | "context">;
+type ColumnReorder = Pick<ColumnDrag, "repositoryId" | "context"> & { id: GraphColumnId };
 
 function isCurrentView(repositoryId: string, context: SessionContext) {
   const store = useSessionStore.getState();
@@ -42,15 +46,16 @@ function isCurrentView(repositoryId: string, context: SessionContext) {
   );
 }
 
-const clampWidth = (width: number) => Math.max(48, Math.min(320, Math.round(width)));
+const clampWidth = (width: number, max = MAX_GRAPH_COLUMN_WIDTH) =>
+  Math.max(MIN_GRAPH_COLUMN_WIDTH, Math.min(max, Math.round(width)));
 
 export function useGraphColumns(repositoryId: string | null, disabled: boolean) {
-  const savedColumns = useSessionStore((state) =>
-    repositoryId ? state.snapshot?.session.views[repositoryId]?.graphColumns : undefined,
+  const view = useSessionStore((state) =>
+    repositoryId ? state.snapshot?.session.views[repositoryId] : undefined,
   );
   const context = useSessionStore((state) => state.snapshot?.context);
   const visibleColumns = usePreferencesStore((state) => state.values.historyVisibleColumns.value);
-  const columns = resolveGraphColumns(savedColumns).map((column) => ({
+  const columns = resolveGraphColumns(view?.graphColumns).map((column) => ({
     ...column,
     visible: visibleColumns.includes(column.id),
   }));
@@ -59,6 +64,24 @@ export function useGraphColumns(repositoryId: string | null, disabled: boolean) 
   const width = useRef(0);
   const reordered = useRef<ColumnReorder | null>(null);
   const [dropTarget, setDropTarget] = useState<GraphColumnId | null>(null);
+
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [headerWidth, setHeaderWidth] = useState(0);
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const measure = () => setHeaderWidth(header.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
+
+  const refsMaxWidth = headerWidth
+    ? clampWidth(Math.floor(headerWidth / 2))
+    : MAX_GRAPH_COLUMN_WIDTH;
+  const defaultRefsWidth = headerWidth ? Math.min(96, headerWidth * 0.18) : 96;
+  const refsWidth = clampWidth(view?.refsColumnWidth ?? defaultRefsWidth, refsMaxWidth);
 
   const cancelReorder = useCallback(() => {
     reordered.current = null;
@@ -78,11 +101,18 @@ export function useGraphColumns(repositoryId: string | null, disabled: boolean) 
   );
 
   const saveWidth = useCallback(
-    (id: GraphColumnId, nextWidth: number) => {
+    (id: ResizableColumn["id"], nextWidth: number) => {
       if (!repositoryId || disabled) return;
 
       const store = useSessionStore.getState();
-      const latest = resolveGraphColumns(store.snapshot?.session.views[repositoryId]?.graphColumns);
+      const saved = store.snapshot?.session.views[repositoryId];
+      if (id === "refs") {
+        const next = clampWidth(nextWidth, refsMaxWidth);
+        if (next !== refsWidth) store.setView(repositoryId, { refsColumnWidth: next });
+        return;
+      }
+
+      const latest = resolveGraphColumns(saved?.graphColumns);
       const next = clampWidth(nextWidth);
 
       if (latest.find((column) => column.id === id)?.width === next) return;
@@ -93,7 +123,7 @@ export function useGraphColumns(repositoryId: string | null, disabled: boolean) 
         ),
       });
     },
-    [repositoryId, disabled],
+    [repositoryId, disabled, refsWidth, refsMaxWidth],
   );
 
   useEffect(() => {
@@ -114,8 +144,11 @@ export function useGraphColumns(repositoryId: string | null, disabled: boolean) 
         return;
       }
 
-      // Metadata columns are anchored to the right, so their left edge controls their width.
-      width.current = clampWidth(drag.width + drag.x - event.clientX);
+      const delta = event.clientX - drag.x;
+      width.current =
+        drag.id === "refs"
+          ? clampWidth(drag.width + delta, refsMaxWidth)
+          : clampWidth(drag.width - delta);
       setDraftWidth(width.current);
     };
     const end = (event: PointerEvent) => {
@@ -159,9 +192,10 @@ export function useGraphColumns(repositoryId: string | null, disabled: boolean) 
     context?.windowId,
     context?.generation,
     saveWidth,
+    refsMaxWidth,
   ]);
 
-  const startResize = (column: GraphColumn, event: ReactPointerEvent<HTMLElement>) => {
+  const startResize = (column: ResizableColumn, event: ReactPointerEvent<HTMLElement>) => {
     const store = useSessionStore.getState();
     const snapshot = store.snapshot;
 
@@ -233,6 +267,9 @@ export function useGraphColumns(repositoryId: string | null, disabled: boolean) 
   };
 
   return {
+    headerRef,
+    refsMaxWidth,
+    refsWidth: drag?.id === "refs" ? draftWidth : refsWidth,
     columns: columns.map((column) =>
       drag?.id === column.id ? { ...column, width: draftWidth } : column,
     ),

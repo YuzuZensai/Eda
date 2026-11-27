@@ -17,6 +17,7 @@ import {
   useRef,
   useState,
   type ComponentProps,
+  type CSSProperties,
   type Ref,
 } from "react";
 import { PanelHeader } from "../../components/layout/PanelHeader";
@@ -35,7 +36,8 @@ import type { CommitMenuTarget } from "./CommitMenu";
 import { CommitRow, WorkingTreeRow } from "./CommitRow";
 import { showOpenedRepository } from "../../repository/hooks/useRepositoryNavigation";
 import { useRepositoryRead } from "../../repository/hooks/useRepositoryRead";
-import { useGraphColumns } from "./useGraphColumns";
+import { MAX_GRAPH_COLUMN_WIDTH, MIN_GRAPH_COLUMN_WIDTH } from "@shared/preferences/graph-view";
+import { useGraphColumns, type ResizableColumn } from "./useGraphColumns";
 import { GraphVisibilityMenu } from "./GraphVisibilityMenu";
 import { useCommitMessage } from "../../repository/hooks/useCommitMessage";
 
@@ -59,6 +61,9 @@ export function CommitGraph({
 
   const {
     columns,
+    headerRef,
+    refsWidth,
+    refsMaxWidth,
     startResize,
     saveWidth,
     moveColumn,
@@ -221,11 +226,47 @@ export function CommitGraph({
     });
   };
 
+  const resizeHandle = (column: ResizableColumn) => {
+    const rightEdge = column.id === "refs";
+    const step = rightEdge ? 8 : -8;
+    const maxWidth = rightEdge ? refsMaxWidth : MAX_GRAPH_COLUMN_WIDTH;
+
+    return (
+      <span
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t("graphColumns.columnWidth", { id: column.id })}
+        aria-valuemin={MIN_GRAPH_COLUMN_WIDTH}
+        aria-valuemax={maxWidth}
+        aria-valuenow={column.width}
+        aria-valuetext={t("graphColumns.px", { width: column.width })}
+        aria-disabled={pending || !repositoryId}
+        tabIndex={pending || !repositoryId ? -1 : 0}
+        className={`absolute top-0 h-full w-2 touch-none cursor-col-resize rounded-sm border-border-default hover:border-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent ${rightEdge ? "right-0 border-r" : "-left-2 border-l"}`}
+        onPointerDown={(event) => startResize(column, event)}
+        onKeyDown={(event) => {
+          let width: number;
+
+          if (event.key === "ArrowLeft") width = column.width - step;
+          else if (event.key === "ArrowRight") width = column.width + step;
+          else if (event.key === "Home") width = MIN_GRAPH_COLUMN_WIDTH;
+          else if (event.key === "End") width = maxWidth;
+          else return;
+
+          event.preventDefault();
+          event.stopPropagation();
+          saveWidth(column.id, width);
+        }}
+      />
+    );
+  };
+
   return (
     <section
       ref={ref}
       data-tour="history"
       data-testid="commit-graph"
+      style={{ "--history-refs-width": `${refsWidth}px` } as CSSProperties}
       className="history app-surface-panel @container flex h-full w-full min-h-0 min-w-0 flex-col"
       tabIndex={0}
       aria-label={t("commitGraph.commitHistoryUseUpAndDownToSelect")}
@@ -367,10 +408,14 @@ export function CommitGraph({
       </PanelHeader>
 
       <div
+        ref={headerRef}
         role="row"
         className="app-surface-chrome flex h-6 shrink-0 items-center border-b border-border-subtle bg-bg-surface text-xs font-medium uppercase tracking-wide text-text-tertiary"
       >
-        <span className="history-ref-column">{t("graphColumns.refs")}</span>
+        <span className="history-ref-column relative h-full pr-2">
+          {t("graphColumns.refs")}
+          {resizeHandle({ id: "refs", width: refsWidth })}
+        </span>
         <span className="shrink-0" style={{ width: gutter }} />
 
         <div className="flex min-w-0 flex-1 items-center gap-3 pr-3">
@@ -416,32 +461,7 @@ export function CommitGraph({
                   {t(`graphColumns.${column.id}`)}
                 </ButtonBase>
 
-                <span
-                  role="separator"
-                  aria-orientation="vertical"
-                  aria-label={t("graphColumns.columnWidth", { id: column.id })}
-                  aria-valuemin={48}
-                  aria-valuemax={320}
-                  aria-valuenow={column.width}
-                  aria-valuetext={t("graphColumns.px", { width: column.width })}
-                  aria-disabled={pending || !repositoryId}
-                  tabIndex={pending || !repositoryId ? -1 : 0}
-                  className="absolute -left-2 top-0 h-full w-2 touch-none cursor-col-resize rounded-sm border-l border-border-default hover:border-accent focus-visible:outline-2 focus-visible:outline-accent"
-                  onPointerDown={(event) => startResize(column, event)}
-                  onKeyDown={(event) => {
-                    let width: number;
-
-                    if (event.key === "ArrowLeft") width = column.width + 8;
-                    else if (event.key === "ArrowRight") width = column.width - 8;
-                    else if (event.key === "Home") width = 48;
-                    else if (event.key === "End") width = 320;
-                    else return;
-
-                    event.preventDefault();
-                    event.stopPropagation();
-                    saveWidth(column.id, width);
-                  }}
-                />
+                {resizeHandle(column)}
               </span>
             ))}
         </div>

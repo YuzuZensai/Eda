@@ -1,5 +1,6 @@
 import {
   isGraphColumns,
+  isGraphColumnWidth,
   isGraphFilter,
   type SavedGraphColumn,
   type GraphFilter,
@@ -24,6 +25,7 @@ export interface RepositoryView {
   graphFilter?: GraphFilter;
   files?: FileView;
   graphColumns?: SavedGraphColumn[];
+  refsColumnWidth?: number;
   references?: { hidden: boolean; locals: boolean; remotes: boolean; tags: boolean };
   selection: SavedSelection;
   maximized: PanelId | null;
@@ -165,10 +167,12 @@ export function isView(value: unknown): value is RepositoryView {
       "grouped",
       "references",
       "graphColumns",
+      "refsColumnWidth",
       "graphFilter",
       "files",
     ]) ||
     (value["graphColumns"] !== undefined && !isGraphColumns(value["graphColumns"])) ||
+    (value["refsColumnWidth"] !== undefined && !isGraphColumnWidth(value["refsColumnWidth"])) ||
     (value["graphFilter"] !== undefined && !isGraphFilter(value["graphFilter"])) ||
     (value["files"] !== undefined && !isFileView(value["files"])) ||
     !isSelection(value["selection"]) ||

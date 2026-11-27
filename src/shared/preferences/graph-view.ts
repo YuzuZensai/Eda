@@ -72,6 +72,18 @@ export function resolveGraphColumns(saved: SavedGraphColumn[] | undefined): Grap
   );
 }
 
+export const MIN_GRAPH_COLUMN_WIDTH = 48;
+export const MAX_GRAPH_COLUMN_WIDTH = 320;
+
+export function isGraphColumnWidth(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= MIN_GRAPH_COLUMN_WIDTH &&
+    value <= MAX_GRAPH_COLUMN_WIDTH
+  );
+}
+
 export function isGraphColumns(value: unknown): value is SavedGraphColumn[] {
   if (!Array.isArray(value) || value.length > SAVED_GRAPH_COLUMN_IDS.length) return false;
 
@@ -86,10 +98,7 @@ export function isGraphColumns(value: unknown): value is SavedGraphColumn[] {
         isRecord(item) &&
         isOneOf(item["id"], SAVED_GRAPH_COLUMN_IDS) &&
         typeof item["visible"] === "boolean" &&
-        typeof item["width"] === "number" &&
-        Number.isInteger(item["width"]) &&
-        item["width"] >= 48 &&
-        item["width"] <= 320 &&
+        isGraphColumnWidth(item["width"]) &&
         Object.keys(item).every((key) => ["id", "visible", "width"].includes(key)),
     )
   );
