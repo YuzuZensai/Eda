@@ -579,6 +579,8 @@ export function CommitGraph({
             scrollKey={`${identityId}:${repositoryId}:graph`}
             horizontalScroll={false}
             buffered
+            measureRows
+            measurementKey={refsWidth}
             revealIndex={selectedIndex >= 0 ? graphOffset + selectedIndex : undefined}
             revealKey={`${historyTip ?? ""}:${selection?.kind === "commit" ? selection.oid : ""}`}
             items={graphRows}

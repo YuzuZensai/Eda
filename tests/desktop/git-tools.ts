@@ -107,6 +107,21 @@ try {
   await approveCheckout(repository);
   await button(page, "Open git-tools-fixture").click();
 
+  const graph = page.getByTestId("commit-graph");
+  const paired = graph.getByTitle("main · origin/main", { exact: true });
+  const globe = paired.getByTitle("origin/main", { exact: true });
+  const upstream = paired.getByText("origin/main", { exact: true });
+  const divider = graph.getByRole("separator", { name: "refs column width" });
+
+  await expect(globe).toBeInViewport({ ratio: 1 });
+  await expect(paired.getByText("main", { exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(upstream).not.toBeInViewport();
+  await divider.press("End");
+  await expect(upstream).toBeInViewport({ ratio: 1 });
+  await divider.press("Home");
+  await expect(upstream).not.toBeInViewport();
+  await expect(globe).toBeInViewport({ ratio: 1 });
+
   const overview = page.getByLabel("Repository overview", { exact: true });
   const tools = page.getByRole("dialog", { name: "Worktrees", exact: true });
   const openTools = () => button(overview, "Worktrees").click();

@@ -43,6 +43,12 @@ function firstVisibleRow(offsets: number[], scrollTop: number) {
   return low;
 }
 
+function pixelAtRow(offsets: number[], position: number) {
+  const index = Math.min(offsets.length - 1, Math.max(0, Math.floor(position)));
+  const top = offsets[index]!;
+  return top + Math.max(0, position - index) * ((offsets[index + 1] ?? top) - top);
+}
+
 function revealRange(element: HTMLDivElement, top: number, bottom: number) {
   if (top < element.scrollTop) element.scrollTop = top;
   else if (bottom > element.scrollTop + element.clientHeight)
@@ -60,6 +66,7 @@ export function VirtualRows<T>({
   horizontalScroll = true,
   buffered = false,
   measureRows = false,
+  measurementKey,
   revealIndex,
   revealKey = revealIndex,
   scrollKey,
@@ -75,6 +82,7 @@ export function VirtualRows<T>({
   horizontalScroll?: boolean;
   buffered?: boolean;
   measureRows?: boolean;
+  measurementKey?: number;
   revealIndex?: number | undefined;
   revealKey?: string | number | undefined;
   scrollKey?: string | undefined;
@@ -82,6 +90,7 @@ export function VirtualRows<T>({
 }) {
   const container = useRef<HTMLDivElement>(null);
   const lastScroll = useRef(0);
+  const lastViewport = useRef<{ key: typeof scrollKey; origin: number; top: number } | null>(null);
   const restoredScroll = useRef(false);
   const [viewport, setViewport] = useState({ scrollTop: 0, height: 500 });
   const mounted = useRef<HTMLDivElement>(null);
@@ -95,14 +104,26 @@ export function VirtualRows<T>({
     return result;
   }, [items, rowHeight, measurements, measureRows]);
   const contentHeight = offsets?.at(-1) ?? items.length * rowHeight;
+  // Keep paginated history anchored by row and fractional position as measured heights change.
+  const pageOffsets = buffered ? offsets : null;
+  const localTop = viewport.scrollTop - origin;
   const scrollTop = Math.max(
     0,
-    Math.min(viewport.scrollTop - origin, contentHeight - viewport.height),
+    Math.min(
+      pageOffsets ? pixelAtRow(pageOffsets, localTop / rowHeight) : localTop,
+      contentHeight - viewport.height,
+    ),
+  );
+  const first = offsets ? firstVisibleRow(offsets, scrollTop) : 0;
+  const last = offsets ? firstVisibleRow(offsets, scrollTop + viewport.height) : 0;
+  const margin = Math.min(
+    buffered ? 24 : 8,
+    Math.max(0, Math.floor((MAX_RENDERED_ROWS - (last - first + 1)) / 2)),
   );
   const { start, end } = offsets
     ? {
-        start: Math.max(0, firstVisibleRow(offsets, scrollTop) - 8),
-        end: Math.min(items.length, firstVisibleRow(offsets, scrollTop + viewport.height) + 9),
+        start: Math.max(0, first - margin),
+        end: Math.min(items.length, last + margin + 1),
       }
     : getVirtualRange(
         items.length,
@@ -113,11 +134,16 @@ export function VirtualRows<T>({
       );
   const renderEnd = Math.min(end, start + MAX_RENDERED_ROWS);
   const rowTop = offsets?.[start] ?? start * rowHeight;
-  const pinRenderedRows = buffered && !offsets;
-  const minRowTop = Math.min(0, viewport.height - (renderEnd - start) * rowHeight);
+  const pinRenderedRows = buffered;
+  const renderedBottom = offsets?.[renderEnd] ?? renderEnd * rowHeight;
+  const minRowTop = Math.min(0, viewport.height - (renderedBottom - rowTop));
   const renderedTop = pinRenderedRows
     ? `clamp(${minRowTop}px, calc(${rowTop}px - var(--scroll-top, 0px)), 0px)`
     : `${rowTop}px`;
+
+  useLayoutEffect(() => {
+    setMeasurements((previous) => (previous.size ? new Map() : previous));
+  }, [items, measureRows, measurementKey, rowHeight]);
 
   useLayoutEffect(() => {
     if (!measureRows || !mounted.current) return;
@@ -139,17 +165,20 @@ export function VirtualRows<T>({
     });
     for (const row of mounted.current.children) observer.observe(row);
     return () => observer.disconnect();
-  }, [measureRows, items, start, renderEnd]);
-
-  useEffect(() => {
-    setMeasurements((previous) => (previous.size ? new Map() : previous));
-  }, [items, measureRows]);
+  }, [measureRows, items, start, renderEnd, measurementKey, rowHeight]);
 
   const updateViewport = (element: HTMLDivElement) => {
     const top = element.scrollTop;
+    lastViewport.current = { key: scrollKey, origin, top };
     if (pinRenderedRows) mounted.current?.style.setProperty("--scroll-top", `${top}px`);
     const height = element.clientHeight;
     lastScroll.current = top + origin;
+    if (pageOffsets) {
+      const index = firstVisibleRow(pageOffsets, top);
+      const height = (pageOffsets[index + 1] ?? pageOffsets[index]!) - pageOffsets[index]!;
+      const fraction = height > 0 ? (top - pageOffsets[index]!) / height : 0;
+      lastScroll.current = origin + (index + fraction) * rowHeight;
+    }
     const batch =
       buffered && height <= (MAX_RENDERED_ROWS - 8) * rowHeight ? rowHeight * 8 : rowHeight;
     const scrollTop = measureRows
@@ -189,9 +218,19 @@ export function VirtualRows<T>({
     const element = container.current;
     if (!element) return;
 
-    element.scrollTop = Math.max(0, lastScroll.current - origin);
+    const local = Math.max(0, lastScroll.current - origin);
+    const previous = lastViewport.current;
+    const pendingScroll =
+      pageOffsets &&
+      previous &&
+      previous.key === scrollKey &&
+      previous.origin === origin &&
+      element.scrollTop !== previous.top;
+    if (!pendingScroll) {
+      element.scrollTop = pageOffsets ? pixelAtRow(pageOffsets, local / rowHeight) : local;
+    }
     readViewport(element);
-  }, [origin, scrollKey, pinRenderedRows]);
+  }, [origin, scrollKey, pinRenderedRows, pageOffsets, rowHeight]);
 
   useEffect(() => {
     if (end >= items.length - PREFETCH_ROWS) onNearEnd?.();
@@ -261,8 +300,8 @@ export function VirtualRows<T>({
             {items.slice(start, renderEnd).map((item, offset) => {
               const index = start + offset;
               return measureRows ? (
-                <div key={index} data-row-index={index}>
-                  {renderRow(item, index)}
+                <div key={itemOffset + index} data-row-index={index}>
+                  {renderRow(item, itemOffset + index)}
                 </div>
               ) : (
                 renderRow(item, itemOffset + index)

@@ -1,7 +1,7 @@
 import { t, getLocale } from "@shared/i18n";
 import { ProfileAvatar } from "../../components/ui/display/ProfileAvatar";
 import { ButtonBase } from "../../components/ui/actions/ButtonBase";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import { Fragment, type MouseEvent as ReactMouseEvent } from "react";
 import type { GraphColumn } from "@shared/preferences/graph-view";
 import type {
   CommitDecoration,
@@ -11,7 +11,6 @@ import type {
 import type { DagRow, GraphEmphasis } from "../../repository/dag-layout";
 import { graphColor } from "../../repository/graph-colors";
 import { ROW_HEIGHT, edgePath, laneX } from "../../repository/graph-geometry";
-import { referenceLabel } from "../../repository/reference-label";
 import { GlobeIcon, MonitorIcon, TagIcon } from "../../components/ui/icons";
 import { FileStatusIcon, fileStatusTone } from "../../components/ui/display/FileStatusIcon";
 import { CommitSignatureIcon } from "../../components/ui/display/CommitSignatureIcon";
@@ -98,12 +97,12 @@ export function CommitRow({
           row.commit.parents.map((oid) => oid.slice(0, 8)).join(", ") ||
           t("history.commitRow.rootOrShallowBoundary"),
       })}
-      className={`flex w-full min-w-0 items-center border-b border-border-subtle text-left hover:bg-bg-raised ${selected || related ? "bg-accent-muted" : ""}`}
-      style={{ height: rowHeight }}
+      className={`flex w-full min-w-0 items-center shadow-[inset_0_-1px_var(--border-subtle)] text-left hover:bg-bg-raised ${selected || related ? "bg-accent-muted" : ""}`}
+      style={{ minHeight: rowHeight }}
       onClick={onSelect}
       onContextMenu={onContextMenu}
     >
-      <span className="history-ref-column">
+      <span className="history-ref-column py-0.5">
         <Decorations
           color={row.color}
           decorations={row.commit.decorations}
@@ -120,43 +119,53 @@ export function CommitRow({
       <svg
         width={gutter}
         height={rowHeight}
-        className="shrink-0 overflow-visible"
+        className="h-auto shrink-0 self-stretch overflow-visible"
         aria-hidden="true"
       >
-        {workingTreeConnection && (
-          <path
-            d={
-              workingTreeConnection.head
-                ? `M ${laneX(workingTreeConnection.lane)} 0 C ${laneX(workingTreeConnection.lane)} ${center}, ${laneX(row.lane)} 0, ${laneX(row.lane)} ${center}`
-                : `M ${laneX(workingTreeConnection.lane)} 0 V ${rowHeight}`
-            }
-            fill="none"
-            stroke={graphColor(workingTreeConnection.color)}
-            strokeWidth="1.75"
-            strokeLinecap="round"
-          />
-        )}
-        {row.segments
-          .filter((segment) => segment.continues)
-          .map((segment, index) => (
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${gutter} ${rowHeight}`}
+          preserveAspectRatio="none"
+          overflow="visible"
+        >
+          {workingTreeConnection && (
             <path
-              key={index}
-              d={edgePath(segment, row.lane, center)}
-              fill="none"
-              style={{
-                color: graphColor(segment.color),
-              }}
-              stroke={
-                emphasis && !emphasis.segments.has(segment) ? DIMMED_GRAPH_COLOR : "currentColor"
+              d={
+                workingTreeConnection.head
+                  ? `M ${laneX(workingTreeConnection.lane)} 0 C ${laneX(workingTreeConnection.lane)} ${center}, ${laneX(row.lane)} 0, ${laneX(row.lane)} ${center}`
+                  : `M ${laneX(workingTreeConnection.lane)} 0 V ${rowHeight}`
               }
+              fill="none"
+              stroke={graphColor(workingTreeConnection.color)}
+              vectorEffect="non-scaling-stroke"
               strokeWidth="1.75"
               strokeLinecap="round"
             />
-          ))}
+          )}
+          {row.segments
+            .filter((segment) => segment.continues)
+            .map((segment, index) => (
+              <path
+                key={index}
+                d={edgePath(segment, row.lane, center)}
+                fill="none"
+                style={{
+                  color: graphColor(segment.color),
+                }}
+                stroke={
+                  emphasis && !emphasis.segments.has(segment) ? DIMMED_GRAPH_COLOR : "currentColor"
+                }
+                vectorEffect="non-scaling-stroke"
+                strokeWidth="1.75"
+                strokeLinecap="round"
+              />
+            ))}
+        </svg>
         {checkoutRef && (
           <circle
             cx={laneX(row.lane)}
-            cy={center}
+            cy="50%"
             r="8"
             fill="var(--bg-base)"
             stroke={graphColor(row.color)}
@@ -167,7 +176,7 @@ export function CommitRow({
         )}
         <circle
           cx={laneX(row.lane)}
-          cy={center}
+          cy="50%"
           r={isMerge ? 4.5 : 3.75}
           style={{ color: graphColor(row.color) }}
           fill={isMerge ? nodeColor : "var(--bg-base)"}
@@ -421,9 +430,7 @@ function Decorations({
     .map((ref) => {
       const upstream =
         ref.type === "head" || ref.type === "local-branch" ? paired.get(ref.name) : undefined;
-      const suffix = "/" + ref.name;
-      const remoteLabel = upstream?.endsWith(suffix) ? upstream.slice(0, -suffix.length) : upstream;
-      return { ...ref, remoteLabel, title: upstream ? `${ref.name} · ${upstream}` : ref.name };
+      return { ...ref, upstream, title: upstream ? `${ref.name} · ${upstream}` : ref.name };
     });
   if (!ordered.length) return null;
   const branch = ordered.find((item) => item.type !== "tag");
@@ -432,7 +439,7 @@ function Decorations({
   const overflow = ordered.filter((item) => !shown.includes(item));
 
   return (
-    <span className="flex min-w-0 items-center gap-1 text-xs">
+    <span className="flex min-w-0 flex-wrap items-center justify-end gap-x-1 text-xs">
       {shown.map((decoration) => (
         <span
           key={`${decoration.type}:${decoration.name}`}
@@ -444,28 +451,41 @@ function Decorations({
               ? { color: graphColor(color) }
               : undefined
           }
-          className={`inline-flex min-w-0 items-center gap-1 text-text-secondary ${decoration.type === "head" ? "font-medium" : ""}`}
+          className={`inline-flex min-w-0 max-w-full flex-wrap items-start justify-end gap-x-1 overflow-clip text-right text-text-secondary ${decoration.type === "head" ? "font-medium" : ""}`}
         >
-          {decoration.type === "head" && (
-            <span title={t("history.commitRow.checkedOut")} className="shrink-0">
-              <MonitorIcon size={12} aria-hidden />
+          <span className="min-w-0 max-w-full whitespace-normal [overflow-wrap:anywhere]">
+            {decoration.type === "head" && (
+              <span
+                title={t("history.commitRow.checkedOut")}
+                className="mr-1 inline-flex align-[-2px]"
+              >
+                <MonitorIcon size={12} aria-hidden />
+              </span>
+            )}
+            {decoration.type === "tag" && (
+              <TagIcon size={10} className="mr-1 inline align-[-1px]" aria-hidden />
+            )}
+            {decoration.type === "remote-branch" && (
+              <GlobeIcon size={12} className="mr-1 inline align-[-2px]" aria-hidden />
+            )}
+            {decoration.upstream && (
+              <span title={decoration.upstream} className="mr-1 inline-flex align-[-2px]">
+                <GlobeIcon size={12} aria-hidden />
+              </span>
+            )}
+            <span>
+              {decoration.name.split(/(?<=\/)/).map((part, index) => (
+                <Fragment key={index}>
+                  {index > 0 && <wbr />}
+                  {part}
+                </Fragment>
+              ))}
             </span>
-          )}
-          {decoration.type === "tag" && <TagIcon size={10} className="shrink-0" aria-hidden />}
-          {decoration.type === "remote-branch" && (
-            <GlobeIcon size={12} className="shrink-0" aria-hidden />
-          )}
-          <span className="truncate">
-            {(decoration.type === "remote-branch" || decoration.type === "local-branch") &&
-            decoration.name.length > 24
-              ? referenceLabel(decoration.name).name
-              : decoration.name}
           </span>
-          {decoration.remoteLabel && (
-            <span className="hidden min-w-0 items-center gap-1 font-normal text-text-tertiary @sm:inline-flex">
+          {decoration.upstream && (
+            <span className="h-0 shrink-0 whitespace-nowrap font-normal text-text-tertiary">
               {" "}
-              <GlobeIcon size={12} className="shrink-0" aria-hidden />
-              <span className="truncate">{decoration.remoteLabel}</span>
+              <span>{decoration.upstream}</span>
             </span>
           )}
         </span>

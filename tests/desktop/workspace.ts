@@ -297,7 +297,7 @@ try {
   await expect(featureNode).toHaveCSS("color", featureColor);
   await alternateAccent.evaluate((element) => element.parentNode?.removeChild(element));
 
-  const featureEdge = featureNode.locator("..").locator(":scope > path").last();
+  const featureEdge = featureNode.locator("..").locator("path").last();
   await expect(mainNode).toHaveCSS("stroke", mainColor);
   await expect(featureNode).not.toHaveCSS("stroke", featureColor);
   await expect(featureNode).toHaveCSS("opacity", "1");

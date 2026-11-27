@@ -118,7 +118,7 @@ it("keeps the checkout marker on HEAD while browsing and keeps synchronized bran
   expect(rows()[1]?.getAttribute("aria-description")).not.toContain(marker);
   expect(rows()[1]?.getAttribute("aria-pressed")).toBe("true");
   expect(rows()[0]?.querySelector('[title="main · origin/main"]')?.textContent).toContain(
-    "main origin",
+    "main origin/main",
   );
   expect(rows()[0]?.querySelector('[title="fork/main"]')).not.toBeNull();
 
@@ -145,7 +145,7 @@ it("keeps the checkout marker on HEAD while browsing and keeps synchronized bran
   expect(rows()[0]?.getAttribute("aria-description")).not.toContain(marker);
   expect(rows()[1]?.getAttribute("aria-description")).toContain(marker);
   expect(rows()[0]?.querySelector('[title="main · origin/main"]')?.textContent).toContain(
-    "main origin",
+    "main origin/main",
   );
 
   await act(async () =>

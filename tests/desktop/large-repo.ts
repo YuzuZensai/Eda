@@ -125,11 +125,15 @@ try {
 
   const initialHeap = await heapSize(page);
   const targetOffset = Math.min(commitCount - PAGE_SIZE * MAX_PAGES, 1_000);
-  const rowHeight = await list
-    .locator('[data-tour="history-commit"]')
-    .first()
-    .evaluate((row) => row.getBoundingClientRect().height);
-  await assertCachedRowDetailsDuringScroll(list, rowHeight);
+  const firstRow = list.locator('[data-tour="history-commit"]').first();
+  const firstRowHeight = () => firstRow.evaluate((row) => row.getBoundingClientRect().height);
+  const refsWidth = page.getByRole("separator", { name: "refs column width" });
+
+  const wrappedHeight = await firstRowHeight();
+  await assertCachedRowDetailsDuringScroll(list, wrappedHeight);
+  await refsWidth.press("End");
+  await expect.poll(firstRowHeight).toBeLessThan(wrappedHeight);
+  const rowHeight = await firstRowHeight();
 
   const prefetchInset = 24 * rowHeight;
   let offset = 0;

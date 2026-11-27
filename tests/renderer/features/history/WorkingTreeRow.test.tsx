@@ -136,7 +136,9 @@ it("shows pending changes above HEAD and counts a file changed in both index and
   );
   expect(workingRow()!.textContent).toBe("1");
   expect(titleInput().placeholder).toBe("Working tree");
-  expect(workingRow()!.nextElementSibling).toBe(commitRows()[0]);
+  expect(workingRow()!.compareDocumentPosition(commitRows()[0]!)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
   expect(container.textContent).toContain("1 to 1");
   expect(workingButton().getAttribute("aria-pressed")).toBe("false");
   const node = workingRow()!.querySelector("circle")!;
@@ -332,7 +334,7 @@ it("connects to HEAD below newer commits without changing their graph lanes", as
   expect(workingRow()!.querySelector("circle")!.getAttribute("cx")).toBe(String(laneX(1)));
   expect(commitRows()[0]!.querySelector("circle")!.getAttribute("cx")).toBe(String(laneX(0)));
   expect(commitRows()[1]!.querySelector("circle")!.getAttribute("cx")).toBe(String(laneX(0)));
-  const connection = commitRows()[1]!.querySelector(":scope > svg > path")!.getAttribute("d")!;
+  const connection = commitRows()[1]!.querySelector(":scope > svg path")!.getAttribute("d")!;
   expect(connection.startsWith(`M ${laneX(1)} 0`)).toBe(true);
   expect(connection.endsWith(`${laneX(0)} ${ROW_HEIGHT / 2}`)).toBe(true);
 });
