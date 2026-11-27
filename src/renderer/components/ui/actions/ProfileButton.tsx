@@ -14,7 +14,7 @@ export function ProfileButton({
       {...props}
       type={type}
       className={cx(
-        "ui-press",
+        "profile-button ui-press",
         "h-9 shrink-0 rounded-full p-1 text-text-tertiary",
         profileName ? "inline-flex items-center gap-2 pr-3" : "grid w-9 place-items-center",
         "hover:not-disabled:bg-bg-raised hover:not-disabled:text-text-primary",

@@ -205,7 +205,10 @@ try {
   await page.getByRole("textbox", { name: /^Git email/ }).fill("work@example.com");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await finishOnboarding(page);
-  await page.getByRole("button", { name: /Active profile: Work/ }).waitFor();
+  const profileButton = page.getByRole("button", { name: /Active profile: Work/ });
+  const profileAvatar = profileButton.locator(".profile-avatar");
+  await expect(profileAvatar).toHaveCSS("width", "24px");
+  await expect(profileAvatar).toHaveCSS("height", "24px");
 
   assert.equal(
     (await page.evaluate((path) => window.eda.repository.open(path), repository)).ok,
@@ -245,7 +248,7 @@ try {
         [],
         `Title bar controls fit inside the fixed bar at ${zoom}% zoom.`,
       );
-      const avatar = await page.locator(".window-titlebar .profile-avatar").boundingBox();
+      const avatar = await profileAvatar.boundingBox();
       assert.ok(avatar && (avatar.height * zoom) / 100 > previousAvatarSize);
       previousAvatarSize = (avatar.height * zoom) / 100;
     }

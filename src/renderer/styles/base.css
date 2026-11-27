@@ -26,10 +26,9 @@
   padding-block: min(var(--space-1), calc(var(--space-1) / var(--window-zoom, 1)));
 }
 
-.window-titlebar[data-platform="mac"] .profile-avatar {
+.profile-button > .profile-avatar {
   width: auto;
-  height: 100%;
-  max-height: 1.75rem;
+  height: min(1.5rem, 100%);
   aspect-ratio: 1;
 }
 
