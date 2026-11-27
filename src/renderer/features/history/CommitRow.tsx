@@ -9,7 +9,8 @@ import type {
   RepositoryChange,
 } from "@shared/repository/repository-read";
 import type { DagRow, GraphEmphasis } from "../../repository/dag-layout";
-import { ROW_HEIGHT, edgePath, laneColor, laneX } from "../../repository/graph-geometry";
+import { graphColor } from "../../repository/graph-colors";
+import { ROW_HEIGHT, edgePath, laneX } from "../../repository/graph-geometry";
 import { referenceLabel } from "../../repository/reference-label";
 import { GlobeIcon, MonitorIcon, TagIcon } from "../../components/ui/icons";
 import { FileStatusIcon, fileStatusTone } from "../../components/ui/display/FileStatusIcon";
@@ -57,7 +58,7 @@ export function CommitRow({
   vigilantMode?: boolean;
   signature?: CommitSignatureVerification;
   repositoryId?: string;
-  workingTreeConnection?: { lane: number; head: boolean } | undefined;
+  workingTreeConnection?: { lane: number; color: number; head: boolean } | undefined;
   onSelect: () => void;
   onContextMenu: (event: ReactMouseEvent) => void;
 }) {
@@ -102,6 +103,20 @@ export function CommitRow({
       onClick={onSelect}
       onContextMenu={onContextMenu}
     >
+      <span className="history-ref-column">
+        <Decorations
+          color={row.color}
+          decorations={row.commit.decorations}
+          upstreams={upstreams}
+          checkoutRef={checkoutRef}
+        />
+        {linkedWorktrees.length > 0 && (
+          <span title={linkedWorktrees.join("\n")} className="truncate text-xs text-text-secondary">
+            {linkedWorktrees.join(", ")}
+          </span>
+        )}
+      </span>
+
       <svg
         width={gutter}
         height={rowHeight}
@@ -116,7 +131,7 @@ export function CommitRow({
                 : `M ${laneX(workingTreeConnection.lane)} 0 V ${rowHeight}`
             }
             fill="none"
-            stroke={laneColor(workingTreeConnection.lane)}
+            stroke={graphColor(workingTreeConnection.color)}
             strokeWidth="1.75"
             strokeLinecap="round"
           />
@@ -129,7 +144,7 @@ export function CommitRow({
               d={edgePath(segment, row.lane, center)}
               fill="none"
               style={{
-                color: laneColor(segment.fromLane === row.lane ? row.lane : segment.toLane),
+                color: graphColor(segment.color),
               }}
               stroke={
                 emphasis && !emphasis.segments.has(segment) ? DIMMED_GRAPH_COLOR : "currentColor"
@@ -144,7 +159,7 @@ export function CommitRow({
             cy={center}
             r="8"
             fill="var(--bg-base)"
-            stroke={laneColor(row.lane)}
+            stroke={graphColor(row.color)}
             strokeWidth="1.5"
           >
             <title>{t("history.commitRow.checkedOut")}</title>
@@ -154,7 +169,7 @@ export function CommitRow({
           cx={laneX(row.lane)}
           cy={center}
           r={isMerge ? 4.5 : 3.75}
-          style={{ color: laneColor(row.lane) }}
+          style={{ color: graphColor(row.color) }}
           fill={isMerge ? nodeColor : "var(--bg-base)"}
           stroke={nodeColor}
           strokeWidth="2"
@@ -175,19 +190,6 @@ export function CommitRow({
             row.commit.subject
           )}
         </span>
-        {linkedWorktrees.length > 0 && (
-          <span
-            title={linkedWorktrees.join("\n")}
-            className="max-w-48 truncate text-xs text-text-secondary"
-          >
-            {linkedWorktrees.join(", ")}
-          </span>
-        )}
-        <Decorations
-          decorations={row.commit.decorations}
-          upstreams={upstreams}
-          checkoutRef={checkoutRef}
-        />
         {columns
           .filter((column) => column.visible)
           .map((column) => (
@@ -237,6 +239,7 @@ export function CommitRow({
 }
 
 export function WorkingTreeRow({
+  color = 0,
   changes,
   rowHeight = ROW_HEIGHT,
   truncated,
@@ -249,6 +252,7 @@ export function WorkingTreeRow({
   onSelect,
 }: {
   rowHeight?: number;
+  color?: number | undefined;
   changes: readonly RepositoryChange[];
   truncated: boolean;
   gutter: number;
@@ -288,6 +292,7 @@ export function WorkingTreeRow({
       style={{ height: rowHeight }}
       onClick={onSelect}
     >
+      <span className="history-ref-column" />
       <ButtonBase
         aria-label={t("commitGraph.viewWorkingChanges", { description })}
         aria-pressed={selected}
@@ -298,7 +303,7 @@ export function WorkingTreeRow({
           {lane !== undefined && (
             <path
               d={`M ${laneX(lane)} ${rowHeight / 2} V ${rowHeight}`}
-              stroke={laneColor(lane)}
+              stroke={graphColor(color)}
               strokeWidth="1.75"
             />
           )}
@@ -307,7 +312,7 @@ export function WorkingTreeRow({
             cy={rowHeight / 2}
             r="5"
             fill="var(--bg-base)"
-            stroke={laneColor(nodeLane)}
+            stroke={graphColor(color)}
             strokeWidth="1.75"
             strokeDasharray="2 2"
           />
@@ -376,10 +381,12 @@ function HistorySignatureIcon({ oid }: { oid: string }) {
 }
 
 function Decorations({
+  color,
   decorations,
   upstreams,
   checkoutRef,
 }: {
+  color: number;
   decorations: CommitDecoration[];
   checkoutRef: string | undefined;
   upstreams: ReadonlyMap<string, string> | undefined;
@@ -405,14 +412,12 @@ function Decorations({
       paired.set(ref.name, upstream);
   }
   const groupedRemotes = new Set(paired.values());
-  const rank = (ref: CommitDecoration) => (ref.type === "head" ? 0 : ref.type === "tag" ? 2 : 1);
   const ordered = refs
     .filter(
       (ref) =>
         ref.type !== "remote-branch" ||
         (!groupedRemotes.has(ref.name) && !ref.name.endsWith("/HEAD")),
     )
-    .sort((a, b) => rank(a) - rank(b))
     .map((ref) => {
       const upstream =
         ref.type === "head" || ref.type === "local-branch" ? paired.get(ref.name) : undefined;
@@ -421,18 +426,25 @@ function Decorations({
       return { ...ref, remoteLabel, title: upstream ? `${ref.name} · ${upstream}` : ref.name };
     });
   if (!ordered.length) return null;
-  const shown = ordered.slice(0, 2);
-  const overflow = ordered.length - shown.length;
+  const branch = ordered.find((item) => item.type !== "tag");
+  const tag = ordered.find((item) => item.type === "tag");
+  const shown = branch && tag ? [branch, tag] : ordered.slice(0, 2);
+  const overflow = ordered.filter((item) => !shown.includes(item));
 
   return (
-    <span
-      className={`min-w-0 max-w-[32%] items-baseline gap-2 text-xs ${checkoutRef ? "flex" : "hidden @sm:flex"}`}
-    >
+    <span className="flex min-w-0 items-center gap-1 text-xs">
       {shown.map((decoration) => (
         <span
           key={`${decoration.type}:${decoration.name}`}
           title={decoration.title}
-          className={`min-w-0 max-w-48 items-center gap-1 ${decoration.type === "head" ? "inline-flex font-medium text-accent-text" : "hidden text-text-secondary @sm:inline-flex"}`}
+          style={
+            decoration.type === "head" ||
+            decoration.type === "local-branch" ||
+            decoration.type === "remote-branch"
+              ? { color: graphColor(color) }
+              : undefined
+          }
+          className={`inline-flex min-w-0 items-center gap-1 text-text-secondary ${decoration.type === "head" ? "font-medium" : ""}`}
         >
           {decoration.type === "head" && (
             <span title={t("history.commitRow.checkedOut")} className="shrink-0">
@@ -458,15 +470,12 @@ function Decorations({
           )}
         </span>
       ))}
-      {overflow > 0 && (
+      {overflow.length > 0 && (
         <span
-          title={ordered
-            .slice(2)
-            .map((item) => item.title)
-            .join("\n")}
-          className="mono hidden shrink-0 text-xs text-text-tertiary @sm:inline"
+          title={overflow.map((item) => item.title).join("\n")}
+          className="mono shrink-0 text-xs text-text-tertiary"
         >
-          +{overflow}
+          +{overflow.length}
         </span>
       )}
     </span>

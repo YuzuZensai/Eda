@@ -1262,7 +1262,18 @@ export class GitService {
       maxStdoutBytes: 4 * 1024 * 1024,
     });
 
-    return parseBranches(fields);
+    const branches = parseBranches(fields);
+    if (branches.length && !branches.some((branch) => branch.isDefault)) {
+      const configured = await this.readConfig("init.defaultBranch", { cwd: path });
+      for (const name of [configured, "main", "master"]) {
+        const branch = branches.find((item) => !item.remote && item.name === name);
+        if (branch) {
+          branch.isDefault = true;
+          break;
+        }
+      }
+    }
+    return branches;
   }
 
   async createTag(

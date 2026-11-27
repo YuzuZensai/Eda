@@ -1,7 +1,7 @@
 import type { HistoryPage, ObjectId } from "@shared/repository/repository-read";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { layoutCommitPages, type DagBoundary, type DagRow } from "../dag-layout";
-import { laneColor } from "../graph-geometry";
+import { graphColor } from "../graph-colors";
 
 interface HistoryGraph {
   rows: readonly DagRow[];
@@ -21,7 +21,7 @@ function historyGraph(pages: HistoryPage[], boundary: DagBoundary): HistoryGraph
   );
   const commitColors = new Map<ObjectId, string>();
   for (const row of rows) {
-    if (!row.topologyUnavailable) commitColors.set(row.commit.oid, laneColor(row.lane));
+    if (!row.topologyUnavailable) commitColors.set(row.commit.oid, graphColor(row.color));
   }
 
   const graph = { rows, commitColors };

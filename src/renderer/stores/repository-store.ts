@@ -7,6 +7,7 @@ import {
 } from "@shared/repository/repository-read";
 import { create } from "zustand";
 import type { DagBoundary } from "../repository/dag-layout";
+import { defaultBranchTips } from "../repository/branch-order";
 import { categorizeChanges, successorPaths } from "../repository/working-changes";
 import { createHistoryPagination, readHistory } from "./history-pagination";
 import { createRepositoryDiff } from "./repository-diff";
@@ -37,6 +38,7 @@ const emptyState = {
   identityId: null,
   phase: "idle" as const,
   status: null,
+  branches: [],
   pages: [] as HistoryPage[],
   dagBoundary: { lanes: [] } as DagBoundary,
   hoveredRefOid: null,
@@ -93,6 +95,9 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
       window.eda.repository
         .status(repositoryId)
         .catch(() => repositoryRequestFailure("operations.readStatus")),
+      window.eda.repository
+        .listBranches(repositoryId)
+        .catch(() => repositoryRequestFailure("operations.listBranches")),
       readHistory({
         repositoryId,
         offset: 0,
@@ -129,7 +134,7 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
 
     set({
       ...emptyState,
-      dagBoundary: history.firstBoundary(repositoryId, null),
+      dagBoundary: history.firstBoundary(repositoryId, null, []),
       repositoryId,
       identityId,
       generation,
@@ -139,7 +144,7 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     if (!available) return;
 
     const request = (async () => {
-      const [statusResult, historyResult] = await readFirstPage(repositoryId);
+      const [statusResult, branchResult, historyResult] = await readFirstPage(repositoryId);
 
       if (get().generation !== generation || get().repositoryId !== repositoryId) return;
 
@@ -150,11 +155,13 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
       }
 
       const bounded = boundedStatus(statusResult.value);
+      const branches = branchResult.ok ? branchResult.value : [];
 
       if (!historyResult.ok) {
         set({
           phase: "ready",
           ...bounded,
+          branches,
           historyError: historyResult.error,
         });
 
@@ -166,6 +173,8 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
       set({
         phase: "ready",
         ...bounded,
+        branches,
+        dagBoundary: history.firstBoundary(repositoryId, null, defaultBranchTips(branches)),
         pages: [boundedHistory(historyResult.value)],
         nextOffset: historyResult.value.nextOffset,
       });
@@ -211,7 +220,10 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     const { generation } = get();
     const revision = history.invalidate();
 
-    const [statusResult, historyResult] = await readFirstPage(repositoryId, resetHistory);
+    const [statusResult, branchResult, historyResult] = await readFirstPage(
+      repositoryId,
+      resetHistory,
+    );
 
     if (
       get().generation !== generation ||
@@ -226,8 +238,14 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
       return false;
     }
 
+    const branches = branchResult.ok ? branchResult.value : get().branches;
+    const tips = defaultBranchTips(branches);
+    const previousTips = get().dagBoundary.defaultBranchTips ?? [];
+    const defaultsChanged =
+      tips.length !== previousTips.length || tips.some((oid) => !previousTips.includes(oid));
     const replaceHistory =
-      historyResult.ok && (resetHistory || history.firstPageChanged(historyResult.value));
+      historyResult.ok &&
+      (resetHistory || defaultsChanged || history.firstPageChanged(historyResult.value));
 
     if (replaceHistory) {
       history.replaceFirst(historyResult.value);
@@ -238,12 +256,13 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
       historyLoading: false,
       historyError: historyResult.ok ? null : historyResult.error,
       ...boundedStatus(statusResult.value),
+      branches,
       ...(historyResult.ok &&
         replaceHistory && {
           pages: [boundedHistory(historyResult.value)],
           baseOffset: 0,
           historyTip: resetHistory ? null : get().historyTip,
-          dagBoundary: history.firstBoundary(repositoryId, resetHistory ? null : undefined),
+          dagBoundary: history.firstBoundary(repositoryId, resetHistory ? null : undefined, tips),
           nextOffset: historyResult.value.nextOffset,
           historyError: null,
         }),
@@ -294,7 +313,7 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     set({
       historyTip: oid,
       pages: [result.value],
-      dagBoundary: { lanes: [] },
+      dagBoundary: history.firstBoundary(repositoryId, oid),
       baseOffset: 0,
       nextOffset: result.value.nextOffset,
       historyLoading: false,

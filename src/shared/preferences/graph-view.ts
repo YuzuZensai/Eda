@@ -2,7 +2,10 @@ import { isFullObjectId } from "../repository/object-id";
 import { isOneOf, isRecord } from "../validation";
 
 export const GRAPH_COLUMN_IDS = ["author", "date", "sha"] as const;
+// Saved layouts and visibility preferences may include the former standalone tags column.
+export const SAVED_GRAPH_COLUMN_IDS = [...GRAPH_COLUMN_IDS, "tags"] as const;
 export type GraphColumnId = (typeof GRAPH_COLUMN_IDS)[number];
+export type SavedGraphColumnId = (typeof SAVED_GRAPH_COLUMN_IDS)[number];
 
 export interface GraphFilter {
   refs: string[];
@@ -47,10 +50,14 @@ export function isGraphFilter(value: unknown): value is GraphFilter {
   );
 }
 
-export interface GraphColumn {
-  id: GraphColumnId;
+export interface SavedGraphColumn {
+  id: SavedGraphColumnId;
   visible: boolean;
   width: number;
+}
+
+export interface GraphColumn extends SavedGraphColumn {
+  id: GraphColumnId;
 }
 
 export const defaultGraphColumns = (): GraphColumn[] => [
@@ -59,15 +66,25 @@ export const defaultGraphColumns = (): GraphColumn[] => [
   { id: "sha", visible: true, width: 72 },
 ];
 
-export function isGraphColumns(value: unknown): value is GraphColumn[] {
+export function resolveGraphColumns(saved: SavedGraphColumn[] | undefined): GraphColumn[] {
   return (
-    Array.isArray(value) &&
-    value.length === 3 &&
-    new Set(value.map((item: unknown) => (isRecord(item) ? item["id"] : undefined))).size === 3 &&
+    saved?.filter((column): column is GraphColumn => column.id !== "tags") ?? defaultGraphColumns()
+  );
+}
+
+export function isGraphColumns(value: unknown): value is SavedGraphColumn[] {
+  if (!Array.isArray(value) || value.length > SAVED_GRAPH_COLUMN_IDS.length) return false;
+
+  const ids = new Set(value.map((item: unknown) => (isRecord(item) ? item["id"] : undefined)));
+  const expectedCount = GRAPH_COLUMN_IDS.length + (ids.has("tags") ? 1 : 0);
+
+  return (
+    ids.size === expectedCount &&
+    value.length === expectedCount &&
     value.every(
       (item: unknown) =>
         isRecord(item) &&
-        isOneOf(item["id"], GRAPH_COLUMN_IDS) &&
+        isOneOf(item["id"], SAVED_GRAPH_COLUMN_IDS) &&
         typeof item["visible"] === "boolean" &&
         typeof item["width"] === "number" &&
         Number.isInteger(item["width"]) &&

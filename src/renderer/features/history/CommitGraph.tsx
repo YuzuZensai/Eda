@@ -102,17 +102,14 @@ export function CommitGraph({
     (request: { repositoryId: string }) => window.eda.repository.worktrees(request.repositoryId),
     linkedRequest,
   );
-  const branches = useRepositoryRead(
-    (request: { repositoryId: string }) => window.eda.repository.listBranches(request.repositoryId),
-    linkedRequest,
-  );
+  const branches = useRepositoryStore((state) => state.branches);
   const upstreams = useMemo(() => {
     const map = new Map<string, string>();
-    for (const branch of branches.value ?? []) {
+    for (const branch of branches) {
       if (!branch.remote && branch.upstream) map.set(branch.name, branch.upstream);
     }
     return map;
-  }, [branches.value]);
+  }, [branches]);
 
   const [worktreeError, setWorktreeError] = useState("");
   const linkedChanges = worktrees.value?.filter(
@@ -200,7 +197,7 @@ export function CommitGraph({
       return null;
 
     const lane = headIndex === 0 ? rows[0]!.lane : Math.max(...rows.map((row) => row.laneCount));
-    return { lane, headIndex };
+    return { lane, color: rows[headIndex]!.color, headIndex };
   }, [rows, workingRowCount, baseOffset, status?.branch.oid]);
   const gutter = useMemo(
     () => graphColumnWidth(rows, workingConnection ? workingConnection.lane + 1 : 1),
@@ -373,6 +370,7 @@ export function CommitGraph({
         role="row"
         className="app-surface-chrome flex h-6 shrink-0 items-center border-b border-border-subtle bg-bg-surface text-xs font-medium uppercase tracking-wide text-text-tertiary"
       >
+        <span className="history-ref-column">{t("graphColumns.refs")}</span>
         <span className="shrink-0" style={{ width: gutter }} />
 
         <div className="flex min-w-0 flex-1 items-center gap-3 pr-3">
@@ -461,6 +459,7 @@ export function CommitGraph({
               style={{ height: rowHeight }}
               className="flex items-center border-b border-border-subtle"
             >
+              <span className="history-ref-column" />
               <div style={{ width: gutter }} className="flex shrink-0 justify-center">
                 <Skeleton className="size-2 rounded-full" />
               </div>
@@ -593,6 +592,7 @@ export function CommitGraph({
                     workingConnection && index - workingRowCount <= workingConnection.headIndex
                       ? {
                           lane: workingConnection.lane,
+                          color: workingConnection.color,
                           head: index - workingRowCount === workingConnection.headIndex,
                         }
                       : undefined
@@ -612,6 +612,7 @@ export function CommitGraph({
                   truncated={truncatedChanges}
                   gutter={gutter}
                   lane={workingConnection?.lane}
+                  color={workingConnection?.color}
                   selected={selection?.kind !== "commit"}
                   onSelect={selectWorkingTree}
                 />

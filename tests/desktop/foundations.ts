@@ -155,6 +155,17 @@ try {
 
   await expect(initialCommit).toBeVisible();
   await expectAlignedColumns();
+  const refs = initialCommit.locator(".history-ref-column");
+  await expect(refs.getByTitle("main", { exact: true })).toBeVisible();
+  await expect(refs.getByTitle("v1", { exact: true })).toBeVisible();
+  await expect(refs.getByTitle("feature/work", { exact: true })).toHaveText("+1");
+  await expect(graph.getByRole("button", { name: "Reorder tags column" })).toHaveCount(0);
+  const refBounds = await refs.boundingBox();
+  const laneBounds = await initialCommit.locator(":scope > svg").boundingBox();
+  assert.ok(refBounds && laneBounds);
+  assert.ok(refBounds.width <= 96);
+  assert.equal(refBounds.x + refBounds.width, laneBounds.x);
+
   const overflowStyle = await page.addStyleTag({
     content: '[data-testid="commit-graph"] [data-virtual-list] { max-height: 1px; }',
   });

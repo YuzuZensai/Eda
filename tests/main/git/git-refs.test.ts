@@ -66,8 +66,20 @@ describe("branches against real Git", () => {
     const branches = await repo.git.listBranches(repo.path);
     const head = branches.find((b) => b.isHead);
     expect(head?.name).toBe("work");
-    expect(branches.some((branch) => branch.isDefault)).toBe(false);
+    expect(branches.filter((branch) => branch.isDefault).map((branch) => branch.name)).toEqual([
+      "main",
+    ]);
     expect((await repo.git.status(repo.path)).branch.head).toBe("work");
+  });
+
+  it("uses a repository's configured initial branch when there is no remote default", async () => {
+    const repo = await seeded();
+    await repo.run(["branch", "trunk"]);
+    await repo.run(["config", "--local", "init.defaultBranch", "trunk"]);
+    const branches = await repo.git.listBranches(repo.path);
+    expect(branches.filter((branch) => branch.isDefault).map((branch) => branch.name)).toEqual([
+      "trunk",
+    ]);
   });
 
   it("lists several branches without newline contamination", async () => {

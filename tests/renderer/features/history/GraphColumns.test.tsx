@@ -1,7 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { emptySession, emptyView } from "@shared/identity/profile-session";
-import { defaultGraphColumns } from "@shared/preferences/graph-view";
+import { defaultGraphColumns, isGraphColumns } from "@shared/preferences/graph-view";
 import { CommitGraph } from "@renderer/features/history/CommitGraph";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
 import { useSessionStore } from "@renderer/stores/session-store";
@@ -270,6 +270,26 @@ it("ignores external drops and drops on the same column", async () => {
   const data = await drag(header("date"), "dragstart");
   await drag(header("date"), "drop", data);
   expect(setView).not.toHaveBeenCalled();
+});
+
+it("restores metadata widths and order from layouts with a separate tags column", async () => {
+  const snapshot = useSessionStore.getState().snapshot!;
+  const columns = defaultGraphColumns().reverse();
+  columns[0]!.width = 128;
+  const legacy = [{ id: "tags", visible: true, width: 80 } as const, ...columns];
+  expect(isGraphColumns(legacy)).toBe(true);
+  await act(async () =>
+    useSessionStore.setState({
+      snapshot: {
+        ...snapshot,
+        session: { ...snapshot.session, views: { repo: { ...emptyView(), graphColumns: legacy } } },
+      },
+    }),
+  );
+  expect(headerOrder()).toEqual(["SHA", "Date", "Author"]);
+  expect(divider("sha").getAttribute("aria-valuenow")).toBe("128");
+  await key("ArrowLeft");
+  expect(savedColumns().map((column) => column.id)).toEqual(["sha", "date", "author"]);
 });
 
 it("follows global column visibility across repositories and ignores legacy visibility flags", async () => {

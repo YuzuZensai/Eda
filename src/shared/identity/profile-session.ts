@@ -1,7 +1,7 @@
 import {
   isGraphColumns,
   isGraphFilter,
-  type GraphColumn,
+  type SavedGraphColumn,
   type GraphFilter,
 } from "../preferences/graph-view";
 import { isFileView, type FileView } from "../preferences/file-view";
@@ -23,7 +23,7 @@ export type SavedSelection =
 export interface RepositoryView {
   graphFilter?: GraphFilter;
   files?: FileView;
-  graphColumns?: GraphColumn[];
+  graphColumns?: SavedGraphColumn[];
   references?: { hidden: boolean; locals: boolean; remotes: boolean; tags: boolean };
   selection: SavedSelection;
   maximized: PanelId | null;

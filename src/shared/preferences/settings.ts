@@ -23,7 +23,7 @@ import type { DiffMode } from "../repository/repository-read";
 import { isPullStrategy, type PullStrategy } from "../workflows/pull";
 import { isHexColor, type AccentColor } from "./accent";
 import { DEFAULT_COMMIT_PREFIXES, isCommitPrefix } from "./commit-prefix";
-import { GRAPH_COLUMN_IDS, type GraphColumnId } from "./graph-view";
+import { GRAPH_COLUMN_IDS, SAVED_GRAPH_COLUMN_IDS, type SavedGraphColumnId } from "./graph-view";
 
 export type SettingScope =
   | { kind: "application" }
@@ -141,13 +141,13 @@ export const SETTING_DEFINITIONS = {
     validate: (value): value is "short" | "local" | "iso" =>
       isOneOf(value, ["short", "local", "iso"]),
   }),
-  historyVisibleColumns: define<GraphColumnId[]>({
+  historyVisibleColumns: define<SavedGraphColumnId[]>({
     defaultValue: [...GRAPH_COLUMN_IDS],
     scopes: profile,
-    validate: (value): value is GraphColumnId[] =>
+    validate: (value): value is SavedGraphColumnId[] =>
       Array.isArray(value) &&
-      value.length <= GRAPH_COLUMN_IDS.length &&
-      value.every((id: unknown) => isOneOf(id, GRAPH_COLUMN_IDS)) &&
+      value.length <= SAVED_GRAPH_COLUMN_IDS.length &&
+      value.every((id: unknown) => isOneOf(id, SAVED_GRAPH_COLUMN_IDS)) &&
       new Set(value).size === value.length,
   }),
   mailboxPreview: define<boolean>({ defaultValue: false, scopes: application, validate: boolean }),

@@ -8,7 +8,6 @@ import {
   type SettingScope,
   type SettingValues,
 } from "@shared/preferences/settings";
-import type { GraphColumnId } from "@shared/preferences/graph-view";
 import { HistoryColumnsSettings } from "@renderer/features/settings/appearance/HistoryColumnsSettings";
 import { usePreferencesStore } from "@renderer/stores/preferences-store";
 import { useAppStore } from "@renderer/stores/app-store";
@@ -17,7 +16,7 @@ let root: Root;
 let container: HTMLDivElement;
 let previous: ReturnType<typeof usePreferencesStore.getState>;
 let previousApp: ReturnType<typeof useAppStore.getState>;
-let visible: GraphColumnId[];
+let visible: SettingValues["historyVisibleColumns"];
 let source: SettingScope;
 const save = vi.fn(
   async (key: SettingKey, scope: SettingScope, value: SettingValues[SettingKey]) => {

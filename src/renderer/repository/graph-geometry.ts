@@ -1,12 +1,10 @@
 import type { DagRow, DagSegment } from "./dag-layout";
 
 export const ROW_HEIGHT = 30;
-export const GRAPH_LANE_COUNT = 6;
 
 const LANE_WIDTH = 16;
 const LANE_ORIGIN = 14;
 
-export const laneColor = (lane: number) => `var(--graph-lane-${lane % GRAPH_LANE_COUNT})`;
 export const laneX = (lane: number) => LANE_ORIGIN + lane * LANE_WIDTH;
 
 const rowGraphWidth = (laneCount: number) =>

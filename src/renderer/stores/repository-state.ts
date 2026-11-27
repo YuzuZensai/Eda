@@ -8,6 +8,7 @@ import {
   type RepositoryStatus,
   type UnifiedDiff,
 } from "@shared/repository/repository-read";
+import type { BranchSummary } from "@shared/repository/repository-write";
 import { type HistoryWindow } from "./history-pagination";
 
 export type RepositorySelection = SavedSelection;
@@ -43,6 +44,7 @@ export interface RepositoryReadState extends HistoryWindow {
   identityId: string | null;
   phase: "idle" | "loading" | "ready" | "missing" | "error";
   status: RepositoryStatus | null;
+  branches: BranchSummary[];
   hoveredRefOid: string | null;
   watchWarning: string | null;
   selection: RepositorySelection;

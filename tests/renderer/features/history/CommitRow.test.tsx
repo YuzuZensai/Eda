@@ -99,11 +99,12 @@ it("keeps the checkout marker on HEAD while browsing and keeps synchronized bran
   vi.stubGlobal("eda", {
     repository: {
       worktrees: async () => ok([]),
-      listBranches: async () =>
-        ok([{ name: "main", upstream: "origin/main", oid: tip.oid, remote: false, isHead: true }]),
     },
   });
   useRepositoryStore.setState({
+    branches: [
+      { name: "main", upstream: "origin/main", oid: tip.oid, remote: false, isHead: true },
+    ],
     pages: [{ commits: [tip, other], nextOffset: null }],
     status: { branch, changes: [] },
     baseOffset: 0,
@@ -275,12 +276,15 @@ it("keeps a side lane dim across intervening rows until the active branch joins 
     });
 
   await renderHistory("active");
+  const sideColor = container.querySelector<SVGCircleElement>(
+    '[aria-label^="side."] > svg > circle',
+  )!.style.color;
   const sideStroke = (subject: string) => {
     const paths = container.querySelectorAll<SVGPathElement>(
       `[aria-label^="${subject}."] svg > path`,
     );
     return Array.from(paths)
-      .find((path) => path.style.color === "var(--graph-lane-1)")
+      .find((path) => path.style.color === sideColor)
       ?.getAttribute("stroke");
   };
 

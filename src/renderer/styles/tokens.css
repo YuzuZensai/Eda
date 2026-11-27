@@ -78,12 +78,14 @@
   --diff-deleted-emphasis: oklch(0.68 0.17 25 / 0.28);
 
   --graph-lane-l: 0.72;
-  --graph-lane-0: oklch(var(--graph-lane-l) var(--identity-chroma) var(--identity-hue));
-  --graph-lane-1: oklch(var(--graph-lane-l) 0.13 calc(var(--identity-hue) + 55));
-  --graph-lane-2: oklch(var(--graph-lane-l) 0.13 calc(var(--identity-hue) + 115));
-  --graph-lane-3: oklch(var(--graph-lane-l) 0.13 calc(var(--identity-hue) + 175));
-  --graph-lane-4: oklch(var(--graph-lane-l) 0.13 calc(var(--identity-hue) + 235));
-  --graph-lane-5: oklch(var(--graph-lane-l) 0.13 calc(var(--identity-hue) + 295));
+  --graph-lane-0: oklch(var(--graph-lane-l) 0.14 250);
+  --graph-lane-1: oklch(var(--graph-lane-l) 0.14 295);
+  --graph-lane-2: oklch(var(--graph-lane-l) 0.14 340);
+  --graph-lane-3: oklch(var(--graph-lane-l) 0.14 25);
+  --graph-lane-4: oklch(var(--graph-lane-l) 0.14 70);
+  --graph-lane-5: oklch(var(--graph-lane-l) 0.14 115);
+  --graph-lane-6: oklch(var(--graph-lane-l) 0.14 160);
+  --graph-lane-7: oklch(var(--graph-lane-l) 0.14 205);
 
   --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.22);
   --shadow-popover: 0 4px 12px rgb(0 0 0 / 0.35), 0 16px 48px rgb(0 0 0 / 0.3);

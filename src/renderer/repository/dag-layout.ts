@@ -1,6 +1,9 @@
 import type { HistoryCommit, ObjectId } from "@shared/repository/repository-read";
+import { allocateGraphColor, DEFAULT_BRANCH_COLOR } from "./graph-colors";
 
 export interface DagBoundary {
+  defaultBranchTips?: readonly ObjectId[];
+  colors?: { lanes: (number | undefined)[]; recent: number[] };
   lanes: (ObjectId | undefined)[];
   paths?: PathBoundary;
   pinned?: boolean;
@@ -8,6 +11,7 @@ export interface DagBoundary {
 }
 
 export interface DagSegment {
+  color: number;
   fromLane: number;
   toLane: number;
   targetOid: ObjectId;
@@ -16,6 +20,7 @@ export interface DagSegment {
 }
 
 export interface DagRow {
+  color: number;
   commit: HistoryCommit;
   lane: number;
   laneCount: number;
@@ -39,6 +44,7 @@ export function layoutCommitPage(
     rows: commits.map((commit) => ({
       commit,
       lane: 0,
+      color: 0,
       laneCount: 1,
       segments: [],
       topologyUnavailable: true,
@@ -49,52 +55,72 @@ export function layoutCommitPage(
   if (boundary.overflow || boundary.lanes.length > MAX_DAG_LANES) return textOnly();
 
   const lanes: (ObjectId | undefined)[] = [...boundary.lanes];
+  const recent = [...(boundary.colors?.recent ?? [])];
+  const colors: (number | undefined)[] = [...(boundary.colors?.lanes ?? [])];
+  if (!boundary.colors) {
+    for (const [lane, oid] of lanes.entries()) {
+      if (oid !== undefined) colors[lane] = allocateGraphColor(colors, lane, recent);
+    }
+  }
+
   const rows: DagRow[] = [];
   let overflow = false;
 
-  const claimLane = (oid: ObjectId): number => {
+  const claimLane = (oid: ObjectId, inheritedColor?: number): number => {
     const existing = lanes.indexOf(oid);
 
     if (existing >= 0) return existing;
 
     const hole = lanes.indexOf(undefined);
-
-    if (hole >= 0) {
-      lanes[hole] = oid;
-      return hole;
-    }
-
-    if (lanes.length >= MAX_DAG_LANES) {
+    const lane = hole >= 0 ? hole : lanes.length;
+    if (lane >= MAX_DAG_LANES) {
       overflow = true;
       return MAX_DAG_LANES - 1;
     }
 
-    return lanes.push(oid) - 1;
+    colors[lane] = inheritedColor ?? allocateGraphColor(colors, lane, recent);
+    lanes[lane] = oid;
+    return lane;
   };
 
   for (const commit of commits) {
     const hasParentAbove = lanes.includes(commit.oid);
     const lane = claimLane(commit.oid);
+    const incomingColor = colors[lane]!;
+    const color = boundary.defaultBranchTips?.includes(commit.oid)
+      ? DEFAULT_BRANCH_COLOR
+      : incomingColor;
     const before = [...lanes];
+    const beforeColors = [...colors];
     const parents = commit.parents.filter((parent, index, all) => all.indexOf(parent) === index);
 
     lanes[lane] = undefined;
+    colors[lane] = undefined;
 
     const parentLanes = parents.map((parent, index) => {
       if (boundary.pinned && lane === 0 && index === 0) {
         const existing = lanes.indexOf(parent);
-        if (existing >= 0) lanes[existing] = undefined;
+        const inherited =
+          existing >= 0 && colors[existing] === DEFAULT_BRANCH_COLOR ? DEFAULT_BRANCH_COLOR : color;
+        if (existing >= 0) {
+          lanes[existing] = undefined;
+          colors[existing] = undefined;
+        }
+        colors[0] = inherited;
         lanes[0] = parent;
         return 0;
       }
 
-      return claimLane(parent);
+      const parentLane = claimLane(parent, index === 0 ? color : undefined);
+      if (index === 0 && color === DEFAULT_BRANCH_COLOR) colors[parentLane] = color;
+      return parentLane;
     });
 
     const segments: DagSegment[] = [];
 
     if (hasParentAbove) {
       segments.push({
+        color: incomingColor,
         fromLane: lane,
         toLane: lane,
         targetOid: commit.oid,
@@ -108,23 +134,43 @@ export function layoutCommitPage(
       if (fromLane === lane) continue;
       const toLane = lanes.indexOf(oid);
       if (toLane < 0) continue;
-      segments.push({ fromLane, toLane, targetOid: oid, continues: true });
+      segments.push({
+        color: beforeColors[fromLane]!,
+        fromLane,
+        toLane,
+        targetOid: oid,
+        continues: true,
+      });
     }
 
     for (const [index, toLane] of parentLanes.entries()) {
-      segments.push({ fromLane: lane, toLane, targetOid: parents[index]!, continues: true });
+      segments.push({
+        color: index === 0 ? color : colors[toLane]!,
+        fromLane: lane,
+        toLane,
+        targetOid: parents[index]!,
+        continues: true,
+      });
     }
 
     const width = Math.max(before.length, lanes.length, 1);
 
-    rows.push({ commit, lane, laneCount: width, segments });
+    rows.push({ commit, color, lane, laneCount: width, segments });
   }
 
   while (lanes.length > 0 && lanes.at(-1) === undefined) lanes.pop();
 
   if (overflow) return textOnly();
 
-  return { rows, boundary: { lanes, ...(boundary.pinned && { pinned: true }) } };
+  return {
+    rows,
+    boundary: {
+      lanes,
+      colors: { lanes: colors.slice(0, lanes.length), recent },
+      ...(boundary.defaultBranchTips && { defaultBranchTips: boundary.defaultBranchTips }),
+      ...(boundary.pinned && { pinned: true }),
+    },
+  };
 }
 
 export function layoutCommitPages(

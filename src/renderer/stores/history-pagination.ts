@@ -47,11 +47,19 @@ export function createHistoryPagination(
     };
   }
 
-  function firstBoundary(repositoryId: string, historyTip = get().historyTip): DagBoundary {
-    if (historyTip) return { lanes: [] };
+  function firstBoundary(
+    repositoryId: string,
+    historyTip = get().historyTip,
+    tips = get().dagBoundary.defaultBranchTips,
+  ): DagBoundary {
     const oid =
+      !historyTip &&
       useSessionStore.getState().snapshot?.session.views[repositoryId]?.graphFilter?.pinnedOid;
-    return { lanes: oid ? [oid] : [], ...(oid && { pinned: true }) };
+    return {
+      lanes: oid ? [oid] : [],
+      ...(oid && { pinned: true }),
+      ...(tips?.length && { defaultBranchTips: tips }),
+    };
   }
 
   function invalidate() {

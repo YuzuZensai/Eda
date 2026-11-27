@@ -187,6 +187,10 @@ try {
   assert.ok(workingBounds && headBounds);
   assert.equal(workingBounds.height, headBounds.height);
   assert.equal(workingBounds.y + workingBounds.height, headBounds.y);
+  const workingLane = await workingChanges.locator("svg").boundingBox();
+  const headLane = await page.locator('[data-tour="history-commit"] > svg').first().boundingBox();
+  assert.ok(workingLane && headLane);
+  assert.equal(workingLane.x, headLane.x);
   await expectEntry(() => workingRow.getByText("1", { exact: true }).click(), "section");
   await expect(workingChanges).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("searchbox", { name: "Filter changed files", exact: true }).waitFor();

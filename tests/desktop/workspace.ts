@@ -279,7 +279,7 @@ try {
   const graph = page.getByTestId("commit-graph");
   const featureBranch = "feature/clear-branch-navigation";
   const graphNode = (subject: RegExp) =>
-    graph.getByRole("button", { name: subject }).locator("svg > circle");
+    graph.getByRole("button", { name: subject }).locator(":scope > svg > circle:last-child");
   const graphColor = (subject: RegExp) =>
     graphNode(subject).evaluate((node) => getComputedStyle(node).color);
   const mainColor = await graphColor(/Keep working changes beside the commit editor/);
@@ -287,6 +287,13 @@ try {
   assert.notEqual(mainColor, featureColor, "Divergent branch tips use different graph colors");
   const mainNode = graphNode(/Keep working changes beside the commit editor/);
   const featureNode = graphNode(/Make branch navigation visible/);
+  const alternateAccent = await page.addStyleTag({
+    content: ":root { --identity-hue: 110 !important; --identity-chroma: 0.03 !important; }",
+  });
+  await expect(mainNode).not.toHaveCSS("color", mainColor);
+  await expect(featureNode).toHaveCSS("color", featureColor);
+  await alternateAccent.evaluate((element) => element.parentNode?.removeChild(element));
+
   const featureEdge = featureNode.locator("..").locator(":scope > path").last();
   await expect(mainNode).toHaveCSS("stroke", mainColor);
   await expect(featureNode).not.toHaveCSS("stroke", featureColor);

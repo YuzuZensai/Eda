@@ -7,7 +7,7 @@ import {
   type DragEvent,
 } from "react";
 import {
-  defaultGraphColumns,
+  resolveGraphColumns,
   type GraphColumn,
   type GraphColumnId,
 } from "@shared/preferences/graph-view";
@@ -50,7 +50,7 @@ export function useGraphColumns(repositoryId: string | null, disabled: boolean) 
   );
   const context = useSessionStore((state) => state.snapshot?.context);
   const visibleColumns = usePreferencesStore((state) => state.values.historyVisibleColumns.value);
-  const columns = (savedColumns ?? defaultGraphColumns()).map((column) => ({
+  const columns = resolveGraphColumns(savedColumns).map((column) => ({
     ...column,
     visible: visibleColumns.includes(column.id),
   }));
@@ -82,8 +82,7 @@ export function useGraphColumns(repositoryId: string | null, disabled: boolean) 
       if (!repositoryId || disabled) return;
 
       const store = useSessionStore.getState();
-      const latest =
-        store.snapshot?.session.views[repositoryId]?.graphColumns ?? defaultGraphColumns();
+      const latest = resolveGraphColumns(store.snapshot?.session.views[repositoryId]?.graphColumns);
       const next = clampWidth(nextWidth);
 
       if (latest.find((column) => column.id === id)?.width === next) return;
@@ -206,7 +205,7 @@ export function useGraphColumns(repositoryId: string | null, disabled: boolean) 
     )
       return;
 
-    const latest = snapshot.session.views[repositoryId]?.graphColumns ?? defaultGraphColumns();
+    const latest = resolveGraphColumns(snapshot.session.views[repositoryId]?.graphColumns);
     const from = latest.findIndex((column) => column.id === id);
     const to = latest.findIndex((column) => column.id === targetId);
 

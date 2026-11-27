@@ -28,6 +28,7 @@ const makeCommit = (index: number): HistoryCommit => ({
 function api(history: EdaApi["repository"]["history"]): EdaApi {
   return {
     repository: {
+      listBranches: async () => ok([]),
       status: async () =>
         ok({ branch: { ahead: 0, behind: 0, detached: false, unborn: false }, changes: [] }),
       history,
@@ -797,6 +798,7 @@ describe("repository read store", () => {
       configurable: true,
       value: {
         repository: {
+          listBranches: async () => ok([]),
           status: async () =>
             ok({
               branch: { ahead: 0, behind: 0, detached: false, unborn: false },
@@ -851,6 +853,7 @@ describe("repository read store", () => {
       configurable: true,
       value: {
         repository: {
+          listBranches: async () => ok([]),
           status: async () =>
             ok({ branch: { ahead: 0, behind: 0, detached: false, unborn: false }, changes: [] }),
           history: async () => ok({ commits: [], nextOffset: null }),
@@ -936,6 +939,7 @@ describe("repository read store", () => {
       configurable: true,
       value: {
         repository: {
+          listBranches: async () => ok([]),
           status: async () =>
             ok({
               branch: { ahead: 0, behind: 0, detached: false, unborn: false },
@@ -1011,6 +1015,7 @@ describe("repository read store", () => {
       configurable: true,
       value: {
         repository: {
+          listBranches: async () => ok([]),
           status: async () =>
             ok({
               branch: { ahead: 0, behind: 0, detached: false, unborn: false },

@@ -502,7 +502,9 @@ export function RepositoryRowsPreview() {
             gutter={40}
             selected={commit.oid === row.commit.oid}
             related={false}
-            workingTreeConnection={index === 0 ? { lane: 0, head: true } : undefined}
+            workingTreeConnection={
+              index === 0 ? { lane: 0, color: row.color, head: true } : undefined
+            }
             onSelect={() => setCommit(row.commit)}
             onContextMenu={(event) => event.preventDefault()}
           />

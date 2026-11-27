@@ -1,3 +1,4 @@
+import { graphColor } from "@renderer/repository/graph-colors";
 import type { HistoryCommit } from "@shared/repository/repository-read";
 import {
   firstParentPaths,
@@ -58,6 +59,54 @@ describe("incremental DAG layout", () => {
     expect(first.rows[0]?.laneCount).toBe(2);
   });
 
+  it("accents the default tip and its first-parent history across pages, including a shared ancestor", () => {
+    const boundary = { lanes: [], defaultBranchTips: ["trunk"] };
+    const rows = layoutCommitPages(
+      [
+        [commit("feature", ["base"]), commit("trunk", ["parent", "side"])],
+        [commit("side", ["base"]), commit("parent", ["base"]), commit("base", [])],
+      ],
+      boundary,
+    );
+    const [feature, trunk, side, parent, base] = rows;
+    expect(graphColor(trunk!.color)).toBe("var(--accent)");
+    expect(graphColor(feature!.color)).not.toBe("var(--accent)");
+    expect(graphColor(side!.color)).not.toBe("var(--accent)");
+    expect(parent!.color).toBe(trunk!.color);
+    expect(base!.color).toBe(trunk!.color);
+    expect(trunk!.segments.find((edge) => edge.targetOid === "side")?.color).toBe(side!.color);
+    expect(trunk!.segments.find((edge) => edge.targetOid === "parent")?.color).toBe(trunk!.color);
+  });
+
+  it("cycles through the fixed palette when unrelated tips reuse the same lane across pages", () => {
+    const tips = Array.from({ length: 16 }, (_, index) => commit(String(index), []));
+    const rows = layoutCommitPages([tips.slice(0, 5), tips.slice(5)]);
+    expect(rows.every((row) => row.lane === 0)).toBe(true);
+    expect(new Set(rows.slice(0, 8).map((row) => row.color)).size).toBe(8);
+    expect(new Set(rows.map((row) => row.color)).size).toBe(8);
+    expect(rows).toEqual(layoutCommitPage(tips).rows);
+  });
+
+  it("gives concurrent paths distinct colors before reuse and preserves them when lanes move", () => {
+    const parents = Array.from({ length: 9 }, (_, index) => String(index));
+    const rows = layoutCommitPages([
+      [commit("merge", parents)],
+      parents.map((id) => commit(id, [id + "-parent"])),
+    ]);
+    const edges = rows[0]!.segments;
+    expect(new Set(edges.slice(0, 8).map((edge) => edge.color)).size).toBe(8);
+    expect(edges[8]!.color).not.toBe(edges[7]!.color);
+    expect(rows.slice(1).map((row) => row.color)).toEqual(edges.map((edge) => edge.color));
+
+    const [root, child, parent] = layoutCommitPages(
+      [[commit("root", []), commit("child", ["parent"])], [commit("parent", [])]],
+      { lanes: ["root", "child"] },
+    );
+    expect(child!.lane).not.toBe(parent!.lane);
+    expect(child!.color).toBe(parent!.color);
+    expect(root!.color).not.toBe(child!.color);
+  });
+
   it("ends a root commit lane instead of bending it into lane 0", () => {
     const boundary = { lanes: ["main", "side"] };
     const layout = layoutCommitPage([commit("side", [])], boundary);
@@ -65,7 +114,7 @@ describe("incremental DAG layout", () => {
 
     expect(row.lane).toBe(1);
     expect(row.segments.filter((segment) => segment.continues && !segment.incoming)).toEqual([
-      { fromLane: 0, toLane: 0, targetOid: "main", continues: true },
+      { color: 0, fromLane: 0, toLane: 0, targetOid: "main", continues: true },
     ]);
   });
 
@@ -85,7 +134,13 @@ describe("incremental DAG layout", () => {
     const row = layout.rows[0]!;
     const other = row.segments.find((segment) => segment.fromLane === 1);
 
-    expect(other).toEqual({ fromLane: 1, toLane: 1, targetOid: "other", continues: true });
+    expect(other).toEqual({
+      color: 4,
+      fromLane: 1,
+      toLane: 1,
+      targetOid: "other",
+      continues: true,
+    });
     expect(layout.boundary.lanes[1]).toBe("other");
   });
 
@@ -93,7 +148,13 @@ describe("incremental DAG layout", () => {
     const layout = layoutCommitPage([commit("root", [])], { lanes: ["root", "x"] });
     const passthrough = layout.rows[0]!.segments.find((segment) => segment.fromLane === 1);
 
-    expect(passthrough).toEqual({ fromLane: 1, toLane: 1, targetOid: "x", continues: true });
+    expect(passthrough).toEqual({
+      color: 4,
+      fromLane: 1,
+      toLane: 1,
+      targetOid: "x",
+      continues: true,
+    });
     expect(layout.boundary.lanes[1]).toBe("x");
   });
 
@@ -102,6 +163,7 @@ describe("incremental DAG layout", () => {
     const row = layout.rows[0]!;
 
     expect(row.segments).toContainEqual({
+      color: row.color,
       fromLane: 0,
       toLane: 0,
       targetOid: "tip",

@@ -842,6 +842,7 @@
   "graphColumns.globalDescription": "Default column visibility for profiles that follow global settings.",
   "graphColumns.profileDescription": "Choose visible columns for all repositories in this profile, or follow global settings.",
   "graphColumns.px": "{width}px",
+  "graphColumns.refs": "Refs",
   "graphColumns.reorderColumn": "Reorder {id} column",
   "graphColumns.reorderHint": "Drag to reorder. Use Alt+Shift+Left or Right to move this column with the keyboard.",
   "graphColumns.sha": "SHA",
