@@ -597,9 +597,19 @@ try {
   await mkdir("screenshots", { recursive: true });
   await page.screenshot({ path: resolve("screenshots/image-preview-commit.png") });
 
-  await page
-    .getByRole("button", { name: "View commit diff for zz-small.txt", exact: true })
-    .click();
+  const commitFileFilter = commitFiles.getByLabel("Filter commit files", { exact: true });
+  await commitFileFilter.fill(".txt");
+  const mainFile = commitFiles.getByRole("button", { name: "View commit diff for main.txt" });
+  const smallFile = commitFiles.getByRole("button", { name: "View commit diff for zz-small.txt" });
+  await smallFile.click();
+  await page.keyboard.press("ArrowDown");
+  await expect(smallFile).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(mainFile).toBeFocused();
+  await expect(mainFile).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("ArrowDown");
+  await expect(smallFile).toBeFocused();
+  await expect(smallFile).toHaveAttribute("aria-pressed", "true");
 
   await page.getByText("selected file line 0", { exact: true }).waitFor();
   await page.getByText("selected file line 37", { exact: true }).waitFor();
@@ -608,7 +618,6 @@ try {
     .getByText("selected file line 0", { exact: true })
     .elementHandle();
   assert.ok(selectedLine);
-  const commitFileFilter = commitFiles.getByLabel("Filter commit files", { exact: true });
   await commitFileFilter.fill("zz-small");
   const graphScrollBeforeRefresh = await graphList.evaluate((element) => element.scrollTop);
   await overview.getByRole("button", { name: "Refresh repository", exact: true }).click();

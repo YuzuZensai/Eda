@@ -1,6 +1,7 @@
 import { t } from "@shared/i18n";
 import { stateLabel } from "@shared/i18n/labels";
 import type { ComparisonFile } from "@shared/repository/repository-read";
+import type { ComponentPropsWithRef } from "react";
 import { FileStatusIcon, fileStatusTone } from "../../components/ui/display/FileStatusIcon";
 import { ButtonBase } from "../../components/ui/index";
 
@@ -10,6 +11,8 @@ export function ChangedFileButton({
   label,
   selected,
   onSelect,
+  onKeyDown,
+  ref,
   tour,
 }: {
   file: ComparisonFile & { binary?: boolean };
@@ -18,7 +21,7 @@ export function ChangedFileButton({
   selected: boolean;
   onSelect: () => void;
   tour?: string | undefined;
-}) {
+} & Pick<ComponentPropsWithRef<"button">, "ref" | "onKeyDown">) {
   const name =
     file.oldPath && file.newPath && file.oldPath !== file.newPath
       ? t("commitChangesPanel.to", { oldPath: file.oldPath, path })
@@ -26,11 +29,13 @@ export function ChangedFileButton({
 
   return (
     <ButtonBase
+      ref={ref}
       data-tour={tour}
       aria-label={label}
       aria-pressed={selected}
       title={`${stateLabel(file.status)}: ${name}`}
       onClick={onSelect}
+      onKeyDown={onKeyDown}
       className={`ui-interactive flex h-9 w-full min-w-0 items-center gap-2 px-3 text-left text-xs hover:bg-bg-raised ${selected ? "bg-accent-muted text-accent-text" : "text-text-secondary"}`}
     >
       <span

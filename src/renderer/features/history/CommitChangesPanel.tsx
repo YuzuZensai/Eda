@@ -4,7 +4,7 @@ import {
   UNVERIFIED_COMMIT_SIGNATURE,
   type CommitInspection,
 } from "@shared/repository/repository-read";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { PanelHeader } from "../../components/layout/PanelHeader";
 import { usePanel } from "../../components/layout/hooks/usePanel";
 import { ChangedFileButton } from "./ChangedFileButton";
@@ -37,6 +37,7 @@ export function CommitChangesPanel() {
   const changeCount = useRepositoryStore((state) => state.status?.changes.length ?? 0);
   const truncatedChanges = useRepositoryStore((state) => state.truncatedChanges);
   const [query, setQuery] = useState("");
+  const [focusPath, setFocusPath] = useState<string | null>(null);
   const [verificationRevision, setVerificationRevision] = useState(0);
   const verifiedRevision = useRef(0);
 
@@ -112,6 +113,25 @@ export function CommitChangesPanel() {
       path?.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
     ),
   );
+
+  const navigateFile = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+
+    event.preventDefault();
+    const next = files[index + (event.key === "ArrowDown" ? 1 : -1)];
+    const path = next?.newPath ?? next?.oldPath;
+    if (!path) return;
+
+    setFocusPath(path);
+    void selectFile(path);
+  };
+
+  const focusFile = (button: HTMLButtonElement | null) => {
+    if (!button) return;
+    button.focus();
+    setFocusPath(null);
+  };
 
   return (
     <section
@@ -216,17 +236,24 @@ export function CommitChangesPanel() {
           rowHeight={36}
           className="min-h-0 flex-1"
           horizontalScroll={false}
-          renderRow={(file) => {
+          revealIndex={
+            focusPath
+              ? files.findIndex((file) => (file.newPath ?? file.oldPath) === focusPath)
+              : undefined
+          }
+          renderRow={(file, index) => {
             const path = file.newPath ?? file.oldPath!;
             return (
               <ChangedFileButton
                 key={path}
+                ref={focusPath === path ? focusFile : undefined}
                 file={file}
                 path={path}
                 tour={path === "README.md" ? "commit-file-readme" : undefined}
                 label={t("commitChangesPanel.viewCommitDiffFor", { path })}
                 selected={selectedPath === path}
                 onSelect={() => void selectFile(path)}
+                onKeyDown={(event) => navigateFile(event, index)}
               />
             );
           }}
