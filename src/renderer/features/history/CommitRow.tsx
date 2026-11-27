@@ -139,6 +139,18 @@ export function CommitRow({
               strokeLinecap="round"
             />
           ))}
+        {checkoutRef && (
+          <circle
+            cx={laneX(row.lane)}
+            cy={center}
+            r="8"
+            fill="var(--bg-base)"
+            stroke={laneColor(row.lane)}
+            strokeWidth="1.5"
+          >
+            <title>{t("history.commitRow.checkedOut")}</title>
+          </circle>
+        )}
         <circle
           cx={laneX(row.lane)}
           cy={center}
@@ -147,7 +159,9 @@ export function CommitRow({
           fill={isMerge ? nodeColor : "var(--bg-base)"}
           stroke={nodeColor}
           strokeWidth="2"
-        />
+        >
+          {checkoutRef && <title>{t("history.commitRow.checkedOut")}</title>}
+        </circle>
       </svg>
       <div className="flex min-w-0 flex-1 items-center gap-3 pr-3">
         <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
