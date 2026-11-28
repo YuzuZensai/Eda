@@ -23,7 +23,7 @@ interface AppState {
   switchingIdentityId: string | null;
 
   initialize: () => Promise<void>;
-  refreshIdentities: () => Promise<void>;
+  refreshIdentities: (startup?: boolean) => Promise<void>;
   refreshRepositories: () => Promise<void>;
   setActiveIdentity: (id: string) => Promise<void>;
   selectRepository: (id: string | null, background?: boolean) => void;
@@ -72,7 +72,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (engine.ok) set({ gitEngine: engine.value });
       else set({ error: engine.error });
 
-      await get().refreshIdentities();
+      await get().refreshIdentities(true);
       await get().refreshRepositories();
       set({ loading: false });
 
@@ -101,16 +101,20 @@ export const useAppStore = create<AppState>((set, get) => ({
             return;
 
           if (change.key === "accentHue") {
-            void get().refreshIdentities();
+            usePreferencesStore.getState().onChange(change, get().refreshIdentities());
             return;
           }
 
           if (change.key === "showInternalRefs") void useRepositoryStore.getState().syncFromDisk();
 
-          void usePreferencesStore.getState().load({
-            ...(activeIdentity ? { profileId: activeIdentity.id } : {}),
-            ...(selectedRepositoryId ? { repositoryId: selectedRepositoryId } : {}),
-          });
+          const prefs = usePreferencesStore.getState();
+          prefs.onChange(
+            change,
+            prefs.load({
+              ...(activeIdentity ? { profileId: activeIdentity.id } : {}),
+              ...(selectedRepositoryId ? { repositoryId: selectedRepositoryId } : {}),
+            }),
+          );
         });
         window.eda.events.onRepositoriesChanged(() => {
           if (get().switchingIdentityId !== null) return;
@@ -128,7 +132,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     return initialization;
   },
 
-  async refreshIdentities() {
+  async refreshIdentities(startup = false) {
     const generation = ++identityRefreshGeneration;
     const current = () => generation === identityRefreshGeneration;
     const [list, active] = await Promise.all([
@@ -137,6 +141,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     ]);
 
     if (!current()) return;
+    const failed = !list.ok ? list : !active.ok ? active : null;
+    if (failed) {
+      if (startup) throw new GitError(failed.error);
+      set({ error: failed.error });
+      return;
+    }
     if (list.ok) set({ identities: list.value });
 
     if (active.ok) {

@@ -365,3 +365,19 @@ it("keeps a save failure visible when an earlier preference refresh finishes", a
   await reading;
   expect(usePreferencesStore.getState().error?.message).toBe("Cannot save");
 });
+
+it("reuses the preference reload broadcast during a successful mutation", async () => {
+  const context = { profileId: "work" };
+  const read = vi.fn(async (key: SettingKey, scope: SettingsContext) => ok(resolved(key, scope)));
+  install(read, async () => {
+    const prefs = usePreferencesStore.getState();
+    prefs.onChange({ key: "toolbarLabels", scope: { kind: "application" } }, prefs.load(context));
+    return ok(undefined);
+  });
+  const prefs = usePreferencesStore.getState();
+  await prefs.load(context);
+  const keys = read.mock.calls.length;
+  read.mockClear();
+  expect(await prefs.set("toolbarLabels", { kind: "application" }, false)).toBe(true);
+  expect(read).toHaveBeenCalledTimes(keys);
+});

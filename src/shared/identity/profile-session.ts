@@ -63,8 +63,31 @@ export interface SessionSnapshot {
 
 export type SessionChange =
   | { kind: "tabs"; tabs: string[]; selectedRepositoryId: string | null }
-  | { kind: "view"; repositoryId: string; view: RepositoryView }
+  | { kind: "view"; repositoryId: string; view: RepositoryView; shareLayout?: boolean }
   | { kind: "draft"; repositoryId: string; draft: CommitDraft };
+
+export function sharedLayout(
+  view: RepositoryView,
+): Pick<RepositoryView, "maximized" | "collapsed" | "splits" | "references"> {
+  return {
+    maximized: view.maximized,
+    collapsed: view.collapsed,
+    splits: view.splits,
+    references: view.references ?? { hidden: false, locals: true, remotes: true, tags: true },
+  };
+}
+
+export function updateSessionView(
+  views: ProfileSession["views"],
+  change: Extract<SessionChange, { kind: "view" }>,
+) {
+  const next = { ...views };
+  if (change.shareLayout) {
+    const layout = sharedLayout(change.view);
+    for (const [id, view] of Object.entries(views)) next[id] = { ...view, ...layout };
+  }
+  return { ...next, [change.repositoryId]: change.view };
+}
 
 export interface DuplicateProfileOptions {
   name: string;
@@ -271,5 +294,7 @@ export function isSessionChange(value: unknown): value is SessionChange {
 
   return value["kind"] === "draft"
     ? isDraft(value["draft"])
-    : value["kind"] === "view" && isView(value["view"]);
+    : value["kind"] === "view" &&
+        isView(value["view"]) &&
+        (value["shareLayout"] === undefined || typeof value["shareLayout"] === "boolean");
 }

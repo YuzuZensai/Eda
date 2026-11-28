@@ -339,3 +339,13 @@ it("discards a folder chosen for a profile that is no longer active", async () =
     useAppStore.setState(app);
   }
 });
+
+it("reports a failed startup profile read before treating the list as empty", async () => {
+  install(identity("work"), []);
+  vi.spyOn(window.eda.identity, "list").mockResolvedValue(
+    err(errorFixture({ message: "Profiles unavailable" })),
+  );
+  await expect(useAppStore.getState().refreshIdentities(true)).rejects.toThrow(
+    "Profiles unavailable",
+  );
+});

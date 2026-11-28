@@ -3,6 +3,8 @@ import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
 import {
   emptySession,
+  updateSessionView,
+  type CommitDraft,
   isDraft,
   isSession,
   isSessionChange,
@@ -20,6 +22,12 @@ import {
 import type { Database } from "./types";
 
 export class ProfileSessionRepository {
+  private validatedDraft?: {
+    profileId: string;
+    windowId: string;
+    repositoryId: string;
+    stamp: string;
+  };
   constructor(private readonly db: Database) {}
 
   openRepositoryIds(profileId: string): string[] {
@@ -93,45 +101,20 @@ export class ProfileSessionRepository {
     if (!isSessionChange(change))
       throw invalid(errorText("main.persistence.profileSessionRepository.invalidSavedStateUpdate"));
 
-    const { snapshot: current, live } = this.readOwnedSession(profileId, windowId);
-
-    if (current.recovery)
-      throw invalid(errorText("errors.operationBlocked", { reason: current.recovery }));
-
-    if ((change.kind === "tabs" ? change.tabs : [change.repositoryId]).some((id) => !live.has(id)))
-      throw invalid(
-        errorText(
-          "main.persistence.profileSessionRepository.theRepositoryDoesNotBelongToThisProfile",
-        ),
-      );
-
+    if (change.kind === "draft") {
+      this.saveDraft(profileId, windowId, change.repositoryId, change.draft);
+      return;
+    }
+    const current = this.editableSession(
+      profileId,
+      windowId,
+      change.kind === "tabs" ? change.tabs : [change.repositoryId],
+    );
     if (change.kind === "tabs") {
       current.session.tabs = change.tabs;
       current.session.selectedRepositoryId = change.selectedRepositoryId;
     } else {
-      if (change.kind === "draft") {
-        if (change.draft.message === "" && !change.draft.amend && !change.draft.signOff) {
-          this.db.delete(profileDrafts).where(draftOwner(profileId, change.repositoryId)).run();
-          return;
-        }
-
-        this.db
-          .insert(profileDrafts)
-          .values({
-            profileId,
-            repositoryId: change.repositoryId,
-            value: JSON.stringify(change.draft),
-          })
-          .onConflictDoUpdate({
-            target: [profileDrafts.profileId, profileDrafts.repositoryId],
-            set: { value: JSON.stringify(change.draft) },
-          })
-          .run();
-
-        return;
-      }
-
-      current.session.views[change.repositoryId] = change.view;
+      current.session.views = updateSessionView(current.session.views, change);
       if (!isSession(current.session))
         throw invalid(
           errorText("main.persistence.profileSessionRepository.invalidSavedStateUpdate"),
@@ -148,6 +131,64 @@ export class ProfileSessionRepository {
         set: { value },
       })
       .run();
+  }
+
+  private editableSession(profileId: string, windowId: string, repositoryIds: string[]) {
+    const { snapshot: current, live } = this.readOwnedSession(profileId, windowId);
+
+    if (current.recovery)
+      throw invalid(errorText("errors.operationBlocked", { reason: current.recovery }));
+
+    if (repositoryIds.some((id) => !live.has(id)))
+      throw invalid(
+        errorText(
+          "main.persistence.profileSessionRepository.theRepositoryDoesNotBelongToThisProfile",
+        ),
+      );
+
+    return current;
+  }
+
+  private saveDraft(profileId: string, windowId: string, repositoryId: string, draft: CommitDraft) {
+    const nested = this.db.raw.isTransaction;
+    this.db.transaction(() => {
+      // total_changes sees local writes; data_version sees commits on other connections.
+      const version = this.db.raw.prepare(
+        "SELECT total_changes() || ':' || data_version AS stamp FROM pragma_data_version",
+      );
+      const stamp = version.get()!["stamp"] as string;
+      const last = this.validatedDraft;
+      if (
+        nested ||
+        !last ||
+        last.profileId !== profileId ||
+        last.windowId !== windowId ||
+        last.repositoryId !== repositoryId ||
+        last.stamp !== stamp
+      )
+        this.editableSession(profileId, windowId, [repositoryId]);
+
+      if (!draft.message && !draft.amend && !draft.signOff)
+        this.db.delete(profileDrafts).where(draftOwner(profileId, repositoryId)).run();
+      else {
+        const value = JSON.stringify(draft);
+        this.db
+          .insert(profileDrafts)
+          .values({ profileId, repositoryId, value })
+          .onConflictDoUpdate({
+            target: [profileDrafts.profileId, profileDrafts.repositoryId],
+            set: { value },
+          })
+          .run();
+      }
+      if (!nested)
+        this.validatedDraft = {
+          profileId,
+          windowId,
+          repositoryId,
+          stamp: version.get()!["stamp"] as string,
+        };
+    });
   }
 
   reset(profileId: string, windowId: string): void {

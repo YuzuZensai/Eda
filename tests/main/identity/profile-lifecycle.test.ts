@@ -263,6 +263,25 @@ describe("durable profile sessions", () => {
     },
   );
 
+  it("reuses draft validation only while the saved profile data is current", async () => {
+    const { db, work, store } = await setup();
+    const write = (message: string) =>
+      store.change(work.id, "primary", {
+        kind: "draft",
+        repositoryId: "work-repo",
+        draft: { version: 1, message, amend: false },
+      });
+    write("one");
+    const prepare = vi.spyOn(db.raw, "prepare");
+    write("two");
+    expect(
+      prepare.mock.calls.some(([query]) => /select .*from "profile_drafts"/i.test(query)),
+    ).toBe(false);
+    db.update(profileDrafts).set({ value: "{}" }).run();
+    expect(() => write("three")).toThrow();
+    expect(db.select().from(profileDrafts).get()?.value).toBe("{}");
+  });
+
   it("preserves a damaged draft and keeps valid drafts during recovery", async () => {
     const { db, work, store } = await setup();
 

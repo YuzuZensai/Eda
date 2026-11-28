@@ -1,23 +1,14 @@
 import { errorMessage, type Result } from "@shared/errors";
 import {
   emptyView,
+  sharedLayout,
+  updateSessionView,
   type CommitDraft,
   type RepositoryView,
   type SessionChange,
   type SessionSnapshot,
 } from "@shared/identity/profile-session";
 import { create } from "zustand";
-
-function sharedLayout(
-  view: RepositoryView,
-): Pick<RepositoryView, "maximized" | "collapsed" | "splits" | "references"> {
-  return {
-    maximized: view.maximized,
-    collapsed: view.collapsed,
-    splits: view.splits,
-    references: view.references ?? { hidden: false, locals: true, remotes: true, tags: true },
-  };
-}
 
 interface SessionState {
   snapshot: SessionSnapshot | null;
@@ -33,9 +24,34 @@ interface SessionState {
   reset: () => Promise<boolean>;
 }
 
-const pending: { context: SessionSnapshot["context"]; change: SessionChange }[] = [];
+interface PendingChange {
+  context: SessionSnapshot["context"];
+  change: SessionChange;
+}
+
+const pending: PendingChange[] = [];
 let worker: Promise<boolean> | null = null;
 let loadGeneration = 0;
+
+function replaceRejectedChange(rejected: PendingChange): boolean {
+  const previous = rejected.change;
+  let shareLayout = previous.kind === "view" && previous.shareLayout;
+  for (const next of pending) {
+    if (next === rejected || next.context !== rejected.context) continue;
+    const change = next.change;
+    if (change.kind === "tabs") {
+      if (previous.kind === "tabs") return true;
+      continue;
+    }
+    if (previous.kind === change.kind && previous.repositoryId === change.repositoryId) {
+      // A corrected local view must also persist any outstanding shared layout.
+      if (shareLayout && change.kind === "view") next.change = { ...change, shareLayout: true };
+      return true;
+    }
+    if (change.kind === "view" && change.shareLayout) shareLayout = false;
+  }
+  return false;
+}
 
 async function restoreSession(
   read: () => Promise<Result<SessionSnapshot | null>>,
@@ -93,7 +109,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     } else if (change.kind === "view") {
       next.session = {
         ...snapshot.session,
-        views: { ...snapshot.session.views, [change.repositoryId]: change.view },
+        views: updateSessionView(snapshot.session.views, change),
       };
     } else {
       next.drafts = { ...snapshot.drafts, [change.repositoryId]: change.draft };
@@ -112,20 +128,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       Object.hasOwn(patch, key),
     );
 
-    if (presentationChanged) {
-      const views = get().snapshot?.session.views ?? {};
-
-      for (const [id, existing] of Object.entries(views)) {
-        if (id !== repositoryId)
-          get().change({
-            kind: "view",
-            repositoryId: id,
-            view: { ...existing, ...sharedLayout(view) },
-          });
-      }
-    }
-
-    get().change({ kind: "view", repositoryId, view });
+    get().change({
+      kind: "view",
+      repositoryId,
+      view,
+      ...(presentationChanged && { shareLayout: true }),
+    });
   },
   setDraft(repositoryId, draft) {
     get().change({ kind: "draft", repositoryId, draft });
@@ -142,6 +150,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
             const result = await window.eda.sessions.change(item.context, item.change);
 
             if (!result.ok) {
+              // Each session change carries the full value for its destination.
+              if (result.error.kind === "invalid-input" && replaceRejectedChange(item)) {
+                pending.shift();
+                continue;
+              }
+
               set({ error: errorMessage(result.error) });
               return false;
             }

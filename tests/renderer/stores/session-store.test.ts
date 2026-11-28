@@ -5,6 +5,7 @@ import { err, ok, type Result } from "@shared/errors";
 import {
   emptySession,
   emptyView,
+  isSessionChange,
   type SessionSnapshot,
   type SessionContext,
   type SessionChange,
@@ -21,6 +22,17 @@ const snapshot = (profileId = "work"): SessionSnapshot => ({
 const save = vi.fn<(context: SessionContext, change: SessionChange) => Promise<Result<void>>>(
   async () => ok(undefined),
 );
+
+function validateSaves() {
+  const persisted: SessionChange[] = [];
+  save.mockImplementation(async (_context, change) => {
+    if (!isSessionChange(change))
+      return err(errorFixture({ kind: "invalid-input", message: "Invalid saved state update" }));
+    persisted.push(change);
+    return ok(undefined);
+  });
+  return persisted;
+}
 
 beforeEach(() => {
   save.mockReset().mockResolvedValue(ok(undefined));
@@ -129,6 +141,53 @@ describe("session save acknowledgements", () => {
     expect(useSessionStore.getState().error).toBe("Disk full");
     expect(await store.flush()).toBe(true);
     expect(useSessionStore.getState().error).toBeNull();
+  });
+
+  it("saves a corrected draft and intervening edits after an oversized draft is rejected", async () => {
+    const persisted = validateSaves();
+    const store = useSessionStore.getState();
+    const draft = { version: 1, amend: false } as const;
+    store.setDraft("a", { ...draft, message: "x".repeat(100_001) });
+    expect(await store.flush()).toBe(false);
+    store.setDraft("b", { ...draft, message: "another repository" });
+    expect(await store.flush()).toBe(false);
+    store.setDraft("a", { ...draft, message: "corrected" });
+
+    expect(await store.flush()).toBe(true);
+    expect(persisted).toEqual([
+      { kind: "draft", repositoryId: "b", draft: { ...draft, message: "another repository" } },
+      { kind: "draft", repositoryId: "a", draft: { ...draft, message: "corrected" } },
+    ]);
+    expect(await store.load()).toBe(true);
+  });
+
+  it.each([false, true])(
+    "persists the shared layout when a rejected view is corrected (intervening resize=%s)",
+    async (resize) => {
+      const persisted = validateSaves();
+      const store = useSessionStore.getState();
+      store.setView("a", { maximized: "diff", selection: { kind: "commit", oid: "invalid" } });
+      expect(await store.flush()).toBe(false);
+      if (resize) store.setView("b", { maximized: "graph" });
+      store.setView("a", { selection: null });
+      expect(await store.flush()).toBe(true);
+      const shared = persisted.filter((change) => change.kind === "view" && change.shareLayout);
+      expect(shared).toHaveLength(1);
+      expect(shared[0]).toMatchObject({
+        repositoryId: resize ? "b" : "a",
+        view: { maximized: resize ? "graph" : "diff" },
+      });
+    },
+  );
+
+  it("saves the corrected tab list after the session limit is exceeded", async () => {
+    validateSaves();
+    const store = useSessionStore.getState();
+    const tabs = Array.from({ length: 501 }, (_, index) => String(index));
+    store.change({ kind: "tabs", tabs, selectedRepositoryId: "0" });
+    expect(await store.flush()).toBe(false);
+    store.change({ kind: "tabs", tabs: tabs.slice(1), selectedRepositoryId: "1" });
+    expect(await store.flush()).toBe(true);
   });
 
   it("does not load the next profile when the previous session cannot save", async () => {

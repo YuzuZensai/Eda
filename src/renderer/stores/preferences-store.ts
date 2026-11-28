@@ -8,6 +8,7 @@ import {
   themeForAppearance,
   type BackgroundPreference,
   type ResolvedSetting,
+  type SettingChanged,
   type SettingKey,
   type SettingsContext,
   type SettingScope,
@@ -72,6 +73,7 @@ interface PreferencesState {
   saving: boolean;
   error: GitErrorData | null;
   load: (context: SettingsContext) => Promise<void>;
+  onChange: (change: SettingChanged, refresh: Promise<void>) => void;
 
   set: <K extends SettingKey>(
     key: K,
@@ -127,9 +129,15 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
   let pendingMutations = 0;
   let contextGeneration = 0;
 
+  type PendingWrite = SettingChanged & { refresh?: Promise<void> };
+  const writes = new Set<PendingWrite>();
   const mutate = async (
+    key: SettingKey,
+    scope: SettingScope,
     action: () => ReturnType<typeof window.eda.settings.reset>,
   ): Promise<boolean> => {
+    const write: PendingWrite = { key, scope };
+    writes.add(write);
     const context = get().context;
     const requestContext = contextGeneration;
     const current = () => requestContext === contextGeneration;
@@ -147,7 +155,7 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
         return false;
       }
 
-      await get().load(context);
+      await (write.refresh ?? get().load(context));
 
       return true;
     } catch {
@@ -163,10 +171,57 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
 
       return false;
     } finally {
+      writes.delete(write);
       if (current()) {
         pendingMutations--;
         set({ saving: pendingMutations > 0 });
       }
+    }
+  };
+
+  const load = async (context: SettingsContext) => {
+    const request = ++generation;
+    const previous = get();
+    if (
+      context.profileId !== previous.context.profileId ||
+      context.repositoryId !== previous.context.repositoryId
+    ) {
+      contextGeneration++;
+      pendingMutations = 0;
+      const values = valuesForContext(context, previous.values);
+      set({ context, values, loading: true, saving: false, error: null });
+      apply(values);
+    } else set({ context, loading: true, error: null });
+
+    try {
+      const results = await Promise.all(
+        PREFERENCE_KEYS.map(
+          async (key) => [key, await window.eda.settings.resolve(key, context)] as const,
+        ),
+      );
+
+      if (request !== generation) return;
+
+      const failure = results.find(([, result]) => !result.ok)?.[1];
+
+      if (failure && !failure.ok) {
+        set({ loading: false, error: failure.error });
+        return;
+      }
+
+      const values = Object.fromEntries(
+        results.flatMap(([key, result]) => (result.ok ? [[key, result.value]] : [])),
+      ) as Values;
+
+      set({ values, loading: false });
+      apply(values);
+    } catch {
+      if (request !== generation) return;
+
+      set({
+        loading: false,
+        error: preferenceReadError(),
+      });
     }
   };
 
@@ -176,53 +231,24 @@ export const usePreferencesStore = create<PreferencesState>((set, get) => {
     loading: false,
     saving: false,
     error: null,
-    async load(context) {
-      const request = ++generation;
-      const previous = get();
-      if (
-        context.profileId !== previous.context.profileId ||
-        context.repositoryId !== previous.context.repositoryId
-      ) {
-        contextGeneration++;
-        pendingMutations = 0;
-        const values = valuesForContext(context, previous.values);
-        set({ context, values, loading: true, saving: false, error: null });
-        apply(values);
-      } else set({ context, loading: true, error: null });
-
-      try {
-        const results = await Promise.all(
-          PREFERENCE_KEYS.map(
-            async (key) => [key, await window.eda.settings.resolve(key, context)] as const,
-          ),
-        );
-
-        if (request !== generation) return;
-
-        const failure = results.find(([, result]) => !result.ok)?.[1];
-
-        if (failure && !failure.ok) {
-          set({ loading: false, error: failure.error });
-          return;
-        }
-
-        const values = Object.fromEntries(
-          results.flatMap(([key, result]) => (result.ok ? [[key, result.value]] : [])),
-        ) as Values;
-
-        set({ values, loading: false });
-        apply(values);
-      } catch {
-        if (request !== generation) return;
-
-        set({
-          loading: false,
-          error: preferenceReadError(),
-        });
+    load,
+    onChange(change, refresh) {
+      for (const write of writes) {
+        const scope = write.scope;
+        if (
+          write.key === change.key &&
+          scope.kind === change.scope.kind &&
+          (change.scope.kind === "application" ||
+            ("profileId" in scope && scope.profileId === change.scope.profileId)) &&
+          (change.scope.kind !== "repository" ||
+            ("repositoryId" in scope && scope.repositoryId === change.scope.repositoryId))
+        )
+          write.refresh = refresh;
       }
     },
-    set: (key, scope, value) => mutate(() => window.eda.settings.set(key, scope, value)),
-    reset: (key, scope) => mutate(() => window.eda.settings.reset(key, scope)),
+    set: (key, scope, value) =>
+      mutate(key, scope, () => window.eda.settings.set(key, scope, value)),
+    reset: (key, scope) => mutate(key, scope, () => window.eda.settings.reset(key, scope)),
   };
 });
 
