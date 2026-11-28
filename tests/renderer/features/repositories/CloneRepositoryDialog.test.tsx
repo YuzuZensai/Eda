@@ -1,3 +1,4 @@
+import { fillInput } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { deferred } from "../../../helpers/deferred";
@@ -96,13 +97,6 @@ const button = (text: string) =>
     item.textContent?.includes(text),
   )!;
 
-async function fill(input: HTMLInputElement, value: string) {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
 it("uses the profile repository root for cloning and allows a different destination for one clone", async () => {
   await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
   expect(field("Clone parent folder").value).toBe("/default-repos");
@@ -115,7 +109,7 @@ it("uses the profile repository root for cloning and allows a different destinat
     expect.objectContaining({ parent: "/default-repos", name: "eda" }),
   );
 
-  await fill(field("Clone parent folder"), "/another-folder");
+  await fillInput(field("Clone parent folder"), "/another-folder");
   await act(async () => button("Clone repository").click());
   expect(clone).toHaveBeenLastCalledWith(expect.objectContaining({ parent: "/another-folder" }));
 });
@@ -146,8 +140,8 @@ it.each(["/custom-repos", ""])(
     );
 
     await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
-    await fill(field("Clone parent folder"), "/typed-first");
-    await fill(field("Clone parent folder"), destination);
+    await fillInput(field("Clone parent folder"), "/typed-first");
+    await fillInput(field("Clone parent folder"), destination);
     await act(async () =>
       finish(ok({ ...builtInSetting("repositoryRoot"), value: "/default-repos" })),
     );
@@ -186,7 +180,7 @@ it("uses a connected account, filters repositories, suggests the folder and clon
   await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
   expect(document.querySelector('[role="combobox"]')?.textContent).toContain("GitHub");
   expect(document.body.textContent).not.toContain("Cloning into");
-  await fill(field("Search repositories…"), "eda");
+  await fillInput(field("Search repositories…"), "eda");
   expect(document.body.textContent).not.toContain("team/website");
   await act(async () => button("team/eda").click());
   expect(field("Clone folder name").value).toBe("eda");
@@ -222,12 +216,12 @@ it("keeps a URL being entered while connection checks finish and preserves an ed
   );
 
   await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
-  await fill(field("Repository URL"), "git@github.com:team/eda.git");
+  await fillInput(field("Repository URL"), "git@github.com:team/eda.git");
   expect(field("Clone folder name").value).toBe("eda");
-  await fill(field("Clone folder name"), "custom-name");
+  await fillInput(field("Clone folder name"), "custom-name");
   await act(async () => finish(ok(connected)));
   expect(field("Repository URL").value).toBe("git@github.com:team/eda.git");
-  await fill(field("Repository URL"), "/local/website.git/");
+  await fillInput(field("Repository URL"), "/local/website.git/");
   expect(field("Clone folder name").value).toBe("custom-name");
   expect(window.eda.github.repositories).not.toHaveBeenCalled();
 });
@@ -278,7 +272,7 @@ it("combines name sorting, visibility filters and search without losing the sele
   expect(rows()).toHaveLength(1);
   expect(rows()[0]!.getAttribute("aria-pressed")).toBe("true");
   expect(document.body.textContent).toContain("1 of 2 loaded");
-  await fill(field("Search repositories…"), "no-match");
+  await fillInput(field("Search repositories…"), "no-match");
   expect(rows()).toHaveLength(0);
   expect(document.body.textContent).toContain("No matching repositories");
   expect(field("Clone folder name").value).toBe("eda");
@@ -417,7 +411,7 @@ it("shows only compact cloning controls without logs or a repeated destination",
   );
   await act(async () => root.render(<CloneRepositoryDialog onClose={onClose} />));
   await act(async () => button("team/eda").click());
-  await fill(field("Clone parent folder"), "/repos");
+  await fillInput(field("Clone parent folder"), "/repos");
   await act(async () => button("Clone repository").click());
   expect(field("Clone parent folder").disabled).toBe(true);
   expect(document.body.textContent).toContain("Cloning");

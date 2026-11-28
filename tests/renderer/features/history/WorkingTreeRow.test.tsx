@@ -1,3 +1,4 @@
+import { fillInput } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ok } from "@shared/errors";
@@ -179,21 +180,28 @@ it("shows green added counts for untracked and staged new files without double-c
   expect(other.textContent).toBe("1+");
 });
 
-it("shows only a green added count when all working files are new", async () => {
-  await act(async () =>
-    useRepositoryStore.setState({
-      status: {
-        ...status,
-        changes: [
-          { kind: "untracked", path: "new.txt", index: "?", worktree: "?", submodule: "N..." },
-        ],
-      },
-    }),
-  );
-
-  expect(workingRow()!.querySelector('[title="Added"]')!.textContent).toBe("1");
-  expect(workingRow()!.querySelector(".text-git-modified")).toBeNull();
-});
+it.each([
+  [
+    "Added",
+    "Deleted",
+    { kind: "untracked", path: "new.txt", index: "?", worktree: "?", submodule: "N..." },
+  ],
+  [
+    "Deleted",
+    "Added",
+    { kind: "ordinary", path: "deleted.txt", index: ".", worktree: "D", submodule: "N..." },
+  ],
+] as const)(
+  "shows only the %s count for a matching working-tree change",
+  async (label, other, change) => {
+    await act(async () =>
+      useRepositoryStore.setState({ status: { ...status, changes: [change] } }),
+    );
+    expect(workingRow()!.querySelector(`[title="${label}"]`)!.textContent).toBe("1");
+    expect(workingRow()!.querySelector(`[title="${other}"]`)).toBeNull();
+    expect(workingRow()!.querySelector(".text-git-modified")).toBeNull();
+  },
+);
 
 it("counts conflicts separately from added, modified and deleted files and exposes them on the WIP row", async () => {
   await act(async () =>
@@ -232,23 +240,6 @@ it("counts conflicts separately from added, modified and deleted files and expos
 
   await act(async () => useRepositoryStore.setState({ truncatedChanges: true }));
   expect(deleted.textContent).toBe("3+");
-});
-
-it("shows only a red deletion count when all working files are deleted", async () => {
-  await act(async () =>
-    useRepositoryStore.setState({
-      status: {
-        ...status,
-        changes: [
-          { kind: "ordinary", path: "deleted.txt", index: ".", worktree: "D", submodule: "N..." },
-        ],
-      },
-    }),
-  );
-
-  expect(workingRow()!.querySelector('[title="Deleted"]')!.textContent).toBe("1");
-  expect(workingRow()!.querySelector('[title="Added"]')).toBeNull();
-  expect(workingRow()!.querySelector(".text-git-modified")).toBeNull();
 });
 
 it("opens working changes and reveals their panel when the graph is maximized", async () => {
@@ -349,13 +340,6 @@ it("keeps pagination offsets in commit units while reserving one virtual working
   expect(loadPrevious).toHaveBeenCalled();
 });
 
-async function typeTitle(input: HTMLInputElement, value: string) {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
 it("edits the same saved commit title from the graph and commit section, preserving prefixes, body and options", async () => {
   await act(async () => {
     usePreferencesStore.setState({
@@ -390,7 +374,7 @@ it("edits the same saved commit title from the graph and commit section, preserv
   expect(commitTitle().value).toBe("Original title");
   await act(async () => titleInput().focus());
   expect(useRepositoryStore.getState().selection).toBeNull();
-  await typeTitle(titleInput(), "fix(core): Title from graph");
+  await fillInput(titleInput(), "fix(core): Title from graph");
   expect(commitTitle().value).toBe("Title from graph");
   expect(description().value).toBe("Keep this description\n");
   expect(useSessionStore.getState().snapshot?.drafts["repo"]).toEqual({
@@ -400,7 +384,7 @@ it("edits the same saved commit title from the graph and commit section, preserv
     signOff: true,
   });
 
-  await typeTitle(commitTitle(), "Title from commit section");
+  await fillInput(commitTitle(), "Title from commit section");
   expect(titleInput().value).toBe("fix(core): Title from commit section");
   await act(async () =>
     titleInput().dispatchEvent(
@@ -486,7 +470,7 @@ it("keeps drafts isolated between repositories and profiles and disables edits d
       .change({ kind: "tabs", tabs: ["repo", "other"], selectedRepositoryId: "other" }),
   );
   expect(titleInput().value).toBe("");
-  await typeTitle(titleInput(), "Other repository draft");
+  await fillInput(titleInput(), "Other repository draft");
   expect(useSessionStore.getState().snapshot?.drafts["other"]?.message).toBe(
     "Other repository draft",
   );

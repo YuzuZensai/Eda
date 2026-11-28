@@ -1,3 +1,4 @@
+import { fillInput } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ok, type Result } from "@shared/errors";
@@ -146,13 +147,8 @@ it("accepts typed revisions when the reference list is unavailable and clears th
   await act(async () => root.render(<RevisionComparison repositoryId="repo" onBack={vi.fn()} />));
 
   const from = container.querySelector<HTMLInputElement>("input")!;
-  const typeRevision = async (value: string) =>
-    act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(from, value);
-      from.dispatchEvent(new Event("input", { bubbles: true }));
-    });
 
-  await typeRevision("refs/tags/release");
+  await fillInput(from, "refs/tags/release");
   await click("Compare");
   expect(compareRevisions).toHaveBeenLastCalledWith({
     repositoryId: "repo",
@@ -162,7 +158,7 @@ it("accepts typed revisions when the reference list is unavailable and clears th
   });
   expect(container.textContent).toContain("No changed files");
 
-  await typeRevision(left);
+  await fillInput(from, left);
   expect(container.textContent).not.toContain("No changed files");
   expect(container.textContent).toContain("Choose two revisions to compare");
   await click("Compare");

@@ -1,3 +1,4 @@
+import { fillInput, setInputValue } from "../../../helpers/form-controls";
 import { errorFixture } from "../../../helpers/error";
 import { ok, type Result } from "@shared/errors";
 import { deferred } from "../../../helpers/deferred";
@@ -135,11 +136,7 @@ it.each([
   await act(async () => {
     if (scenario === "edit" || scenario === "edit then error") {
       const field = container.querySelector<HTMLInputElement>('[aria-label="Commit title"]')!;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        field,
-        "Edited while loading",
-      );
-      field.dispatchEvent(new Event("input", { bubbles: true }));
+      setInputValue(field, "Edited while loading");
     } else if (scenario === "cancel") checkbox.click();
     else if (scenario === "repository") {
       useRepositoryStore.setState({ repositoryId: "other" });
@@ -225,20 +222,13 @@ it("applies a chosen prefix to the draft while preserving scope, breaking marker
 
   expect(title.value).toBe("change API");
 
-  const input = async (field: HTMLInputElement, value: string) => {
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
-      field.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-  };
-
   const picker = container.querySelector<HTMLButtonElement>('[aria-label="Commit prefix"]')!;
 
   await act(async () => picker.click());
 
   const search = document.querySelector<HTMLInputElement>('[aria-label="Search commit prefixes"]')!;
 
-  await input(search, "rep");
+  await fillInput(search, "rep");
   expect(document.querySelector('[data-eda-select-value="feat"]')).toBeNull();
   expect(document.querySelector('[data-eda-select-value=""]')?.textContent).toContain("No prefix");
 
@@ -266,14 +256,14 @@ it("applies a chosen prefix to the draft while preserving scope, breaking marker
     "change API\n\nDetails",
   );
 
-  await input(title, "feat: manually typed");
+  await fillInput(title, "feat: manually typed");
   expect(title.value).toBe("manually typed");
   expect(picker.textContent).toContain("feat:");
   expect(useSessionStore.getState().snapshot?.drafts["repo"]?.message).toBe(
     "feat: manually typed\n\nDetails",
   );
 
-  await input(title, "edited subject");
+  await fillInput(title, "edited subject");
   expect(useSessionStore.getState().snapshot?.drafts["repo"]?.message).toBe(
     "feat: edited subject\n\nDetails",
   );
@@ -286,7 +276,7 @@ it("applies a chosen prefix to the draft while preserving scope, breaking marker
       },
     }),
   );
-  await input(title, "fix: emoji subject");
+  await fillInput(title, "fix: emoji subject");
   expect(title.value).toBe("emoji subject");
   expect(picker.textContent).toContain("🐛 fix:");
   expect(useSessionStore.getState().snapshot?.drafts["repo"]?.message).toBe(

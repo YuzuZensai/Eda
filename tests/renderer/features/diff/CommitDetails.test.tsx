@@ -1,3 +1,4 @@
+import { setInputValue } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ok, type Result } from "@shared/errors";
@@ -195,12 +196,7 @@ it("rechecks trust without clearing the file filter and ignores a response for t
     const filter = container.querySelector<HTMLInputElement>('[aria-label="Filter commit files"]')!;
 
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        filter,
-        "keep-filter",
-      );
-
-      filter.dispatchEvent(new Event("input", { bubbles: true }));
+      setInputValue(filter, "keep-filter");
       container.querySelector<HTMLButtonElement>("button[aria-controls]")!.click();
     });
 

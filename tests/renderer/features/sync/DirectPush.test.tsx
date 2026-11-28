@@ -1,3 +1,4 @@
+import { fillInput } from "../../../helpers/form-controls";
 import { errorFixture } from "../../../helpers/error";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -243,15 +244,8 @@ it.each([
 
     const fields = dialog!.querySelectorAll("input");
     const values = ["manual-user", "manual-token"];
-    for (const [index, field] of fields.entries()) {
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-          field,
-          values[index],
-        );
-        field.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-    }
+    expect(fields).toHaveLength(values.length);
+    for (const [index, value] of values.entries()) await fillInput(fields.item(index), value);
 
     const retry = [...dialog!.querySelectorAll("button")].find(
       (item) => item.textContent === "Retry push",

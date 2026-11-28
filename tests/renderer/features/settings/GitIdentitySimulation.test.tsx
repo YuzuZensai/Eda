@@ -1,3 +1,4 @@
+import { chooseOption } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { GlobalGitWarning } from "@renderer/features/profiles/GlobalGitWarning";
@@ -71,22 +72,6 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function choose(label: string) {
-  await act(async () =>
-    container
-      .querySelector<HTMLElement>('[aria-label="Git identity state"]')!
-      .dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
-  );
-
-  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (item) => item.textContent === label,
-  )!;
-
-  expect(option).toBeDefined();
-
-  await act(async () => option.click());
-}
-
 async function click(label: string) {
   const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (item) => item.getAttribute("aria-label") === label || item.textContent === label,
@@ -113,7 +98,10 @@ async function renderSettings() {
 
 it("uses the actual warning and comparison dialog while simulating repair without Git IPC", async () => {
   await renderSettings();
-  await choose("Commit identity mismatch");
+  await chooseOption(
+    container.querySelector<HTMLElement>('[aria-label="Git identity state"]')!,
+    "Commit identity mismatch",
+  );
 
   expect(container.textContent).toContain("Global Git settings differ from Work");
   expect(container.querySelectorAll("aside")).toHaveLength(1);
@@ -138,7 +126,10 @@ it("uses the actual warning and comparison dialog while simulating repair withou
   expect(inspect).not.toHaveBeenCalled();
   expect(apply).not.toHaveBeenCalled();
 
-  await choose("Use live status");
+  await chooseOption(
+    container.querySelector<HTMLElement>('[aria-label="Git identity state"]')!,
+    "Use live status",
+  );
 
   expect(useSimulationStore.getState().gitIdentity).toBeNull();
   expect(container.querySelector("aside")).toBeNull();
@@ -146,7 +137,10 @@ it("uses the actual warning and comparison dialog while simulating repair withou
 
 it("simulates repair failure, follows the active profile, and cancels queued simulated actions on reset", async () => {
   await renderSettings();
-  await choose("Identity mismatch with repair failure");
+  await chooseOption(
+    container.querySelector<HTMLElement>('[aria-label="Git identity state"]')!,
+    "Identity mismatch with repair failure",
+  );
   await click("Review global Git settings");
   await click("Apply profile globally");
 

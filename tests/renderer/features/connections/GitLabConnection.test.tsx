@@ -1,3 +1,4 @@
+import { checkConnectionStatusRetry } from "../../../helpers/connection-status";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { deferred } from "../../../helpers/deferred";
@@ -248,12 +249,11 @@ it.each(["rejected", "reported"])(
     if (failure === "rejected") gitlab.status.mockRejectedValueOnce(new Error("offline"));
     else gitlab.status.mockResolvedValueOnce(err(errorFixture({ message: "offline" })));
 
-    await act(async () => root.render(<GitLabConnection profileId="work" />));
-    expect(container.querySelector('[role="alert"]')).not.toBeNull();
-    expect(container.querySelector(".ui-skeleton")).toBeNull();
-
-    await act(async () => button("Retry").click());
-    expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(button("Sign in with GitLab")?.disabled).toBe(false);
+    await checkConnectionStatusRetry(
+      () => root.render(<GitLabConnection profileId="work" />),
+      container,
+      button,
+      "Sign in with GitLab",
+    );
   },
 );

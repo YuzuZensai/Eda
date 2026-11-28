@@ -1,3 +1,4 @@
+import { chooseOption, fillInput } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { StateSimulations } from "@renderer/features/settings/debug/StateSimulations";
@@ -70,21 +71,8 @@ it("previews update banners and actions throughout the app, then restores the la
 
     await act(async () => button!.click());
   };
-  const choose = async (label: string, control = "Update state") => {
-    await act(async () => {
-      debug()
-        .querySelector<HTMLElement>(`[aria-label="${control}"]`)!
-        .dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-    });
-
-    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-      (item) => item.textContent === label,
-    );
-
-    expect(option, label).toBeDefined();
-
-    await act(async () => option!.click());
-  };
+  const choose = (label: string, control = "Update state") =>
+    chooseOption(debug().querySelector<HTMLElement>(`[aria-label="${control}"]`)!, label);
 
   try {
     await act(async () =>
@@ -133,10 +121,7 @@ it("previews update banners and actions throughout the app, then restores the la
 
     const slider = debug().querySelector<HTMLInputElement>('input[type="range"]')!;
 
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(slider, "75");
-      slider.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    await fillInput(slider, "75");
 
     expect(about().querySelector("progress")?.value).toBe(75);
 

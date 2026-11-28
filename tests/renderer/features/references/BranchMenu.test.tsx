@@ -1,3 +1,4 @@
+import { fillInput } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { deferred } from "../../../helpers/deferred";
@@ -102,14 +103,7 @@ it("keeps keyboard checkout within rendered branches and opens repository settin
     );
     input = document.querySelector<HTMLInputElement>("input")!;
 
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        input,
-        "branch-204",
-      );
-
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    await fillInput(input, "branch-204");
 
     expect(document.querySelectorAll("li.group\\/branch")).toHaveLength(1);
 

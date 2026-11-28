@@ -1,3 +1,4 @@
+import { fillInput } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { builtInSetting } from "@shared/preferences/settings";
@@ -32,18 +33,6 @@ const input = (label: string) => {
   )!;
   return container.querySelector<HTMLInputElement>(`#${CSS.escape(element.htmlFor)}`)!;
 };
-
-async function fill(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(
-      element instanceof HTMLTextAreaElement
-        ? HTMLTextAreaElement.prototype
-        : HTMLInputElement.prototype,
-      "value",
-    )!.set!.call(element, value);
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
 
 async function click(text: string) {
   await act(async () => button(text).click());
@@ -110,7 +99,7 @@ it("imports an editable first-name suggestion, retains inputs across steps, and 
   expect(input("Profile name").value).toBe("Eda");
   expect(input("Git author name").value).toBe("Eda   Example");
 
-  await fill(input("Profile name"), "Personal");
+  await fillInput(input("Profile name"), "Personal");
   expect(input("Profile name").value).toBe("Personal");
 
   await act(async () =>
@@ -137,12 +126,12 @@ it("imports an editable first-name suggestion, retains inputs across steps, and 
   )!;
   const hex = picker.querySelector<HTMLInputElement>("input:not([type])")!;
 
-  await fill(hex, "#bad");
+  await fillInput(hex, "#bad");
   expect(hex.getAttribute("aria-invalid")).toBe("true");
 
   const color = picker.querySelector<HTMLInputElement>('input[type="color"]')!;
 
-  await fill(color, "#c46c9e");
+  await fillInput(color, "#c46c9e");
   await act(async () => color.dispatchEvent(new Event("change", { bubbles: true })));
   await act(async () =>
     hex.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
@@ -264,9 +253,9 @@ it("preserves user edits when Git details arrive late", async () => {
   );
   await act(async () => root.render(<FirstRun />));
   await click("Get started");
-  await fill(input("Profile name"), "Work");
-  await fill(input("Git author name"), "A");
-  await fill(input("Git author name"), "");
+  await fillInput(input("Profile name"), "Work");
+  await fillInput(input("Git author name"), "A");
+  await fillInput(input("Git author name"), "");
   await act(async () =>
     complete({ ok: true, value: { name: "Eda Example", email: "eda@example.com" } }),
   );

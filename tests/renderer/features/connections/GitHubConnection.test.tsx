@@ -1,3 +1,4 @@
+import { checkConnectionStatusRetry } from "../../../helpers/connection-status";
 import { errorFixture } from "../../../helpers/error";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -315,12 +316,11 @@ it.each(["rejected", "reported"])(
     if (failure === "rejected") github.status.mockRejectedValueOnce(new Error("offline"));
     else github.status.mockResolvedValueOnce(err(errorFixture({ message: "offline" })));
 
-    await act(async () => root.render(<GitHubConnection profileId="work" />));
-    expect(container.querySelector('[role="alert"]')).not.toBeNull();
-    expect(container.querySelector(".ui-skeleton")).toBeNull();
-
-    await act(async () => button("Retry").click());
-    expect(container.querySelector('[role="alert"]')).toBeNull();
-    expect(button("Sign in with GitHub")?.disabled).toBe(false);
+    await checkConnectionStatusRetry(
+      () => root.render(<GitHubConnection profileId="work" />),
+      container,
+      button,
+      "Sign in with GitHub",
+    );
   },
 );

@@ -1,3 +1,4 @@
+import { fillInput } from "../../helpers/form-controls";
 import { errorFixture } from "../../helpers/error";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -291,13 +292,7 @@ it("preserves a rebase draft through a failed refresh and requires acceptance of
     );
     const message = document.querySelector<HTMLInputElement>('[aria-label="Commit title"]')!;
     const confirm = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        message,
-        "My draft",
-      );
-      message.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    await fillInput(message, "My draft");
     await act(async () => confirm.click());
     await act(async () => button("Review current state").click());
     expect(message.value).toBe("My draft");
@@ -401,13 +396,7 @@ it.each([0, 1])(
       if (confirm) await act(async () => confirm.click());
       expect(save.disabled).toBe(false);
 
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-          title,
-          "Updated",
-        );
-        title.dispatchEvent(new Event("input", { bubbles: true }));
-      });
+      await fillInput(title, "Updated");
       expect(save.disabled).toBe(publishedCommits > 0);
       if (confirm) await act(async () => confirm.click());
 

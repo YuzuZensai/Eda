@@ -1,3 +1,4 @@
+import { fillInput } from "../../../helpers/form-controls";
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Select } from "@renderer/components/ui/forms/FormControls";
@@ -115,14 +116,7 @@ it("does not let an old slider failure replace a newer value or interaction", as
     act(async () => root.render(<RangeField label="Opacity" value={value} onCommit={onCommit} />));
   await render(20);
   const slider = container.querySelector<HTMLInputElement>('input[type="range"]')!;
-  const change = async (value: number) =>
-    act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        slider,
-        String(value),
-      );
-      slider.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+  const change = async (value: number) => fillInput(slider, String(value));
   const commit = async () =>
     act(async () => {
       slider.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowRight", bubbles: true }));

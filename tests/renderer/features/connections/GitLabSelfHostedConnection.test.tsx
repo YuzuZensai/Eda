@@ -1,3 +1,4 @@
+import { fillInput } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ok } from "@shared/errors";
@@ -141,17 +142,10 @@ it("uses the username when profile loading fails and rejects details from a diff
   expect(container.querySelector(".ui-skeleton")).toBeNull();
 });
 
-async function fill(input: HTMLInputElement, value: string) {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
 async function startSetup() {
   await act(async () => root.render(<GitLabSelfHostedConnection profileId="work" />));
   await act(async () => button("Connect instance").click());
-  await fill(urlInput(), base);
+  await fillInput(urlInput(), base);
   await act(async () => button("Next").click());
 }
 
@@ -180,7 +174,7 @@ it("keeps every setup step inside the provider card without opening a dialog", a
   expect(button("Next").disabled).toBe(true);
   expect(tokenInput()).toBeNull();
 
-  await fill(urlInput(), base);
+  await fillInput(urlInput(), base);
   await act(async () => button("Next").click());
 
   expect(urlInput()).toBeNull();
@@ -196,7 +190,7 @@ it("keeps every setup step inside the provider card without opening a dialog", a
   expect(card.contains(tokenInput())).toBe(true);
   expect(document.querySelector('[role="dialog"]')).toBeNull();
 
-  await fill(tokenInput(), "private-token");
+  await fillInput(tokenInput(), "private-token");
   await act(async () => button("Connect").click());
 
   expect(api.connect).toHaveBeenCalledWith("work", base, "private-token", false);
@@ -211,7 +205,7 @@ it.each([
   ["For older GitLab versions", "older"],
 ])("opens %s without hiding or clearing the token field", async (label, form) => {
   await startSetup();
-  await fill(tokenInput(), "private-token");
+  await fillInput(tokenInput(), "private-token");
   const input = tokenInput();
 
   await act(async () => button(label).click());
@@ -223,7 +217,7 @@ it.each([
 
 it("clears the secret after failure and when navigating back to change the server", async () => {
   await startSetup();
-  await fill(tokenInput(), "private-token");
+  await fillInput(tokenInput(), "private-token");
 
   api.connect.mockResolvedValueOnce({
     ok: false,
@@ -235,12 +229,12 @@ it("clears the secret after failure and when navigating back to change the serve
   expect(tokenInput().value).toBe("");
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("Connection failed");
 
-  await fill(tokenInput(), "replacement-token");
+  await fillInput(tokenInput(), "replacement-token");
   await act(async () => button("Back").click());
 
   expect(urlInput().value).toBe(base);
 
-  await fill(urlInput(), "https://another.test");
+  await fillInput(urlInput(), "https://another.test");
   await act(async () => button("Next").click());
 
   expect(tokenInput().value).toBe("");
@@ -283,7 +277,7 @@ it("lets users opt into ignoring TLS errors and restores the saved choice when e
   const checkbox = () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
   expect(checkbox().checked).toBe(false);
   await act(async () => checkbox().click());
-  await fill(tokenInput(), "private-token");
+  await fillInput(tokenInput(), "private-token");
 
   api.connect.mockResolvedValueOnce(
     ok({ secureStorage: true, accounts: [{ ...account, ignoreTlsErrors: true }] }),
@@ -296,7 +290,7 @@ it("lets users opt into ignoring TLS errors and restores the saved choice when e
   await act(async () => button("Update token").click());
   expect(checkbox().checked).toBe(true);
   await act(async () => button("Back").click());
-  await fill(urlInput(), "https://other.company.test");
+  await fillInput(urlInput(), "https://other.company.test");
   expect(checkbox().checked).toBe(false);
 });
 
@@ -310,7 +304,7 @@ it("cancels a pending connection when setup closes and ignores its late response
   );
 
   await startSetup();
-  await fill(tokenInput(), "private-token");
+  await fillInput(tokenInput(), "private-token");
   await act(async () => button("Connect").click());
   expect(container.querySelector('[role="status"] .animate-spin-fast')).not.toBeNull();
   await act(async () => button("Cancel").click());
@@ -326,7 +320,7 @@ it("cancels a pending connection when setup closes and ignores its late response
 it("cancels a pending connection when its profile view unmounts", async () => {
   api.connect.mockReturnValueOnce(new Promise(() => {}));
   await startSetup();
-  await fill(tokenInput(), "private-token");
+  await fillInput(tokenInput(), "private-token");
   await act(async () => button("Connect").click());
   await act(async () => root.render(null));
 
@@ -341,9 +335,9 @@ it("allows setup with locked storage but blocks saving and explains how to unloc
   expect(button("Connect instance").disabled).toBe(false);
 
   await act(async () => button("Connect instance").click());
-  await fill(urlInput(), base);
+  await fillInput(urlInput(), base);
   await act(async () => button("Next").click());
-  await fill(tokenInput(), "private-token");
+  await fillInput(tokenInput(), "private-token");
 
   expect(button("Connect").disabled).toBe(true);
   expect(document.body.textContent).toContain("OS keychain");
@@ -362,7 +356,7 @@ it("handles Enter inside onboarding without submitting the outer form", async ()
   );
 
   await act(async () => button("Connect instance").click());
-  await fill(urlInput(), base);
+  await fillInput(urlInput(), base);
 
   await act(async () =>
     urlInput().dispatchEvent(

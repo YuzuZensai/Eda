@@ -1,3 +1,4 @@
+import { fillInput } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { err, ok } from "@shared/errors";
@@ -47,11 +48,7 @@ const open = async (repositoryId = "repo") => {
 };
 const search = async (query: string) => {
   const input = document.querySelector<HTMLInputElement>('[aria-label="Search name or email"]')!;
-  await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-    setter.call(input, query);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await fillInput(input, query);
 };
 const sortBy = async (value: string) => {
   const trigger = document.querySelector<HTMLElement>('[aria-label="Sort contributors by"]')!;

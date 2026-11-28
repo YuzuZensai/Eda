@@ -1,3 +1,4 @@
+import { fillInput } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { err, ok } from "@shared/errors";
@@ -81,13 +82,7 @@ it("gates debug navigation, search, and direct selection behind developer settin
     }
 
     const search = container.querySelector<HTMLInputElement>('[aria-label="Search settings"]')!;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        search,
-        "resilience",
-      );
-      search.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    await fillInput(search, "resilience");
     expect(container.querySelector("[aria-controls='settings-debug-failures']")).toBeNull();
     expect(container.textContent).toContain("No settings match");
 

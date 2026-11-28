@@ -1,3 +1,4 @@
+import { fillInput, setInputValue } from "../../../helpers/form-controls";
 import { deferred } from "../../../helpers/deferred";
 import { errorFixture } from "../../../helpers/error";
 import { act } from "react";
@@ -658,12 +659,7 @@ it("retries HTTPS remote deletion with supplied credentials without deleting loc
     const fields = [...document.querySelectorAll<HTMLInputElement>('input:not([type="radio"])')];
 
     for (const [index, field] of fields.entries()) {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        field,
-        index === 0 ? "user" : "token",
-      );
-
-      field.dispatchEvent(new Event("input", { bubbles: true }));
+      setInputValue(field, index === 0 ? "user" : "token");
     }
   });
 
@@ -918,11 +914,7 @@ it("requests credentials only after tag push authentication fails and retries th
 
   await act(async () => {
     for (const [index, field] of [...dialog.querySelectorAll("input")].entries()) {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        field,
-        index === 0 ? "user" : "token",
-      );
-      field.dispatchEvent(new Event("input", { bubbles: true }));
+      setInputValue(field, index === 0 ? "user" : "token");
     }
   });
   await click("Retry push");
@@ -1020,11 +1012,7 @@ it("retries fetching the same remote-only tag after HTTPS authentication", async
   const dialog = document.querySelector('[role="dialog"]')!;
   await act(async () => {
     for (const [index, field] of [...dialog.querySelectorAll("input")].entries()) {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-        field,
-        index === 0 ? "user" : "token",
-      );
-      field.dispatchEvent(new Event("input", { bubbles: true }));
+      setInputValue(field, index === 0 ? "user" : "token");
     }
   });
   await click("Retry fetch");
@@ -1230,13 +1218,7 @@ it("finds a tag outside the displayed rows without rebuilding unchanged tag meta
   const field = container.querySelector<HTMLInputElement>(
     '[aria-label="Filter branches and tags"]',
   )!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-      field,
-      "release-0",
-    );
-    field.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await fillInput(field, "release-0");
 
   expect(container.querySelector(target)?.textContent).toBe("release-0Local");
   expect(metadataReads).toBe(0);

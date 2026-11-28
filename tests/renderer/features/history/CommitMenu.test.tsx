@@ -1,3 +1,4 @@
+import { fillInput } from "../../../helpers/form-controls";
 import { CommitMenu } from "@renderer/features/history/CommitMenu";
 import { useAppStore } from "@renderer/stores/app-store";
 import { useRepositoryStore } from "@renderer/stores/repository-store";
@@ -59,13 +60,6 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function fill(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")!.set!.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
 it("uses the same signed-tag validation for Enter and clicks and ignores repeated submissions", async () => {
   let finish!: () => void;
 
@@ -96,7 +90,7 @@ it("uses the same signed-tag validation for Enter and clicks and ignores repeate
   const enter = () =>
     name.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
 
-  await fill(name, "release");
+  await fillInput(name, "release");
 
   await act(async () =>
     document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
@@ -111,7 +105,7 @@ it("uses the same signed-tag validation for Enter and clicks and ignores repeate
 
   expect(createTag).not.toHaveBeenCalled();
 
-  await fill(message, "Release annotation");
+  await fillInput(message, "Release annotation");
   expect(button.disabled).toBe(false);
 
   await act(async () => {

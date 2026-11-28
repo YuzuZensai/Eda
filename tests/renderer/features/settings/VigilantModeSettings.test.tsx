@@ -1,3 +1,4 @@
+import { chooseOption } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { err, ok } from "@shared/errors";
@@ -90,19 +91,6 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function choose(label: string) {
-  await act(async () =>
-    container
-      .querySelector<HTMLElement>('[role="combobox"]')!
-      .dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
-  );
-  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-    (item) => item.textContent === label,
-  )!;
-  expect(option).toBeDefined();
-  await act(async () => option.click());
-}
-
 it("edits the global default independently of an active profile override and retains it after a failed save", async () => {
   profileValue = true;
   await act(async () => root.render(<VigilantModeSettings />));
@@ -124,7 +112,7 @@ it("lets a profile override either global value or return to following global", 
   await act(async () => root.render(<VigilantModeSettings owner="profile" />));
   const select = container.querySelector('[role="combobox"]')!;
   expect(select.textContent).toBe("Follow global");
-  await choose("Off");
+  await chooseOption(container.querySelector<HTMLElement>('[role="combobox"]')!, "Off");
   expect(save).toHaveBeenLastCalledWith(
     "vigilantMode",
     { kind: "profile", profileId: "work" },
@@ -134,17 +122,17 @@ it("lets a profile override either global value or return to following global", 
   expect(usePreferencesStore.getState().values.vigilantMode.value).toBe(false);
 
   reset.mockResolvedValueOnce(err(errorFixture({ message: "Reset failed" })));
-  await choose("Follow global");
+  await chooseOption(container.querySelector<HTMLElement>('[role="combobox"]')!, "Follow global");
   expect(select.textContent).toBe("Off");
-  await choose("Follow global");
+  await chooseOption(container.querySelector<HTMLElement>('[role="combobox"]')!, "Follow global");
   expect(reset).toHaveBeenLastCalledWith("vigilantMode", { kind: "profile", profileId: "work" });
   expect(select.textContent).toBe("Follow global");
   expect(usePreferencesStore.getState().values.vigilantMode.value).toBe(true);
 
   globalValue = false;
-  await choose("On");
+  await chooseOption(container.querySelector<HTMLElement>('[role="combobox"]')!, "On");
   expect(select.textContent).toBe("On");
   expect(usePreferencesStore.getState().values.vigilantMode.value).toBe(true);
-  await choose("Follow global");
+  await chooseOption(container.querySelector<HTMLElement>('[role="combobox"]')!, "Follow global");
   expect(usePreferencesStore.getState().values.vigilantMode.value).toBe(false);
 });
