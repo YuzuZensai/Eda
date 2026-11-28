@@ -53,7 +53,7 @@
     "electron-publish": "26.18.1",
     "eslint": "^10.15.0",
     "happy-dom": "^21.0.4",
-    "i18next": "^27.2.3",
+    "i18next": "^27.2.7",
     "jiti": "^2.7.0",
     "lucide-react": "^1.77.0",
     "playwright": "^1.65.1",
