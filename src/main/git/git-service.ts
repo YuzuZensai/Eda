@@ -1,4 +1,5 @@
 import { classifyCommand } from "./security/command-classification";
+import { hash } from "node:crypto";
 import { release as kernelRelease } from "node:os";
 import { commitGitConfig } from "@shared/identity/identity";
 import { isUtf8 } from "node:buffer";
@@ -60,9 +61,14 @@ import {
   assertValidRefName,
 } from "./validation";
 
+const PATCH_CONFIG = ["-c", "core.quotePath=false", "-c", "diff.suppressBlankEmpty=false"];
+
 function unifiedDiffFlags(options: DiffDisplayOptions = {}) {
   const lines = options.context === "full" ? 2147483647 : options.context === "expanded" ? 30 : 3;
   return [
+    "--no-color",
+    "--src-prefix=a/",
+    "--dst-prefix=b/",
     "--no-ext-diff",
     "--no-textconv",
     "--full-index",
@@ -70,6 +76,20 @@ function unifiedDiffFlags(options: DiffDisplayOptions = {}) {
     ...(options.ignoreWhitespace ? ["--ignore-all-space"] : []),
   ];
 }
+
+function untrackedDiffArgs(path: string, flags: readonly string[]) {
+  const empty = process.platform === "win32" ? "NUL" : "/dev/null";
+  return ["diff", "--no-index", ...flags, "--", empty, path];
+}
+
+const COMMIT_PATCH_ARGS = [
+  "diff-tree",
+  "--root",
+  "--diff-merges=first-parent",
+  "--no-commit-id",
+  "-r",
+  "-p",
+];
 
 const DIFF_OUTPUT_LIMITS = { maxStdoutBytes: 32 * 1024 * 1024, maxStderrBytes: 1024 * 1024 };
 
@@ -775,17 +795,10 @@ export class GitService {
 
   partialDiff(cwd: string, path: string, source: DiffArea | "untracked", operation: string) {
     assertRepositoryPath(path, operation);
-    const flags = ["--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--unified=3"];
+    const flags = [...unifiedDiffFlags(), "--no-renames"];
     const args =
       source === "untracked"
-        ? [
-            "diff",
-            "--no-index",
-            ...flags,
-            "--",
-            process.platform === "win32" ? "NUL" : "/dev/null",
-            path,
-          ]
+        ? untrackedDiffArgs(path, flags)
         : [
             "--literal-pathspecs",
             "diff",
@@ -794,7 +807,7 @@ export class GitService {
             "--",
             path,
           ];
-    return this.exec(args, {
+    return this.exec([...PATCH_CONFIG, ...args], {
       cwd,
       operation,
       allowedExitCodes: source === "untracked" ? [0, 1] : [0],
@@ -807,7 +820,7 @@ export class GitService {
     options: DiffDisplayOptions & { area: DiffArea; paths?: readonly string[] },
   ): Promise<UnifiedDiff> {
     const paths = literalPathspecs(options.paths, t("operations.readWorkingDiff"));
-    const args = ["-c", "core.quotePath=false", "diff", ...unifiedDiffFlags(options)];
+    const args = [...PATCH_CONFIG, "diff", ...unifiedDiffFlags(options)];
 
     if (options.area === "staged") args.push("--cached");
 
@@ -821,6 +834,8 @@ export class GitService {
 
     const diff = parseOutput(parseUnifiedDiff, stdoutBytes, path, t("operations.readWorkingDiff"));
 
+    const editable = options.paths?.length === 1 && !options.ignoreWhitespace && !options.context;
+    if (editable && diff.files.length === 1) diff.sourceDigest = hash("sha256", stdoutBytes);
     if (options.area === "staged") return diff;
 
     const status = await this.status(path, options.paths);
@@ -840,19 +855,8 @@ export class GitService {
 
       if (remaining <= 0) throw outputTooLarge(path, t("operations.readWorkingDiff"));
 
-      const nullPath = process.platform === "win32" ? "NUL" : "/dev/null";
-
       const result = await this.exec(
-        [
-          "-c",
-          "core.quotePath=false",
-          "diff",
-          "--no-index",
-          ...unifiedDiffFlags(options),
-          "--",
-          nullPath,
-          change.path,
-        ],
+        [...PATCH_CONFIG, ...untrackedDiffArgs(change.path, unifiedDiffFlags(options))],
         {
           cwd: path,
           operation: t("operations.readUntrackedDiff"),
@@ -863,6 +867,7 @@ export class GitService {
       );
 
       remaining -= result.stdoutBytes.length;
+      if (editable && !diff.files.length) diff.sourceDigest = hash("sha256", result.stdoutBytes);
 
       diff.files.push(
         ...parseOutput(
@@ -889,14 +894,8 @@ export class GitService {
 
     const { stdoutBytes } = await this.exec(
       [
-        "-c",
-        "core.quotePath=false",
-        "diff-tree",
-        "--root",
-        "--diff-merges=first-parent",
-        "--no-commit-id",
-        "-r",
-        "-p",
+        ...PATCH_CONFIG,
+        ...COMMIT_PATCH_ARGS,
         ...unifiedDiffFlags(options),
         oid,
         "--",
@@ -945,12 +944,10 @@ export class GitService {
     const pathspecs = literalPathspecs(paths, t("operations.compareRevisions"), "exact-file");
     const { stdoutBytes } = await this.exec(
       [
-        "-c",
-        "core.quotePath=false",
+        ...PATCH_CONFIG,
         "diff",
-        "--no-color",
         ...unifiedDiffFlags(options),
-        ...(paths ? ["--find-renames", "--src-prefix=a/", "--dst-prefix=b/"] : []),
+        ...(paths ? ["--find-renames"] : []),
         from,
         to,
         "--",
@@ -972,34 +969,12 @@ export class GitService {
     if (request.path) paths.add(request.path);
     if ("oid" in request && request.oldPath) paths.add(request.oldPath);
     const pathspecs = literalPathspecs([...paths], operation, "exact-file");
-    const flags = [
-      "--binary",
-      "--full-index",
-      "--no-color",
-      "--no-ext-diff",
-      "--no-textconv",
-      "--find-renames",
-      "--src-prefix=a/",
-      "--dst-prefix=b/",
-      "--submodule=short",
-      "--unified=3",
-    ];
+    const flags = [...unifiedDiffFlags(), "--binary", "--find-renames", "--submodule=short"];
     const options = { cwd, operation, ...DIFF_OUTPUT_LIMITS };
     let args: string[];
     if ("oid" in request) {
       assertFullObjectId(request.oid, operation);
-      args = [
-        "diff-tree",
-        "--root",
-        "--diff-merges=first-parent",
-        "--no-commit-id",
-        "-r",
-        "-p",
-        ...flags,
-        request.oid,
-        "--",
-        ...pathspecs,
-      ];
+      args = [...COMMIT_PATCH_ARGS, ...flags, request.oid, "--", ...pathspecs];
     } else {
       const status = await this.status(cwd);
       const change = status.changes.find((entry) => entry.path === request.path);
@@ -1010,9 +985,8 @@ export class GitService {
           message: errorText("patch.unmerged"),
         });
       if (change?.kind === "untracked" && request.area === "unstaged") {
-        const empty = process.platform === "win32" ? "NUL" : "/dev/null";
         return (
-          await this.exec(["diff", "--no-index", ...flags, "--", empty, request.path], {
+          await this.exec([...PATCH_CONFIG, ...untrackedDiffArgs(request.path, flags)], {
             ...options,
             allowedExitCodes: [0, 1],
           })
@@ -1030,7 +1004,7 @@ export class GitService {
         ...selected,
       ];
     }
-    return (await this.exec(args, options)).stdoutBytes;
+    return (await this.exec([...PATCH_CONFIG, ...args], options)).stdoutBytes;
   }
 
   async stage(path: string, paths: readonly string[]): Promise<void> {

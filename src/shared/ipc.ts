@@ -1,10 +1,61 @@
 import type { GitHost, GitHostPage } from "./integrations/git-host";
 import type { FlowAction, FlowState, FlowPlan } from "./workflows/gitflow";
 import type { TerminalTab, TerminalFrame } from "./repository/terminal";
-import type { LfsAction } from "./integrations/remotes";
+import type {
+  LfsAction,
+  CloneRequest,
+  FetchRequest,
+  PushPreview,
+  PushRequest,
+  RemoteChange,
+  RemoteState,
+  RemoteTagsRequest,
+  RemoteTagSummary,
+  TransportCredentials,
+} from "./integrations/remotes";
 import type { LocalCollection } from "./repository/collections";
-import type { WorktreeAction, SubmoduleAction } from "./repository/repository-write";
-import type { PublicKeyRequest, SignerDecision } from "./repository/repository-read";
+import type {
+  WorktreeAction,
+  SubmoduleAction,
+  CheckoutBranchRequest,
+  BranchSummary,
+  CommitRequest,
+  CommitPreview,
+  CommitResult,
+  CreateBranchRequest,
+  CreateTagRequest,
+  DeleteBranchRequest,
+  RenameBranchRequest,
+  StageRequest,
+  TagRequest,
+  TagSummary,
+  TagVerification,
+  PartialStageRequest,
+  PartialStagePreview,
+} from "./repository/repository-write";
+import type {
+  PublicKeyRequest,
+  SignerDecision,
+  CommitDiffRequest,
+  CommitInspection,
+  CommitSignatureVerification,
+  ComparisonDiffRequest,
+  BlameRequest,
+  BlameLine,
+  RevisionPath,
+  RevisionPathRequest,
+  Contributor,
+  HistoryPage,
+  HistoryPageRequest,
+  RepositoryStatus,
+  RevisionComparison,
+  RevisionComparisonRequest,
+  UnifiedDiff,
+  WorkingDiffRequest,
+  SubmoduleListing,
+  WorktreeSummary,
+  PatchExportRequest,
+} from "./repository/repository-read";
 import type { ProviderRepositoryPage } from "./integrations/provider-repositories";
 import type {
   GitLabSelfHostedStatus,
@@ -24,6 +75,14 @@ import type {
   DetectedEditor,
 } from "./application";
 import type { GitEngineInfo, GitDiagnostics } from "./integrations/git-engine";
+import type {
+  AvatarImage,
+  Identity,
+  IdentityCreateOptions,
+  IdentityDraft,
+  IdentitySwitchReport,
+  SigningConfiguration,
+} from "./identity/identity";
 import type { BuildInfo } from "./version";
 import type { UpdateState } from "./updates";
 import type {
@@ -57,31 +116,12 @@ import type {
   StashFilePreview,
   StashBranchPreview,
 } from "./workflows/stashes";
-import type {
-  CloneRequest,
-  FetchRequest,
-  PushPreview,
-  PushRequest,
-  RemoteChange,
-  RemoteState,
-  RemoteTagsRequest,
-  RemoteTagSummary,
-  TransportCredentials,
-} from "./integrations/remotes";
 import type { ReferenceLinkKind } from "./repository/reference-link";
 import type { ImagePreview, ImagePreviewRequest } from "./repository/image-preview";
 import type { IgnoreInspection, IgnoreKind } from "./repository/ignore";
 import type { DiscardPreview, RecoverySummary } from "./workflows/recovery";
 
 import type { RepositoryNavigation } from "./repository/navigation";
-import type {
-  AvatarImage,
-  Identity,
-  IdentityCreateOptions,
-  IdentityDraft,
-  IdentitySwitchReport,
-  SigningConfiguration,
-} from "./identity/identity";
 import type {
   RepositorySummary,
   InitRepositoryOptions,
@@ -105,42 +145,6 @@ import type {
   SettingsContext,
 } from "./preferences/settings";
 import type {
-  CommitDiffRequest,
-  CommitInspection,
-  CommitSignatureVerification,
-  ComparisonDiffRequest,
-  BlameRequest,
-  BlameLine,
-  RevisionPath,
-  RevisionPathRequest,
-  Contributor,
-  HistoryPage,
-  HistoryPageRequest,
-  RepositoryStatus,
-  RevisionComparison,
-  RevisionComparisonRequest,
-  UnifiedDiff,
-  WorkingDiffRequest,
-  SubmoduleListing,
-  WorktreeSummary,
-  PatchExportRequest,
-} from "./repository/repository-read";
-import type {
-  CheckoutBranchRequest,
-  BranchSummary,
-  CommitRequest,
-  CommitPreview,
-  CommitResult,
-  CreateBranchRequest,
-  CreateTagRequest,
-  DeleteBranchRequest,
-  RenameBranchRequest,
-  StageRequest,
-  TagRequest,
-  TagSummary,
-  TagVerification,
-} from "./repository/repository-write";
-import type {
   AgentStatus,
   ConnectionTestResult,
   GenerateKeyRequest,
@@ -152,7 +156,6 @@ import type {
 } from "./identity/ssh";
 
 import type { OperationRecord } from "./operations";
-import type { PartialStageRequest, PartialStagePreview } from "./repository/partial-stage";
 import type {
   ConflictPreview,
   ResolveConflictRequest,

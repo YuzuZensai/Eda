@@ -1,7 +1,7 @@
 import { errorMessage } from "@shared/errors";
 import { getLocale, t } from "@shared/i18n";
 import { stateLabel } from "@shared/i18n/labels";
-import type { PartialStageRequest } from "@shared/repository/partial-stage";
+import type { PartialStageRequest } from "@shared/repository/repository-write";
 import type { DiscardPreview, RecoverySummary } from "@shared/workflows/recovery";
 import { useEffect, useState } from "react";
 import {

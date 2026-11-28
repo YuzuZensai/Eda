@@ -130,3 +130,23 @@ describe("diff presentation model", () => {
     ).toBe(true);
   });
 });
+
+it("offers partial edits only on fully visible hunks and lines after preview limits are applied", () => {
+  const first = diff.files[0]!.hunks[0]!;
+  const long = "x".repeat(25_000);
+  const second = { ...first, lines: [{ type: "addition" as const, content: long }] };
+  const rows = toUnifiedRows(
+    boundDiff({ files: [{ ...diff.files[0]!, hunks: [first, second] }] }),
+    new Map([[0, true]]),
+  );
+  expect(rows.filter((row) => row.kind === "hunk").map((row) => row.hunkIndex)).toEqual([
+    0,
+    undefined,
+  ]);
+  expect(
+    rows.find((row) => row.kind === "addition" && row.text.startsWith("x"))?.lineIndex,
+  ).toBeUndefined();
+  const short = toUnifiedRows(boundDiff(diff, 3), new Map([[0, true]]));
+  expect(short.find((row) => row.kind === "hunk")?.hunkIndex).toBeUndefined();
+  expect(short.find((row) => row.kind === "deletion")?.lineIndex).toBe(0);
+});

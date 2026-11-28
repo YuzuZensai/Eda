@@ -58,14 +58,10 @@ export function parseUnifiedDiff(output: Buffer): UnifiedDiff {
       newLine = parsed.newLine;
       if (omittedFiles) continue;
       countDiffLine(file.stats, parsed.line);
-      const length = file.binary ? undefined : budget.takeRow(parsed.line.content.length);
-      if (length === undefined) file.truncated = true;
+      if (file.binary) file.truncated = true;
       else {
-        if (length < parsed.line.content.length) {
-          parsed.line.content = parsed.line.content.slice(0, length);
-          file.truncated = true;
-        }
-        hunk.lines.push(parsed.line);
+        budget.appendLine(hunk, parsed.line);
+        if (hunk.truncated) file.truncated = true;
       }
       continue;
     }
@@ -104,26 +100,27 @@ export function parseUnifiedDiff(output: Buffer): UnifiedDiff {
     } else if (line.startsWith("Binary files ") || line.startsWith("GIT binary patch")) {
       file.binary = true;
     } else if (line.startsWith("@@ ")) {
-      const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/.exec(line);
-
-      if (!match) throw new AppError(ERROR_CODE.INVALID_DIFF_OUTPUT);
-
-      oldLine = Number(match[1]);
-      newLine = Number(match[3]);
-      hunk = {
-        oldStart: oldLine,
-        oldLines: Number(match[2] ?? 1),
-        newStart: newLine,
-        newLines: Number(match[4] ?? 1),
-        heading: match[5]!.trimStart(),
-        lines: [],
-      };
+      hunk = { ...parseHunkHeader(line), lines: [] };
+      oldLine = hunk.oldStart;
+      newLine = hunk.newStart;
       if (!omittedFiles && !file.binary && budget.takeRow(0) !== undefined) file.hunks.push(hunk);
       else file.truncated = true;
     }
   }
 
   return { files, ...(omittedFiles ? { omittedFiles } : {}) };
+}
+
+export function parseHunkHeader(line: string) {
+  const match = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/s.exec(line);
+  if (!match) throw new AppError(ERROR_CODE.INVALID_DIFF_OUTPUT);
+  return {
+    oldStart: Number(match[1]),
+    oldLines: Number(match[2] ?? 1),
+    newStart: Number(match[3]),
+    newLines: Number(match[4] ?? 1),
+    heading: match[5]!.trimStart(),
+  };
 }
 
 function parseHeaderPaths(value: string): Pick<FileDiff, "oldPath" | "newPath"> {

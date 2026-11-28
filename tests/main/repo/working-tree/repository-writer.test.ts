@@ -7,7 +7,7 @@ import { ContentRecoveryRepository } from "@main/persistence/content-recovery-re
 import { IdentityRepository } from "@main/persistence/identity-repository";
 import { SettingsRepository } from "@main/persistence/settings-repository";
 import { repositories as repositoryTable } from "@main/persistence/schema";
-import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
+import { displayedSource, createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 import { RepositoryWriter } from "@main/repo/working-tree/repository-writer";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -90,7 +90,13 @@ describe("staging and committing through the writer", () => {
   it("drops working-tree previews and ignore inspection after relocation", async () => {
     const { writer, paths, repo } = await setup();
     await repo.writeFile("a.txt", "changed\n");
-    const selection = { repositoryId: "r1", path: "a.txt", area: "unstaged" as const, hunks: [0] };
+    const selection = {
+      sourceDigest: await displayedSource(repo, "a.txt", "unstaged"),
+      repositoryId: "r1",
+      path: "a.txt",
+      area: "unstaged" as const,
+      hunks: [0],
+    };
     const previews = [
       writer.previewDiscard("r1", ["a.txt"]),
       writer.previewDiscardPartial(selection),

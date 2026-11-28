@@ -2,7 +2,7 @@ import { isUtf8 } from "node:buffer";
 import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
-import type { PartialStagePreview, PartialStageRequest } from "@shared/repository/partial-stage";
+import type { PartialStagePreview, PartialStageRequest } from "@shared/repository/repository-write";
 import { createHash, randomUUID } from "node:crypto";
 import type { GitService } from "../../git/git-service";
 import { partialPatch } from "../../git/operations/partial-patch";

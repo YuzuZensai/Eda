@@ -1,8 +1,10 @@
+import { hash } from "node:crypto";
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
-import { GIT_FILE_MODE } from "@shared/repository/git-file-mode";
-import type { PartialStageRequest } from "@shared/repository/partial-stage";
+import { parseHunkHeader } from "../parsers/diff-parser";
+import { GIT_FILE_MODE, isRegularFileMode } from "@shared/repository/git-file-mode";
+import type { PartialStageRequest } from "@shared/repository/repository-write";
 
 const invalid = (message: ErrorText) =>
   new GitError({
@@ -27,67 +29,31 @@ interface PatchHunk {
 export function partialPatch(
   raw: string,
   path: string,
-  selection: Pick<PartialStageRequest, "area" | "hunks" | "lines">,
+  selection: Pick<PartialStageRequest, "area" | "hunks" | "lines" | "sourceDigest">,
 ): { patch: string; additions: number; deletions: number } {
-  if (
-    /^Binary files |^GIT binary patch|^rename |^copy |^old mode |^new mode |^.*mode (?:120000|160000)$/m.test(
-      raw,
-    )
-  )
-    throw invalid(errorText("main.git.partialPatch.useWholeFileStagingForBinaryRenamedMode"));
-
-  const hunks: PatchHunk[] = [];
-  let current: PatchHunk | undefined;
-  let files = 0;
-  let displayIndex = 0;
-
-  for (const line of raw.split("\n")) {
-    if (line.startsWith("diff --git ")) files += 1;
-
-    const heading = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
-
-    if (heading) {
-      current = { oldStart: Number(heading[1]), newStart: Number(heading[2]), lines: [] };
-      hunks.push(current);
-      displayIndex = 0;
-    } else if (current && /^[ +\-]/.test(line))
-      current.lines.push({
-        type: line[0]!,
-        content: line.slice(1),
-        marker: false,
-        index: displayIndex++,
-      });
-    else if (current && line.startsWith("\\ No newline") && current.lines.length) {
-      current.lines.at(-1)!.marker = true;
-      displayIndex += 1;
-    }
-  }
-
-  if (files !== 1 || hunks.length === 0)
+  if (hash("sha256", raw) !== selection.sourceDigest)
     throw invalid(
-      errorText("main.git.partialPatch.thereIsNoEditableTextPatchForThisFileRefreshItsDiff"),
+      errorText(
+        "main.partialStageService.theFileOrIndexChangedAfterThePreviewRefreshAndPreviewAgain",
+      ),
     );
 
+  const { hunks, added, deleted, mode } = parseEditableDiff(raw);
   const hunkSet = new Set(selection.hunks ?? []);
-  const lineSet = new Set((selection.lines ?? []).map((item) => `${item.hunk}:${item.line}`));
 
   for (const index of hunkSet)
     if (!Number.isInteger(index) || !hunks[index])
       throw invalid(errorText("main.git.partialPatch.aSelectedHunkNoLongerExists"));
 
-  for (const item of selection.lines ?? [])
-    if (
-      !Number.isInteger(item.hunk) ||
-      !Number.isInteger(item.line) ||
-      !["+", "-"].includes(
-        hunks[item.hunk]?.lines.find((line) => line.index === item.line)?.type ?? "",
-      )
-    )
-      throw invalid(errorText("main.git.partialPatch.selectAddedOrDeletedLinesFromTheCurrentDiff"));
+  const remainingLines = new Map<number, Set<number>>();
+  for (const { hunk, line } of selection.lines ?? []) {
+    const indices = remainingLines.get(hunk);
+    if (indices) indices.add(line);
+    else remainingLines.set(hunk, new Set([line]));
+  }
 
   const reverse = selection.area === "staged";
   let all = true;
-  let count = 0;
   let additions = 0;
   let deletions = 0;
   let delta = 0;
@@ -95,6 +61,8 @@ export function partialPatch(
 
   for (const [hunkIndex, hunk] of hunks.entries()) {
     const lines: PatchLine[] = [];
+    const wholeHunk = hunkSet.has(hunkIndex);
+    const selectedLines = remainingLines.get(hunkIndex);
     let changed = false;
 
     for (const line of hunk.lines) {
@@ -103,7 +71,8 @@ export function partialPatch(
         continue;
       }
 
-      const selected = hunkSet.has(hunkIndex) || lineSet.has(`${hunkIndex}:${line.index}`);
+      const selectedLine = selectedLines?.delete(line.index) ?? false;
+      const selected = wholeHunk || selectedLine;
 
       all &&= selected;
 
@@ -112,7 +81,6 @@ export function partialPatch(
       if (selected) {
         lines.push({ ...line, type });
         changed = true;
-        count += 1;
         if (type === "+") additions += 1;
         else deletions += 1;
       } else if (type === "-") lines.push({ ...line, type: " " });
@@ -140,17 +108,16 @@ export function partialPatch(
     delta += newCount - oldCount;
   }
 
-  if (!count) throw invalid(errorText("main.git.partialPatch.selectAtLeastOneChangedLineOrHunk"));
+  if ([...remainingLines.values()].some((indices) => indices.size > 0))
+    throw invalid(errorText("main.git.partialPatch.selectAddedOrDeletedLinesFromTheCurrentDiff"));
 
-  const added = /^new file mode /m.test(raw);
-  const deleted = /^deleted file mode /m.test(raw);
+  if (!body.length)
+    throw invalid(errorText("main.git.partialPatch.selectAtLeastOneChangedLineOrHunk"));
+
   const sourceNull = reverse ? deleted : added;
   const targetNull = (reverse ? added : deleted) && all;
-  const mode =
-    /^(?:new file mode |deleted file mode |index [^\n]+ )(100644|100755)$/m.exec(raw)?.[1] ??
-    GIT_FILE_MODE.regular;
-  const oldPath = JSON.stringify(`a/${path}`);
-  const newPath = JSON.stringify(`b/${path}`);
+  const oldPath = quotePatchPath(`a/${path}`);
+  const newPath = quotePatchPath(`b/${path}`);
   const header = [`diff --git ${oldPath} ${newPath}`];
 
   if (sourceNull) header.push(`new file mode ${mode}`);
@@ -162,4 +129,65 @@ export function partialPatch(
   );
 
   return { patch: [...header, ...body, ""].join("\n"), additions, deletions };
+}
+
+function parseEditableDiff(raw: string) {
+  const hunks: PatchHunk[] = [];
+  let current: PatchHunk | undefined;
+  let files = 0;
+  let displayIndex = 0;
+
+  let added = false;
+  let deleted = false;
+  let mode: string = GIT_FILE_MODE.regular;
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("diff --git ")) files += 1;
+    if (!current) {
+      if (line.startsWith("new file mode ")) added = true;
+      if (line.startsWith("deleted file mode ")) deleted = true;
+      const fileMode =
+        /^(?:new file mode|deleted file mode|index [0-9a-f]+\.\.[0-9a-f]+) (\d{6})$/.exec(
+          line,
+        )?.[1];
+      if (
+        /^(?:Binary files |GIT binary patch|rename |copy |old mode |new mode )/.test(line) ||
+        (fileMode && !isRegularFileMode(fileMode))
+      )
+        throw invalid(errorText("main.git.partialPatch.useWholeFileStagingForBinaryRenamedMode"));
+      if (fileMode) mode = fileMode;
+    }
+    if (line.startsWith("@@ ")) {
+      const { oldStart, newStart } = parseHunkHeader(line);
+      current = { oldStart, newStart, lines: [] };
+      hunks.push(current);
+      displayIndex = 0;
+    } else if (current && /^[ +\-]/.test(line))
+      current.lines.push({
+        type: line[0]!,
+        content: line.slice(1),
+        marker: false,
+        index: displayIndex++,
+      });
+    else if (current && line.startsWith("\\ No newline") && current.lines.length) {
+      current.lines.at(-1)!.marker = true;
+      displayIndex += 1;
+    }
+  }
+
+  if (files !== 1 || hunks.length === 0)
+    throw invalid(
+      errorText("main.git.partialPatch.thereIsNoEditableTextPatchForThisFileRefreshItsDiff"),
+    );
+
+  return { hunks, added, deleted, mode };
+}
+
+function quotePatchPath(path: string): string {
+  // Git accepts octal byte escapes for control characters in patch headers.
+  const escaped = path.replace(/[\x00-\x1f"\\]/g, (char) =>
+    char === '"' || char === "\\"
+      ? "\\" + char
+      : "\\" + char.charCodeAt(0).toString(8).padStart(3, "0"),
+  );
+  return '"' + escaped + '"';
 }

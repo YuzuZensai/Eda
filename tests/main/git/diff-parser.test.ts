@@ -16,6 +16,7 @@ describe("parseUnifiedDiff", () => {
     );
     expect(files).toHaveLength(8);
     expect(files[0]?.hunks[0]?.lines).toHaveLength(MAX_FILE_DIFF_ROWS - 1);
+    expect(files[0]?.hunks[0]?.truncated).toBe(true);
     expect(files[0]?.hunks[0]?.lines.at(-1)).toMatchObject({
       content: "café",
       newLineNumber: MAX_FILE_DIFF_ROWS - 1,
@@ -67,6 +68,13 @@ describe("parseUnifiedDiff", () => {
       oldPath: "image.bin",
       newPath: "image.bin",
     });
+  });
+
+  it("retains Unicode line separators in a Git hunk heading", () => {
+    const output = "diff --git a/f b/f\n@@ -1 +1 @@ function name\u2028continued\n-old\n+new\n";
+    expect(parseUnifiedDiff(Buffer.from(output)).files[0]?.hunks[0]?.heading).toBe(
+      "function name\u2028continued",
+    );
   });
 
   it("returns an empty model for an empty diff", () => {

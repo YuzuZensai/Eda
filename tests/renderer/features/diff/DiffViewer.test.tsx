@@ -53,6 +53,7 @@ it("keeps a partial-discard review through a diff refresh and closes it when the
 
   const root = createRoot(container);
   const diff: UnifiedDiff = {
+    sourceDigest: "a".repeat(64),
     files: [
       {
         oldPath: "file.txt",
@@ -109,6 +110,7 @@ it("keeps a partial-discard review through a diff refresh and closes it when the
 
     await act(async () => discard!.click());
     expect(previewDiscardPartial).toHaveBeenCalledWith({
+      sourceDigest: diff.sourceDigest,
       repositoryId: "repository",
       path: "file.txt",
       area: "unstaged",

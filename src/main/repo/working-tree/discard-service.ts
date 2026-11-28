@@ -1,11 +1,12 @@
+import { nullIfFileMissing } from "../../filesystem/missing-file";
+import { readRegularFile } from "../../filesystem/read-regular-file";
 import { isUtf8 } from "node:buffer";
 import { isFullObjectId } from "@shared/repository/object-id";
-import { readRegularFile } from "../../filesystem/read-regular-file";
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { GIT_FILE_MODE, isRegularFileMode } from "@shared/repository/git-file-mode";
-import type { PartialStageRequest } from "@shared/repository/partial-stage";
+import type { PartialStageRequest } from "@shared/repository/repository-write";
 import type { DiscardPreview, RecoverySummary } from "@shared/workflows/recovery";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, open, rename, unlink } from "node:fs/promises";
@@ -303,10 +304,7 @@ export class DiscardService {
     const target = await this.safePath(root, path);
     const captured = await readRegularFile(target, MAX_BYTES, () =>
       invalid(errorText("main.discardService.recoverySupportsRegularFilesUpTo32MiB")),
-    ).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    });
+    ).catch(nullIfFileMissing);
     if (!captured) return { path, content: null, mode: 0, hash: "missing", tracked };
     const { bytes: content, entry: stat } = captured;
 
@@ -333,6 +331,16 @@ export class DiscardService {
     repositoryId: string,
     paths: string[],
   ): Promise<DiscardPreview> {
+    const { record, index } = await this.capturePreview(root, profileId, repositoryId, paths);
+    return this.rememberPreview(record, index);
+  }
+
+  private async capturePreview(
+    root: string,
+    profileId: string,
+    repositoryId: string,
+    paths: string[],
+  ) {
     if (!paths.length || paths.length > 256 || new Set(paths).size !== paths.length)
       throw invalid(errorText("main.discardService.selectBetween1And256DistinctFiles"));
 
@@ -364,7 +372,6 @@ export class DiscardService {
         );
     }
 
-    const token = randomUUID();
     const record: ContentRecoveryRecord = {
       id: randomUUID(),
       root,
@@ -377,10 +384,21 @@ export class DiscardService {
       state: "prepared",
     };
 
+    return { record, index: await this.index(root, paths) };
+  }
+
+  private rememberPreview(
+    record: ContentRecoveryRecord,
+    index: string,
+    patch?: string,
+  ): DiscardPreview {
+    const token = randomUUID();
+    const { files, paths, bytes } = record;
     this.previews.set(token, {
       record,
-      index: await this.index(root, paths),
+      index,
       expires: Date.now() + 300_000,
+      ...(patch && { patch }),
     });
 
     while (
@@ -396,6 +414,7 @@ export class DiscardService {
       bytes,
       tracked: files.filter((file) => file.tracked).length,
       untracked: files.filter((file) => !file.tracked).length,
+      ...(patch && { patch }),
     };
   }
 
@@ -409,9 +428,10 @@ export class DiscardService {
         errorText("main.discardService.unstageChangesBeforeDiscardingSelectedWorkingFileContent"),
       );
 
-    const preview = await this.preview(root, profileId, request.repositoryId, [request.path]);
-    const pending = this.previews.get(preview.token)!;
-    const untracked = !pending.record.files[0]!.tracked;
+    const { record, index } = await this.capturePreview(root, profileId, request.repositoryId, [
+      request.path,
+    ]);
+    const untracked = !record.files[0]!.tracked;
     const source = await this.git.partialDiff(
       root,
       request.path,
@@ -430,9 +450,7 @@ export class DiscardService {
       operation: t("operations.checkPartialDiscard"),
       stdin: patch,
     });
-    pending.patch = patch;
-
-    return { ...preview, patch };
+    return this.rememberPreview(record, index, patch);
   }
 
   async apply(root: string, profileId: string, repositoryId: string, token: string): Promise<void> {
@@ -625,10 +643,7 @@ export class DiscardService {
 
       const target = await this.safePath(record.root, file.path);
 
-      if (file.content === null)
-        await unlink(target).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== "ENOENT") throw error;
-        });
+      if (file.content === null) await unlink(target).catch(nullIfFileMissing);
       else {
         await mkdir(dirname(target), { recursive: true });
         const temporary = join(dirname(target), `eda-restore-${randomUUID()}`);
@@ -640,9 +655,7 @@ export class DiscardService {
           await rename(temporary, await this.safePath(record.root, file.path));
         } finally {
           await handle.close();
-          await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
-            if (error.code !== "ENOENT") throw error;
-          });
+          await unlink(temporary).catch(nullIfFileMissing);
         }
       }
     }

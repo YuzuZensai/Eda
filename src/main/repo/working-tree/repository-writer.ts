@@ -2,27 +2,28 @@ import { readActiveRepository, assertRepositoryContext } from "../lifecycle/repo
 import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t, type MessageKey } from "@shared/i18n";
-import type { Identity } from "@shared/identity/identity";
+import { type Identity, commitGitConfig } from "@shared/identity/identity";
 import { commitConfigKeys, type CommitConfigGroup } from "@shared/identity/profile-session";
 import type { IgnoreKind } from "@shared/repository/ignore";
-import type { PartialStagePreview, PartialStageRequest } from "@shared/repository/partial-stage";
 import type {
+  PartialStagePreview,
+  PartialStageRequest,
   BranchSummary,
   CommitPreview,
   CommitResult,
   TagSummary,
+  WorktreeAction,
+  SubmoduleAction,
 } from "@shared/repository/repository-write";
 import { lstat, writeFile } from "node:fs/promises";
 import { workingFilePath } from "../../filesystem/working-file-path";
 import { basename } from "node:path";
 import { withLocalConfiguration } from "../../git/configuration/local-configuration";
-import { commitGitConfig } from "@shared/identity/identity";
 import { readWorkflowState } from "../../git/operations/workflow-state";
 import { changeWorktree } from "../../git/operations/worktrees";
 import { readFlow, runFlow } from "../../git/operations/gitflow";
 import type { FlowAction } from "@shared/workflows/gitflow";
 import { changeSubmodule } from "../../git/operations/submodules";
-import type { WorktreeAction, SubmoduleAction } from "@shared/repository/repository-write";
 import { assertFullObjectId, assertRepositoryPath } from "../../git/validation";
 import type { GitService } from "../../git/git-service";
 import type { IdentityManager } from "../../identity/identity-manager";

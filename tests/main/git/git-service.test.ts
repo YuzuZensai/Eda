@@ -965,3 +965,21 @@ it("never executes a tracked smudge program selected by global attributes during
     await repo.cleanup();
   }
 });
+
+it("preserves literal working-diff paths and hunks with custom color and prefix settings", async () => {
+  const repo = await createTempRepo();
+  try {
+    await repo.writeFile("a/notes", "initial\n");
+    await repo.commit("initial");
+    await repo.run(["config", "diff.noprefix", "true"]);
+    await repo.run(["config", "color.ui", "always"]);
+    await repo.writeFile("a/notes", "updated\n");
+    const diff = await repo.git.workingDiff(repo.path, { area: "unstaged", paths: ["a/notes"] });
+    expect(diff.files[0]?.newPath).toBe("a/notes");
+    expect(diff.files[0]?.hunks[0]?.lines).toContainEqual(
+      expect.objectContaining({ type: "addition", content: "updated" }),
+    );
+  } finally {
+    await repo.cleanup();
+  }
+});

@@ -1,6 +1,6 @@
 import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
-import type { PartialStagePreview, PartialStageRequest } from "@shared/repository/partial-stage";
+import type { PartialStagePreview, PartialStageRequest } from "@shared/repository/repository-write";
 import { MinusIcon as Minus, PlusIcon as Plus } from "../../components/ui/icons";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -35,11 +35,13 @@ export function PartialStageProvider({
   disabled = false,
   inactive = false,
   selection,
+  sourceDigest,
 }: {
   children: ReactNode;
   disabled?: boolean;
   inactive?: boolean;
   selection?: RepositorySelection;
+  sourceDigest?: string | undefined;
 }) {
   const repositoryId = useRepositoryStore((state) => state.repositoryId);
   const writing = useRepositoryStore((state) => state.writing);
@@ -84,26 +86,32 @@ export function PartialStageProvider({
   const verb =
     area === "staged" ? t("partialStageControls.unstage") : t("partialStageControls.stage");
 
-  const prepareDiscard = (hunk?: number) =>
+  const selectedLines = () =>
+    [...selected].map((key) => {
+      const [hunk, line] = key.split(":").map(Number);
+      return { hunk: hunk!, line: line! };
+    });
+
+  const prepareDiscard = (hunk?: number) => {
+    if (!sourceDigest) return;
     setDiscard({
       paths: [selection.path],
       request: {
         repositoryId,
         path: selection.path,
+        sourceDigest,
         area: "unstaged",
         ...(hunk !== undefined
           ? { hunks: [hunk] }
           : {
-              lines: [...selected].map((key) => {
-                const [hunk, line] = key.split(":").map(Number);
-                return { hunk: hunk!, line: line! };
-              }),
+              lines: selectedLines(),
             }),
       },
     });
+  };
 
   const prepare = async (hunks?: number[]) => {
-    if (preparing.current || writing) return;
+    if (!sourceDigest || preparing.current || writing) return;
 
     preparing.current = true;
 
@@ -116,14 +124,12 @@ export function PartialStageProvider({
       const result = await window.eda.repository.previewPartial({
         repositoryId,
         path: selection.path,
+        sourceDigest,
         area,
         ...(hunks
           ? { hunks }
           : {
-              lines: [...selected].map((key) => {
-                const [hunk, line] = key.split(":").map(Number);
-                return { hunk: hunk!, line: line! };
-              }),
+              lines: selectedLines(),
             }),
       });
 

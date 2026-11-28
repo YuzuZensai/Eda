@@ -186,7 +186,7 @@ export function toUnifiedRows(
       rows.push({
         key: `h-${fileIndex}-${hunkIndex}`,
         kind: "hunk",
-        hunkIndex,
+        ...(!hunk.truncated && { hunkIndex }),
         text: heading,
       });
 
@@ -195,7 +195,7 @@ export function toUnifiedRows(
           key: `l-${fileIndex}-${hunkIndex}-${lineIndex}`,
           kind: line.type,
           hunkIndex,
-          lineIndex,
+          ...(!line.truncated && { lineIndex }),
           ...(line.oldLineNumber !== undefined && { oldLineNumber: line.oldLineNumber }),
           ...(line.newLineNumber !== undefined && { newLineNumber: line.newLineNumber }),
           text: line.content,

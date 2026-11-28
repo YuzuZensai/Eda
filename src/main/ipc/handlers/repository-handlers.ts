@@ -1,8 +1,11 @@
 import { saveRepositoryExport } from "./patch-handlers";
 import { isFlowConfig, isFlowPlan, flowKinds, type FlowAction } from "@shared/workflows/gitflow";
 import { isOneOf } from "@shared/validation";
-import type { PartialStageRequest } from "@shared/repository/partial-stage";
-import type { WorktreeAction, SubmoduleAction } from "@shared/repository/repository-write";
+import type {
+  WorktreeAction,
+  SubmoduleAction,
+  PartialStageRequest,
+} from "@shared/repository/repository-write";
 import {
   type DiffDisplayOptions,
   isHistorySearchField,
@@ -716,6 +719,7 @@ export function registerRepositoryHandlers(services: Services): void {
       repositoryId: requireId(input["repositoryId"]),
       path: requireString(input["path"], t("fields.filePath")),
       area,
+      sourceDigest: requireString(input["sourceDigest"], t("fields.filePath"), 64),
       hunks: array(input["hunks"]).map(index),
       lines: array(input["lines"]).map((raw) => {
         const line = requireRecord(raw, t("main.repositoryHandlers.lineSelection"));

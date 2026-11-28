@@ -183,6 +183,7 @@ export const UNVERIFIED_COMMIT_SIGNATURE: Readonly<CommitSignatureVerification> 
 export type DiffLineType = "context" | "addition" | "deletion" | "no-newline";
 
 export interface DiffLine {
+  truncated?: boolean;
   type: DiffLineType;
   content: string;
   oldLineNumber?: number;
@@ -190,6 +191,7 @@ export interface DiffLine {
 }
 
 export interface DiffHunk {
+  truncated?: boolean;
   oldStart: number;
   oldLines: number;
   newStart: number;
@@ -217,6 +219,7 @@ export interface FileDiff {
 }
 
 export interface UnifiedDiff {
+  sourceDigest?: string;
   files: FileDiff[];
   omittedFiles?: number;
 }

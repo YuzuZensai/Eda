@@ -1,5 +1,6 @@
 import type {
   CommitSignatureVerification,
+  DiffArea,
   ObjectId,
   RepositoryPathsRequest,
   SubmoduleUpdateMode,
@@ -108,4 +109,20 @@ export interface CommitPreview {
   deletions: number;
   binaryFiles: number;
   sharedRefs: string[];
+}
+
+export interface PartialStageRequest {
+  repositoryId: string;
+  path: string;
+  sourceDigest: string;
+  area: DiffArea;
+  hunks?: number[];
+  lines?: { hunk: number; line: number }[];
+}
+
+export interface PartialStagePreview {
+  token: string;
+  patch: string;
+  additions: number;
+  deletions: number;
 }

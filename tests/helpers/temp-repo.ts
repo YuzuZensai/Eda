@@ -94,6 +94,12 @@ export async function createTempRepo(
   return repo;
 }
 
+export async function displayedSource(repo: TempRepo, path: string, area: "staged" | "unstaged") {
+  const { sourceDigest } = await repo.git.workingDiff(repo.path, { paths: [path], area });
+  if (!sourceDigest) throw new Error("Expected an editable working diff");
+  return sourceDigest;
+}
+
 export async function assertHermetic(repo: TempRepo): Promise<void> {
   const email = await repo.git.readConfig("user.email", { cwd: repo.path });
 

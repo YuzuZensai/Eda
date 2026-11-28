@@ -1,4 +1,4 @@
-import type { DiffLine, FileDiff, UnifiedDiff } from "./repository-read";
+import type { DiffHunk, DiffLine, FileDiff, UnifiedDiff } from "./repository-read";
 
 export const MAX_DIFF_ROWS = 12_000;
 export const MAX_FILE_DIFF_ROWS = 2_000;
@@ -41,6 +41,21 @@ export class DiffPreviewBudget {
     this.fileChars = Math.min(this.characters, MAX_FILE_DIFF_CHARS);
   }
 
+  appendLine(hunk: DiffHunk, line: DiffLine): boolean {
+    const length = this.takeRow(line.content.length);
+    if (length === undefined) {
+      hunk.truncated = true;
+      return false;
+    }
+    if (length < line.content.length) {
+      hunk.truncated = true;
+      hunk.lines.push({ ...line, content: line.content.slice(0, length), truncated: true });
+    } else {
+      hunk.lines.push(line);
+    }
+    return true;
+  }
+
   takeRow(length: number): number | undefined {
     if (this.fileRows <= 0 || this.fileChars <= 0) return undefined;
     const retained = Math.min(length, MAX_DIFF_LINE_CHARS, this.fileChars);
@@ -65,20 +80,12 @@ export function boundDiff(diff: UnifiedDiff, maxRows = MAX_DIFF_ROWS): UnifiedDi
         return [];
       }
 
-      const lines = [];
-
+      const retained: DiffHunk = { ...hunk, lines: [] };
       for (const line of hunk.lines) {
-        const length = budget.takeRow(line.content.length);
-        if (length === undefined) {
-          truncated = true;
-          break;
-        }
-
-        truncated ||= length < line.content.length;
-        lines.push({ ...line, content: line.content.slice(0, length) });
+        if (!budget.appendLine(retained, line)) break;
       }
-
-      return [{ ...hunk, lines }];
+      truncated ||= !!retained.truncated;
+      return [retained];
     });
 
     return { ...file, stats, hunks, ...(truncated ? { truncated: true } : {}) };
@@ -86,5 +93,5 @@ export function boundDiff(diff: UnifiedDiff, maxRows = MAX_DIFF_ROWS): UnifiedDi
 
   const omittedFiles = (diff.omittedFiles ?? 0) + diff.files.length - files.length;
 
-  return { files, ...(omittedFiles ? { omittedFiles } : {}) };
+  return { ...diff, files, ...(omittedFiles ? { omittedFiles } : {}) };
 }

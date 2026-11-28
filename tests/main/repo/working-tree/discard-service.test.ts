@@ -1,7 +1,7 @@
 import { link, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
+import { displayedSource, createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 import { openInMemoryDatabase } from "@main/persistence/database";
 import { IdentityRepository } from "@main/persistence/identity-repository";
 import {
@@ -129,6 +129,7 @@ it("discards one hunk with an exact reverse patch and recovers its original work
     repositoryId: "r",
     path: "file.txt",
     area: "unstaged",
+    sourceDigest: await displayedSource(repo, "file.txt", "unstaged"),
     hunks: [0],
   });
 
@@ -303,4 +304,28 @@ it("rejects a rewrite snapshot with a symlink in either commit tree", async () =
     ).rejects.toThrow(/symlink/i);
   }
   expect(service.list(profileId, "r")).toEqual([]);
+});
+
+it("keeps a valid discard review available after repeated rejected partial previews", async () => {
+  const { service, profileId, db } = await setup();
+  try {
+    await repo.writeFile("notes", "base\n");
+    await repo.commit("initial");
+    await repo.writeFile("notes", "reviewed\n");
+    const valid = await service.preview(repo.path, profileId, "r", ["notes"]);
+    for (let attempt = 0; attempt < 8; attempt++)
+      await expect(
+        service.previewPartial(repo.path, profileId, {
+          repositoryId: "r",
+          path: "notes",
+          area: "unstaged",
+          sourceDigest: "0".repeat(64),
+          hunks: [0],
+        }),
+      ).rejects.toThrow("changed");
+    await service.apply(repo.path, profileId, "r", valid.token);
+    expect(await readFile(join(repo.path, "notes"), "utf8")).toBe("base\n");
+  } finally {
+    db.close();
+  }
 });

@@ -159,6 +159,7 @@ function FileDiffPane({ scope, pending }: { scope: string; pending: boolean }) {
           key={empty ? "empty" : contentKey}
           disabled={empty}
           selection={selection}
+          sourceDigest={visibleDiff?.sourceDigest}
           inactive={switching}
         >
           {!empty && !imageKind && !visibleDiff?.files[0]?.binary && (
