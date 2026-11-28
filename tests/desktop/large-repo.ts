@@ -41,11 +41,6 @@ const app = await electron.launch({
   ],
   env: {
     ...fixtureEnvironment(userData),
-    HOME: userData,
-    USERPROFILE: userData,
-    GIT_CONFIG_GLOBAL: gitConfigGlobal,
-    GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
-    GIT_CONFIG_NOSYSTEM: "1",
     ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
     NODE_OPTIONS: "--no-warnings=ExperimentalWarning",
   },

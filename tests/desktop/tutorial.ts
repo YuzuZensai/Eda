@@ -8,11 +8,7 @@ const root = await mkdtemp(join(tmpdir(), "eda-tour-"));
 const errors: string[] = [];
 const app = await electron.launch({
   args: ["dist/main/index.js", "--no-sandbox", `--user-data-dir=${root}`],
-  env: {
-    ...fixtureEnvironment(root),
-    GIT_CONFIG_GLOBAL: `${root}/gitconfig`,
-    GIT_CONFIG_NOSYSTEM: "1",
-  },
+  env: fixtureEnvironment(root),
 });
 const page = await app.firstWindow();
 page.on("pageerror", (e) => errors.push(e.message));

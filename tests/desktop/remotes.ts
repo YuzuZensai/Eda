@@ -1,4 +1,4 @@
-import { electron } from "../helpers/fixture-electron.ts";
+import { firstRepository, electron } from "../helpers/fixture-electron.ts";
 import { fixtureEnvironment } from "../helpers/fixture-environment.ts";
 import { trustFixture } from "./helpers/trust.ts";
 import { finishOnboarding } from "./helpers/onboarding.ts";
@@ -6,13 +6,12 @@ import { chooseSelect } from "./select-control.ts";
 import assert from "node:assert/strict";
 import { type ElectronApplication } from "playwright";
 import { expect } from "playwright/test";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, realpath, writeFile, rm } from "node:fs/promises";
 import { createServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import type { ChildProcess } from "node:child_process";
 
 const root = await mkdtemp(join(tmpdir(), "eda-remotes-gate-"));
 const config = join(root, "gitconfig");
@@ -23,11 +22,6 @@ const privateKey = join(root, "key.pem");
 const opensslConfig = join(root, "openssl.cnf");
 const env = {
   ...fixtureEnvironment(root),
-  HOME: root,
-  USERPROFILE: root,
-  GIT_CONFIG_GLOBAL: config,
-  GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
-  GIT_CONFIG_NOSYSTEM: "1",
   GIT_SSL_CAINFO: certificate,
   NODE_OPTIONS: "--no-warnings=ExperimentalWarning",
 };
@@ -233,11 +227,7 @@ try {
     /Authorization|eda-fixture-access-only/,
   );
 
-  const repository = await page.evaluate(async () => {
-    const result = await window.eda.repository.list();
-    if (!result.ok) throw new Error("Expected a successful IPC result: " + JSON.stringify(result));
-    return result.value[0];
-  });
+  const repository = await firstRepository(page);
 
   assert.ok(repository);
 

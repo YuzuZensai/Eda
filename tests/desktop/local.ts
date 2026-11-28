@@ -22,14 +22,7 @@ await writeFile(
   "[user]\nname = Eda\nemail = fixture@eda.invalid\n[commit]\ngpgsign = false\n",
 );
 
-const env = {
-  ...fixtureEnvironment(root),
-  HOME: root,
-  USERPROFILE: root,
-  GIT_CONFIG_GLOBAL: config,
-  GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
-  GIT_CONFIG_NOSYSTEM: "1",
-};
+const env = fixtureEnvironment(root);
 
 const git = (...args: string[]) =>
   execFileSync("git", ["-C", repository, ...args], { env, encoding: "utf8", stdio: "pipe" });

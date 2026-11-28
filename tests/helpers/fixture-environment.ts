@@ -1,9 +1,6 @@
 import { join } from "node:path";
 
-export function fixtureEnvironment(
-  root: string,
-  source: NodeJS.ProcessEnv = process.env,
-): Record<string, string> {
+export function fixtureEnvironment(root: string, source: NodeJS.ProcessEnv = process.env) {
   const env: Record<string, string> = {};
   const allowed = new Set([
     "PATH",
@@ -22,8 +19,7 @@ export function fixtureEnvironment(
   for (const [key, value] of Object.entries(source)) {
     if (value !== undefined && allowed.has(key.toUpperCase())) env[key] = value;
   }
-  return {
-    ...env,
+  return Object.assign(env, {
     HOME: root,
     USERPROFILE: root,
     APPDATA: join(root, "appdata"),
@@ -43,5 +39,5 @@ export function fixtureEnvironment(
     GIT_ATTR_NOSYSTEM: "1",
     LANG: "C",
     LC_ALL: "C",
-  };
+  });
 }

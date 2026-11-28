@@ -29,11 +29,6 @@ await writeFile(
 
 const env = {
   ...fixtureEnvironment(root),
-  HOME: root,
-  USERPROFILE: root,
-  GIT_CONFIG_GLOBAL: config,
-  GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
-  GIT_CONFIG_NOSYSTEM: "1",
   EDA_TEST_SENSITIVE: "must-not-inherit",
 };
 
@@ -167,11 +162,11 @@ try {
   assert.equal(refBounds.x + refBounds.width, laneBounds.x);
 
   const refsDivider = graph.getByRole("separator", { name: "refs column width" });
+  await refsDivider.hover();
   const handle = await refsDivider.boundingBox();
   assert.ok(handle);
   const x = handle.x + handle.width / 2;
   const y = handle.y + handle.height / 2;
-  await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 64, y);
   await expect(refs).toHaveCSS("width", `${refBounds.width + 64}px`);
@@ -712,6 +707,10 @@ try {
   await mergeReview.waitFor({ state: "hidden" });
   await page.getByText("merge in progress", { exact: true }).waitFor();
   await expect(page.getByText("workflow-topic into main", { exact: true })).toBeVisible();
+  const mergeBanner = page.getByRole("complementary", { name: "Repository actions", exact: true });
+  await expect(mergeBanner.getByRole("button", { name: "Resolve 2 conflicts" })).toBeVisible();
+  await expect(mergeBanner.getByRole("button", { name: "Continue merge" })).toBeHidden();
+
   const workingFiles = page.getByRole("region", { name: /^Working files\./ });
   await workingFiles.focus();
   await page.keyboard.press("Home");

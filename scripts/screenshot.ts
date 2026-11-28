@@ -34,13 +34,7 @@ try {
       `--user-data-dir=${userData}`,
       ...(process.platform === "linux" ? ["--ozone-platform=x11", "--disable-gpu"] : []),
     ],
-    env: {
-      ...fixtureEnvironment(userData),
-      HOME: userData,
-      USERPROFILE: userData,
-      GIT_CONFIG_GLOBAL: join(userData, "gitconfig"),
-      GIT_CONFIG_NOSYSTEM: "1",
-    },
+    env: fixtureEnvironment(userData),
   });
 
   const page = await app.firstWindow();

@@ -44,11 +44,7 @@ try {
   app = await electron.launch({
     args: ["dist/main/index.js", "--no-sandbox", `--user-data-dir=${root}`],
     env: {
-      ...fixtureEnvironment(root),
-      HOME: root,
-      USERPROFILE: root,
-      GIT_CONFIG_GLOBAL: config,
-      GIT_CONFIG_NOSYSTEM: "1",
+      ...fixtureEnv,
       ...(process.env["EDA_DEV_SERVER_URL"]
         ? { VITE_DEV_SERVER_URL: process.env["EDA_DEV_SERVER_URL"] }
         : {}),
@@ -185,11 +181,12 @@ try {
   const workingBounds = await workingRow.boundingBox();
   const headBounds = await page.locator('[data-tour="history-commit"]').first().boundingBox();
   assert.ok(workingBounds && headBounds);
-  assert.equal(workingBounds.height, headBounds.height);
   assert.equal(workingBounds.y + workingBounds.height, headBounds.y);
   const workingLane = await workingChanges.locator("svg").boundingBox();
   const headLane = await page.locator('[data-tour="history-commit"] > svg').first().boundingBox();
   assert.ok(workingLane && headLane);
+  assert.equal(workingLane.height, workingBounds.height);
+  assert.equal(headLane.height, headBounds.height);
   assert.equal(workingLane.x, headLane.x);
   await expectEntry(() => workingRow.getByText("1", { exact: true }).click(), "section");
   await expect(workingChanges).toHaveAttribute("aria-pressed", "true");

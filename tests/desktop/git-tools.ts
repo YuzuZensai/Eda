@@ -1,3 +1,4 @@
+import { pickOpenFile, electron } from "../helpers/fixture-electron.ts";
 import { lfsLockServer } from "../helpers/lfs-lock-server.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -8,7 +9,6 @@ import { delimiter, dirname, join } from "node:path";
 import { prepareGit } from "../../scripts/prepare-git.ts";
 import { expect } from "playwright/test";
 import type { Locator, Page } from "playwright";
-import { electron } from "../helpers/fixture-electron.ts";
 import { fixtureEnvironment } from "../helpers/fixture-environment.ts";
 import { chooseSelect } from "./select-control.ts";
 import { finishOnboarding } from "./helpers/onboarding.ts";
@@ -43,14 +43,6 @@ const app = await electron.launch({
   args: ["dist/main/index.js", "--user-data-dir=" + join(root, "data")],
   env,
 });
-const pickOpenFile = (filePath: string) =>
-  app.evaluate(({ dialog }, path) => {
-    const original = dialog.showOpenDialog;
-    dialog.showOpenDialog = async () => {
-      dialog.showOpenDialog = original;
-      return { canceled: false, filePaths: [path] };
-    };
-  }, filePath);
 const pickSaveFile = (filePath: string) =>
   app.evaluate(({ dialog }, path) => {
     const original = dialog.showSaveDialog;
@@ -400,7 +392,7 @@ try {
     { name: "git-tools-fixture", remote: "https://example.test/fixture/repo.git" },
   ]);
   git("remote", "set-url", "origin", remote);
-  await pickOpenFile(manifestPath);
+  await pickOpenFile(app, manifestPath);
   await button(collections, "Import manifest").click();
   await expect(collections.getByRole("combobox")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -493,7 +485,7 @@ try {
   await button(mailbox, "Export commit series").click();
   await expect(mailbox).toContainText("Saved the mailbox.");
   assert.match(await readFile(filePath, "utf8"), /Mailbox desktop fixture/);
-  await pickOpenFile(filePath);
+  await pickOpenFile(app, filePath);
   await button(mailbox, "Apply mailbox as commits").click();
   await expect
     .poll(() => git("log", "-1", "--format=%an|%ae|%s"))

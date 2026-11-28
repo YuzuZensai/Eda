@@ -1,4 +1,4 @@
-import { electron } from "../helpers/fixture-electron.ts";
+import { firstRepository, electron } from "../helpers/fixture-electron.ts";
 import { fixtureEnvironment } from "../helpers/fixture-environment.ts";
 import { trustFixture } from "./helpers/trust.ts";
 import { finishOnboarding } from "./helpers/onboarding.ts";
@@ -8,11 +8,10 @@ import assert from "node:assert/strict";
 import { type ElectronApplication } from "playwright";
 import ssh2 from "ssh2";
 import { existsSync } from "node:fs";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
-import type { ChildProcess } from "node:child_process";
 import type { Connection, Server } from "ssh2";
 
 const root = await mkdtemp(join(tmpdir(), "eda-ssh-remotes-"));
@@ -26,11 +25,6 @@ const gpgHome = join(root, "gnupg");
 const env = {
   ...fixtureEnvironment(root),
   PATH: process.env["PATH"] ?? "",
-  GNUPGHOME: gpgHome,
-  HOME: root,
-  USERPROFILE: root,
-  GIT_CONFIG_GLOBAL: join(root, "gitconfig"),
-  GIT_CONFIG_NOSYSTEM: "1",
   NODE_OPTIONS: "--no-warnings=ExperimentalWarning",
 };
 
@@ -265,11 +259,7 @@ try {
   await clone.getByRole("button", { name: "Clone repository", exact: true }).click();
   await clone.waitFor({ state: "hidden", timeout: 30000 });
 
-  const repository = await page.evaluate(async () => {
-    const result = await window.eda.repository.list();
-    if (!result.ok) throw new Error("Expected a successful IPC result: " + JSON.stringify(result));
-    return result.value[0];
-  });
+  const repository = await firstRepository(page);
 
   assert.ok(repository);
   assert.equal(git(repository.path, "log", "-1", "--format=%s"), "Initial history");

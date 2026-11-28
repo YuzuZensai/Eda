@@ -21,12 +21,7 @@ await writeFile(
 );
 const env = {
   ...fixtureEnvironment(root),
-  HOME: root,
-  USERPROFILE: root,
   GNUPGHOME: verificationHome,
-  GIT_CONFIG_GLOBAL: config,
-  GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
-  GIT_CONFIG_NOSYSTEM: "1",
 };
 const gpg = (...args: string[]) =>
   execFileSync("gpg", ["--homedir", signingHome, "--batch", ...args], {

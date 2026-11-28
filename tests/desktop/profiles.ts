@@ -1,4 +1,4 @@
-import { electron } from "../helpers/fixture-electron.ts";
+import { pickOpenFile, activeIdentity, electron } from "../helpers/fixture-electron.ts";
 import { fixtureEnvironment } from "../helpers/fixture-environment.ts";
 import { trustFixture } from "./helpers/trust.ts";
 import { finishOnboarding } from "./helpers/onboarding.ts";
@@ -30,14 +30,7 @@ await writeFile(
   "[user]\nname = Eda\nemail = outside@example.com\n[commit]\ngpgsign = false\n",
 );
 
-const fixtureEnv = {
-  ...fixtureEnvironment(root),
-  HOME: root,
-  USERPROFILE: root,
-  GIT_CONFIG_GLOBAL: config,
-  GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
-  GIT_CONFIG_NOSYSTEM: "1",
-};
+const fixtureEnv = fixtureEnvironment(root);
 
 const paths = { alpha: join(root, "alpha"), beta: join(root, "beta"), gamma: join(root, "gamma") };
 
@@ -86,12 +79,7 @@ const launch = async () => {
   const running = await electron.launch({
     args: ["dist/main/index.js", `--user-data-dir=${root}`],
     env: {
-      ...fixtureEnvironment(root),
-      HOME: root,
-      USERPROFILE: root,
-      GIT_CONFIG_GLOBAL: config,
-      GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
-      GIT_CONFIG_NOSYSTEM: "1",
+      ...fixtureEnv,
       NODE_OPTIONS: "--no-warnings=ExperimentalWarning",
     },
   });
@@ -216,13 +204,7 @@ try {
   await section("Global settings: Application");
   const browserChoice = page.getByRole("combobox", { name: "Web browser", exact: true });
   await expect(browserChoice).toHaveText("OS default");
-  await app.evaluate(({ dialog }, executable) => {
-    const previous = dialog.showOpenDialog;
-    dialog.showOpenDialog = async () => {
-      dialog.showOpenDialog = previous;
-      return { canceled: false, filePaths: [executable] };
-    };
-  }, process.execPath);
+  await pickOpenFile(app, process.execPath);
   await chooseSelect(browserChoice, "manual");
   await expect(browserChoice).not.toHaveText("OS default");
   const link = "https://example.test/browser?first=one&second=two";
@@ -300,12 +282,7 @@ try {
     )
     .toBe(true);
 
-  const firstWork = await page.evaluate(async () => {
-    const result = await window.eda.identity.getActive();
-    if (!result.ok || !result.value)
-      throw new Error("Expected a successful IPC result: " + JSON.stringify(result));
-    return result.value;
-  });
+  const firstWork = await activeIdentity(page);
 
   assert.equal(
     (
@@ -510,13 +487,7 @@ try {
   await page.evaluate((path) => window.eda.repository.open(path), paths.beta);
   await page.getByRole("tab", { name: "alpha", exact: true }).click();
   await page.getByRole("heading", { name: "Repository unavailable", exact: true }).waitFor();
-  await app.evaluate(({ dialog }, path) => {
-    const original = dialog.showOpenDialog;
-    dialog.showOpenDialog = async () => {
-      dialog.showOpenDialog = original;
-      return { canceled: false, filePaths: [path] };
-    };
-  }, paths.alpha);
+  await pickOpenFile(app, paths.alpha);
   await page.getByRole("button", { name: "Locate repository...", exact: true }).click();
   await page
     .getByRole("dialog", { name: "Update repository location?" })
@@ -608,17 +579,7 @@ try {
     .getByRole("button", { name: "Switch", exact: true })
     .click();
   await page.getByRole("button", { name: "Dismiss", exact: true }).waitFor();
-  assert.equal(
-    (
-      await page.evaluate(async () => {
-        const result = await window.eda.identity.getActive();
-        if (!result.ok || !result.value)
-          throw new Error("Expected a successful IPC result: " + JSON.stringify(result));
-        return result.value;
-      })
-    ).id,
-    home.id,
-  );
+  assert.equal((await activeIdentity(page)).id, home.id);
 
   await rm(`${config}.lock`);
   await page.getByRole("button", { name: "Dismiss", exact: true }).click();
@@ -742,17 +703,7 @@ try {
   await edit.getByRole("textbox", { name: /^Git email/ }).fill("personal@example.com");
   await edit.getByRole("button", { name: "Save profile", exact: true }).click();
   await page.getByRole("button", { name: /Active profile: Personal/ }).waitFor();
-  assert.equal(
-    (
-      await page.evaluate(async () => {
-        const result = await window.eda.identity.getActive();
-        if (!result.ok || !result.value)
-          throw new Error("Expected a successful IPC result: " + JSON.stringify(result));
-        return result.value;
-      })
-    ).id,
-    home.id,
-  );
+  assert.equal((await activeIdentity(page)).id, home.id);
   assert.equal(globalEmail(), "work@example.com");
 
   await view(false);

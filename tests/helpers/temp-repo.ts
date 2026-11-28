@@ -56,11 +56,7 @@ export async function createTempRepo(
 
   const sandboxEnv: Record<string, string> = {
     ...fixtureEnvironment(home, {}),
-    HOME: home,
-    USERPROFILE: home,
     GIT_CONFIG_GLOBAL: globalConfig,
-    GIT_CONFIG_SYSTEM: "/dev/null",
-    GIT_CONFIG_NOSYSTEM: "1",
     GIT_AUTHOR_DATE: "2026-01-01T00:00:00+00:00",
     GIT_COMMITTER_DATE: "2026-01-01T00:00:00+00:00",
   };

@@ -29,13 +29,7 @@ let server: ReturnType<typeof createServer> | undefined;
 async function launch() {
   app = await electron.launch({
     args: [bootstrap, `--user-data-dir=${root}`],
-    env: {
-      ...fixtureEnvironment(root),
-      HOME: root,
-      USERPROFILE: root,
-      GIT_CONFIG_GLOBAL: config,
-      GIT_CONFIG_NOSYSTEM: "1",
-    },
+    env: fixtureEnvironment(root),
   });
 
   return app.firstWindow();

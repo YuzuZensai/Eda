@@ -28,11 +28,7 @@ function launch() {
       `--user-data-dir=${fixtureRoot}`,
       ...(process.platform === "linux" ? ["--ozone-platform=x11", "--disable-gpu"] : []),
     ],
-    env: {
-      ...fixtureEnvironment(fixtureRoot),
-      GIT_CONFIG_GLOBAL: config,
-      GIT_CONFIG_NOSYSTEM: "1",
-    },
+    env: fixtureEnvironment(fixtureRoot),
   });
 }
 

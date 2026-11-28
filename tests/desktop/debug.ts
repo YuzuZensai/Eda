@@ -12,14 +12,7 @@ const config = join(root, "gitconfig");
 
 await writeFile(config, "[user]\nname = Fixture\nemail = fixture@example.com\n");
 
-const env = {
-  ...fixtureEnvironment(root),
-  HOME: root,
-  USERPROFILE: root,
-  GIT_CONFIG_GLOBAL: config,
-  GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
-  GIT_CONFIG_NOSYSTEM: "1",
-};
+const env = fixtureEnvironment(root);
 
 const modifier = process.platform === "darwin" ? "Meta" : "Control";
 let app: ElectronApplication | undefined;

@@ -228,6 +228,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: Onboarding, tutorial and profile warnings
+            suites: onboarding tutorial identity-warning
+          - name: Trust, signatures and GitLab TLS
+            suites: repository-trust signing-keys gitlab-tls
+          - name: Desktop diagnostics and navigation
+            suites: debug navigation
           - name: Commands and update notifications
             suites: commands updates
           - name: HTTPS and SSH remotes

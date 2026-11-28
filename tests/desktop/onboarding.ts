@@ -1,4 +1,4 @@
-import { electron } from "../helpers/fixture-electron.ts";
+import { pickOpenFile, electron } from "../helpers/fixture-electron.ts";
 import { fixtureEnvironment } from "../helpers/fixture-environment.ts";
 import { expect } from "playwright/test";
 import assert from "node:assert/strict";
@@ -42,10 +42,6 @@ async function launch() {
     args: ["dist/main/index.js", `--user-data-dir=${root}`],
     env: {
       ...fixtureEnvironment(root),
-      HOME: root,
-      USERPROFILE: root,
-      GIT_CONFIG_GLOBAL: config,
-      GIT_CONFIG_NOSYSTEM: "1",
       NODE_OPTIONS: "--no-warnings=ExperimentalWarning",
     },
   });
@@ -163,14 +159,7 @@ try {
     .locator("form")
     .evaluate((form) => form.getBoundingClientRect().height);
 
-  await app!.evaluate(({ dialog }, imagePath) => {
-    const original = dialog.showOpenDialog;
-
-    dialog.showOpenDialog = async () => {
-      dialog.showOpenDialog = original;
-      return { canceled: false, filePaths: [imagePath] };
-    };
-  }, imagePath);
+  await pickOpenFile(app!, imagePath);
 
   await page.getByRole("button", { name: "Choose background image", exact: true }).click();
   const preview = page.getByRole("img", { name: "Selected background", exact: true });
@@ -202,14 +191,7 @@ try {
 
   assert.equal(await page.locator(".onboarding-background-controls").getAttribute("inert"), "");
 
-  await app!.evaluate(({ dialog }, imagePath) => {
-    const original = dialog.showOpenDialog;
-
-    dialog.showOpenDialog = async () => {
-      dialog.showOpenDialog = original;
-      return { canceled: false, filePaths: [imagePath] };
-    };
-  }, imagePath);
+  await pickOpenFile(app!, imagePath);
 
   await page.getByRole("button", { name: "Choose background image", exact: true }).click();
   await page.waitForFunction(() => document.documentElement.dataset["customBackground"] === "true");
@@ -623,14 +605,7 @@ try {
     () => getComputedStyle(document.body, "::before").backgroundImage === "none",
   );
 
-  await app!.evaluate(({ dialog }, imagePath) => {
-    const original = dialog.showOpenDialog;
-
-    dialog.showOpenDialog = async () => {
-      dialog.showOpenDialog = original;
-      return { canceled: false, filePaths: [imagePath] };
-    };
-  }, imagePath);
+  await pickOpenFile(app!, imagePath);
 
   await page.getByRole("button", { name: "Choose background image", exact: true }).click();
   await page.waitForFunction(() => document.documentElement.dataset["customBackground"] === "true");

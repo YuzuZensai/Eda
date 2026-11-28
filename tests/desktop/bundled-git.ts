@@ -14,12 +14,10 @@ import type { Result } from "../../src/shared/errors.ts";
 
 const root = await mkdtemp(join(tmpdir(), "eda-bundled-gate-"));
 const packaged = process.argv.includes("--packaged");
-const env = Object.fromEntries(
-  Object.entries(fixtureEnvironment(root)).filter(
-    (entry): entry is [string, string] =>
-      entry[0].toLowerCase() !== "path" && entry[1] !== undefined,
-  ),
-);
+const env = fixtureEnvironment(root);
+for (const key of Object.keys(env)) {
+  if (key.toLowerCase() === "path") delete env[key];
+}
 
 const fixtureEnv = {
   ...env,
@@ -28,11 +26,6 @@ const fixtureEnv = {
     process.platform === "win32"
       ? join(process.env["SystemRoot"] ?? "C:/Windows", "System32")
       : "/nonexistent",
-  HOME: root,
-  USERPROFILE: root,
-  GIT_CONFIG_GLOBAL: join(root, "gitconfig"),
-  GIT_CONFIG_SYSTEM: process.platform === "win32" ? "NUL" : "/dev/null",
-  GIT_CONFIG_NOSYSTEM: "1",
   NODE_OPTIONS: "--no-warnings=ExperimentalWarning",
 };
 
@@ -149,7 +142,14 @@ try {
     packaged ? /\/resources\/git\//i : /\/vendor\/git\//,
   );
 
-  if (packaged) assert.ok(!engine.path.includes("app.asar"));
+  if (packaged) {
+    assert.ok(!engine.path.includes("app.asar"));
+    const resources = resolve(dirname(engine.path), "../..");
+    assert.deepEqual(
+      await readFile(join(resources, "licenses/provider-icons/LICENSE")),
+      await readFile(new URL("../../src/renderer/assets/providers/LICENSE", import.meta.url)),
+    );
+  }
   const diagnostics = await page.evaluate(() => window.eda.app.gitDiagnostics());
   assert.ok(diagnostics.ok);
   assert.equal(diagnostics.value.executable, engine.path);
