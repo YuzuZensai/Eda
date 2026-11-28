@@ -3,6 +3,8 @@ import { usePreferencesStore } from "../../stores/preferences-store";
 import { useState, useMemo } from "react";
 import { WorktreesDialog } from "./WorktreesDialog";
 import { t } from "@shared/i18n";
+import { workflowLabel } from "@shared/i18n/labels";
+import { revisionLabel } from "../../repository/reference-label";
 import type { RepositorySummary } from "@shared/repository/repository";
 import {
   ArrowDownIcon as ArrowDown,
@@ -11,7 +13,7 @@ import {
   BranchIcon as GitBranch,
 } from "../../components/ui/icons";
 import { Skeleton } from "../../components/ui/feedback/Skeleton";
-import { Button, cx, RefreshButton, TextButton } from "../../components/ui/index";
+import { Button, cx, StatusBanner, RefreshButton, TextButton } from "../../components/ui/index";
 import { categorizeChanges } from "../../repository/working-changes";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { BranchMenu } from "../references/BranchMenu";
@@ -40,6 +42,15 @@ export function RepositoryOverview({
   const writing = useRepositoryStore((state) => state.writing);
   const truncated = useRepositoryStore((state) => state.truncatedChanges);
   const branch = status?.branch;
+  const workflow = status?.workflow;
+  const incoming = workflow?.incoming[0];
+  const source = useRepositoryStore((state) =>
+    incoming ? revisionLabel(state.pages, incoming) : "",
+  );
+  const direction =
+    source && branch?.head && (workflow?.kind === "merge" || workflow?.kind === "squash")
+      ? t("repositoryWorkflowActions.mergeDirection", { source, target: branch.head })
+      : null;
   const predict = usePreferencesStore((state) => state.values.predictUpstreamConflicts.value);
   const upstreamRequest = useMemo(
     () =>
@@ -227,32 +238,53 @@ export function RepositoryOverview({
         />
       )}
       {!pending && (
-        <div
-          className={cx(
-            "min-w-0 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-border-default bg-bg-surface px-3 py-2 text-xs",
-            (status?.workflow || conflicts > 0) && !editingConflict ? "flex" : "hidden",
-          )}
-          aria-label={t("repositoryOverview.repositoryActions")}
-        >
-          <CircleAlert size={14} className="shrink-0 text-git-conflict" aria-hidden="true" />
-          <RepositoryWorkflowActions
-            repositoryId={repository.id}
-            workflow={status?.workflow}
-            writing={writing}
-            conflicts={conflicts}
-          />
-          {conflicts > 0 && (
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={() => {
-                const first = categories.conflicted[0];
-                if (first) void useRepositoryStore.getState().selectChange(first, "conflicted");
-              }}
+        <div hidden={editingConflict || (!workflow && conflicts === 0)} className="shrink-0">
+          <StatusBanner
+            label={t("repositoryOverview.repositoryActions")}
+            tone={conflicts > 0 ? "warning" : "info"}
+            action={
+              <>
+                <RepositoryWorkflowActions
+                  repositoryId={repository.id}
+                  workflow={workflow}
+                  writing={writing}
+                  conflicts={conflicts}
+                />
+
+                {conflicts > 0 && (
+                  <Button
+                    size="sm"
+                    variant="quiet"
+                    onClick={() => {
+                      const first = categories.conflicted[0];
+                      if (first)
+                        void useRepositoryStore.getState().selectChange(first, "conflicted");
+                    }}
+                  >
+                    {t("repositoryOverview.resolveConflicts", { count: conflicts })}
+                  </Button>
+                )}
+              </>
+            }
+          >
+            <span
+              className="inline-block font-medium text-text-primary first-letter:uppercase"
+              title={workflow ? `${workflow.currentLabel}; ${workflow.incomingLabel}` : undefined}
             >
-              {t("repositoryOverview.resolveConflicts", { count: conflicts })}
-            </Button>
-          )}
+              {workflow
+                ? t("repositoryWorkflowActions.inProgress", {
+                    kind: workflowLabel(workflow.kind),
+                    value2:
+                      workflow.step !== null ? `, ${workflow.step}/${workflow.total ?? "?"}` : "",
+                  })
+                : t("changes.changeListModel.conflicts")}
+            </span>
+            {direction && (
+              <span className="ms-2" title={direction}>
+                {direction}
+              </span>
+            )}
+          </StatusBanner>
         </div>
       )}
     </>

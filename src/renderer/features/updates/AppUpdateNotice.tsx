@@ -1,29 +1,37 @@
-import { usePreferencesStore } from "../../stores/preferences-store";
+import { useState } from "react";
 import { t } from "@shared/i18n";
-import { Button, StatusBanner, useNoticeDismissal } from "../../components/ui/index";
-import { useUpdates } from "./hooks/useUpdates";
+import type { UpdateState } from "@shared/updates";
+import { Button, StatusBanner } from "../../components/ui/index";
+import { usePreferencesStore } from "../../stores/preferences-store";
 import { openSettings } from "../../stores/shell-store";
 
-export function AppUpdateNotice({ aboutOpen }: { aboutOpen: boolean }) {
-  const enabled = usePreferencesStore((state) => state.values.updateNotices.value);
-  const { state, preview } = useUpdates();
-
-  const noticeId =
-    state && ["available", "ready"].includes(state.phase)
-      ? JSON.stringify([
-          preview,
-          state.release?.version ?? state.release?.name,
-          state.phase,
-          state.capability,
-          state.reason,
-        ])
-      : null;
-
-  const { dismissed, dismiss } = useNoticeDismissal(noticeId);
-
-  if (!enabled || aboutOpen || dismissed || !state || noticeId === null) return null;
+export function AppUpdateNotice({
+  state,
+  preview,
+  aboutOpen,
+}: {
+  state: UpdateState | null;
+  preview: boolean;
+  aboutOpen: boolean;
+}) {
+  const enabled = usePreferencesStore((store) => store.values.updateNotices.value);
+  if (!state || (state.phase !== "available" && state.phase !== "ready")) return null;
 
   const release = state.release;
+  const noticeId = JSON.stringify([
+    preview,
+    release?.version ?? release?.name,
+    state.phase,
+    state.capability,
+    state.reason,
+  ]);
+
+  return <ReleaseNotice key={noticeId} release={release} hidden={!enabled || aboutOpen} />;
+}
+
+function ReleaseNotice({ release, hidden }: { release: UpdateState["release"]; hidden: boolean }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (hidden || dismissed) return null;
 
   const name = release?.version
     ? t("appUpdateNotice.releaseVersion", { version: release.version })
@@ -35,7 +43,7 @@ export function AppUpdateNotice({ aboutOpen }: { aboutOpen: boolean }) {
     <StatusBanner
       label={t("appUpdateNotice.updateNotification")}
       title={heading}
-      onDismiss={dismiss}
+      onDismiss={() => setDismissed(true)}
       action={
         <Button size="sm" variant="quiet" onClick={() => openSettings("about")}>
           {t("appUpdateNotice.viewUpdate")}

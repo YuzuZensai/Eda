@@ -20,11 +20,7 @@ it.each(["Homebrew", "APT / dpkg", "RPM", "Pacman"])(
       progress: null,
       error: null,
     };
-    vi.stubGlobal("eda", {
-      app: { version: { displayVersion: "1.2.2-abcdef" } },
-      updates: { state: async () => ({ ok: true, value: state }) },
-      events: { onUpdateChanged: () => () => {} },
-    });
+    vi.stubGlobal("eda", { app: { version: { displayVersion: "1.2.2-abcdef" } } });
     const actions = { check: vi.fn(), download: vi.fn(), install: vi.fn() };
     const previousShell = useShellStore.getState();
     const container = document.createElement("div");
@@ -35,7 +31,7 @@ it.each(["Homebrew", "APT / dpkg", "RPM", "Pacman"])(
         await act(async () =>
           root.render(
             <>
-              <AppUpdateNotice aboutOpen={false} />
+              <AppUpdateNotice state={{ ...state, phase }} preview={false} aboutOpen={false} />
               <UpdateStatus state={{ ...state, phase }} actions={actions} />
             </>,
           ),
@@ -81,7 +77,6 @@ it.each(["available", "ready"] as const)(
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 
     const previous = useShellStore.getState();
-    let deliver!: (state: UpdateState) => void;
     const state: UpdateState = {
       revision: 1,
       capability: "automatic",
@@ -94,23 +89,16 @@ it.each(["available", "ready"] as const)(
       error: null,
     };
 
-    vi.stubGlobal("eda", {
-      app: { version: { version: "1.2.2", displayVersion: "1.2.2-abcdef" } },
-      updates: { state: async () => ({ ok: true, value: state }) },
-      events: {
-        onUpdateChanged: (listener: typeof deliver) => {
-          deliver = listener;
-
-          return () => {};
-        },
-      },
-    });
-
     const container = document.createElement("div");
     const root = createRoot(container);
 
+    const render = (next: UpdateState, aboutOpen = false) =>
+      act(async () =>
+        root.render(<AppUpdateNotice state={next} preview={false} aboutOpen={aboutOpen} />),
+      );
+
     try {
-      await act(async () => root.render(<AppUpdateNotice aboutOpen={false} />));
+      await render(state);
 
       const banner = container.querySelector('aside[aria-label="App update"]')!;
 
@@ -128,16 +116,16 @@ it.each(["available", "ready"] as const)(
 
       expect(useShellStore.getState().request).toEqual({ kind: "settings", section: "about" });
 
-      await act(async () => root.render(<AppUpdateNotice aboutOpen />));
+      await render(state, true);
 
       expect(container.querySelector("aside")).toBeNull();
 
-      await act(async () => root.render(<AppUpdateNotice aboutOpen={false} />));
-      await act(async () => deliver({ ...state, revision: 2, phase: "current" }));
+      await render(state);
+      await render({ ...state, revision: 2, phase: "current" });
 
       expect(container.querySelector("aside")).toBeNull();
 
-      await act(async () => deliver({ ...state, revision: 3, release: null }));
+      await render({ ...state, revision: 3, release: null });
 
       expect(container.textContent).toContain("An update");
       expect(container.textContent).not.toContain("undefined");

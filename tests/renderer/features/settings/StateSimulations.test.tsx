@@ -2,7 +2,7 @@ import { chooseOption, fillInput } from "../../../helpers/form-controls";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { StateSimulations } from "@renderer/features/settings/debug/StateSimulations";
-import { AppUpdateNotice } from "@renderer/features/updates/AppUpdateNotice";
+import { AppNotices } from "@renderer/app/AppNotices";
 import { UpdatesSettings } from "@renderer/features/updates/UpdatesSettings";
 import { usePreferencesStore } from "@renderer/stores/preferences-store";
 import { useSessionStore } from "@renderer/stores/session-store";
@@ -83,7 +83,7 @@ it("previews update banners and actions throughout the app, then restores the la
           </div>
 
           <div id="app-banner">
-            <AppUpdateNotice aboutOpen={false} />
+            <AppNotices aboutOpen={false} onReviewGitSettings={() => {}} />
           </div>
 
           <div id="about-panel">

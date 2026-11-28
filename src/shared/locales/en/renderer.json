@@ -1655,7 +1655,6 @@
   "repositoryWorkflowActions.finishStashHelp": "Keep the resolved changes and source stash without committing",
   "repositoryWorkflowActions.inProgress": "{kind} in progress{value2}",
   "repositoryWorkflowActions.mergeDirection": "{source} into {target}",
-  "repositoryWorkflowActions.resolveFirst": "Resolve and stage all conflicts first",
   "repositoryWorkflowActions.skipCommit": "Skip commit...",
   "resetDialog.completedResetRecoveryRecordsAreRetainedFor30Days": "Completed reset recovery records are retained for 30 days, up to 100 per repository across its worktrees. Unfinished records are retained.",
   "resetDialog.contentsRetainedStagedStatusIsRelativeToTheNewHead": "Contents retained; staged status is relative to the new HEAD",

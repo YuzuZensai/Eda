@@ -51,9 +51,9 @@ export { MenuSubmenu } from "./actions/MenuSubmenu";
 export { TabTrigger } from "./display/TabTrigger";
 export { WindowControlButton } from "./actions/WindowControlButton";
 export { ProfileButton } from "./actions/ProfileButton";
-export { IconDefaults, ICON_SIZE } from "./icons";
-
 export {
+  IconDefaults,
+  ICON_SIZE,
   BranchIcon,
   CheckIcon,
   ChevronDownIcon,
@@ -78,7 +78,6 @@ export {
 
 export { NoticeBanner } from "./feedback/NoticeBanner";
 export { StatusBanner, StatusBannerStack } from "./feedback/StatusBanner";
-export { useNoticeDismissal } from "./feedback/useNoticeDismissal";
 
 export { DefinitionList } from "./display/DefinitionList";
 export { ComparisonTable, type ComparisonTableProps } from "./display/ComparisonTable";

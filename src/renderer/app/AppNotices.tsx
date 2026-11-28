@@ -10,13 +10,13 @@ export function AppNotices({
   aboutOpen: boolean;
   onReviewGitSettings: () => void;
 }) {
-  const { state } = useUpdates();
+  const { state, preview } = useUpdates();
 
   return (
     <StatusBannerStack>
       {state?.phase !== "installing" && <GlobalGitWarning onReview={onReviewGitSettings} />}
 
-      <AppUpdateNotice aboutOpen={aboutOpen} />
+      <AppUpdateNotice state={state} preview={preview} aboutOpen={aboutOpen} />
     </StatusBannerStack>
   );
 }

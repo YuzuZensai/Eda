@@ -1,13 +1,12 @@
 import { lazyRepositoryDialog } from "../repository-dialogs.lazy";
 import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
-import { replayActionLabel, workflowLabel } from "@shared/i18n/labels";
+import { replayActionLabel } from "@shared/i18n/labels";
 import type { RebaseAction } from "@shared/workflows/rebase";
 import type { ReplayAction, ReplayKind } from "@shared/workflows/replay";
 import type { WorkflowState } from "@shared/workflows/workflow";
 import { Suspense, useState } from "react";
 import { Button, ErrorDialog, TextButton } from "../../components/ui/index";
-import { revisionLabel } from "../../repository/reference-label";
 import { useRepositoryStore } from "../../stores/repository-store";
 
 const MergeAbortDialog = lazyRepositoryDialog("MergeAbortDialog");
@@ -36,37 +35,12 @@ export function RepositoryWorkflowActions({
     action: ReplayAction;
   } | null>(null);
 
-  const incoming = workflow?.incoming[0];
-  const source = useRepositoryStore((state) =>
-    incoming ? revisionLabel(state.pages, incoming) : "",
-  );
-  const target = useRepositoryStore((state) => state.status?.branch.head);
   const [mergeAction, setMergeAction] = useState<"continue" | "abort" | null>(null);
   const [stashError, setStashError] = useState<string | null>(null);
   const [finishingStash, setFinishingStash] = useState(false);
 
   return (
     <>
-      {workflow && (
-        <div className="mr-auto flex min-w-0 items-baseline gap-3">
-          <span
-            role="status"
-            className="font-semibold text-text-primary first-letter:uppercase"
-            title={`${workflow.currentLabel}; ${workflow.incomingLabel}`}
-          >
-            {t("repositoryWorkflowActions.inProgress", {
-              kind: workflowLabel(workflow.kind),
-              value2: workflow.step !== null ? `, ${workflow.step}/${workflow.total ?? "?"}` : "",
-            })}
-          </span>
-          {source && target && (workflow.kind === "merge" || workflow.kind === "squash") && (
-            <span title={incoming} className="truncate text-text-secondary">
-              {t("repositoryWorkflowActions.mergeDirection", { source, target })}
-            </span>
-          )}
-        </div>
-      )}
-
       {workflow?.kind === "rebase" && (
         <>
           {workflow.rebaseEdit && (
@@ -127,15 +101,16 @@ export function RepositoryWorkflowActions({
       {(workflow?.kind === "merge" ||
         workflow?.kind === "squash" ||
         workflow?.kind === "stash") && (
-        <TextButton
-          className="text-git-deleted disabled:opacity-50"
+        <Button
+          size="sm"
+          variant="quiet"
           disabled={writing}
           onClick={() => setMergeAction("abort")}
         >
-          {workflow?.kind === "stash"
+          {workflow.kind === "stash"
             ? t("repositoryWorkflowActions.abortStashApplication")
             : t("repositoryWorkflowActions.abortMerge")}
-        </TextButton>
+        </Button>
       )}
 
       {workflow?.kind === "stash" && (
@@ -162,16 +137,12 @@ export function RepositoryWorkflowActions({
 
       {stashError && <ErrorDialog>{stashError}</ErrorDialog>}
 
-      {(workflow?.kind === "merge" || workflow?.kind === "squash") && (
+      {(workflow?.kind === "merge" || workflow?.kind === "squash") && conflicts === 0 && (
         <Button
           size="sm"
-          variant="primary"
-          disabled={conflicts > 0 || writing}
-          title={
-            conflicts
-              ? t("repositoryWorkflowActions.resolveFirst")
-              : t("repositoryWorkflowActions.continueMergeHelp")
-          }
+          variant="quiet"
+          disabled={writing}
+          title={t("repositoryWorkflowActions.continueMergeHelp")}
           onClick={() => setMergeAction("continue")}
         >
           {t("repositoryWorkflowActions.continueMerge")}

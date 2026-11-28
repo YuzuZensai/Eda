@@ -26,11 +26,14 @@ it("stacks notices, dismisses an update independently, and resurfaces changed up
     error: null,
   };
 
+  const readStatus = vi.fn(async () => ({ ok: true, value: live }));
+  const subscribe = vi.fn(() => () => {});
+
   vi.stubGlobal("eda", {
     app: { version: { version: "0.0.2", displayVersion: "0.0.2" } },
     identity: { inspectGit: inspect, reapplyGlobal: apply },
-    updates: { state: async () => ({ ok: true, value: live }) },
-    events: { onUpdateChanged: () => () => {} },
+    updates: { state: readStatus },
+    events: { onUpdateChanged: subscribe },
   });
 
   useAppStore.setState({
@@ -70,6 +73,8 @@ it("stacks notices, dismisses an update independently, and resurfaces changed up
 
   try {
     await render();
+    expect(readStatus).toHaveBeenCalledOnce();
+    expect(subscribe).toHaveBeenCalledOnce();
 
     expect(container.querySelector('[aria-label="App notifications"]')).not.toBeNull();
     expect(rows().map((row) => row.getAttribute("aria-label"))).toEqual([
