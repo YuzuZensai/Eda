@@ -48,7 +48,7 @@
     "@vitejs/plugin-react": "^6.3.0",
     "drizzle-kit": "1.0.0-rc.6",
     "drizzle-orm": "1.0.0-rc.6",
-    "electron": "^45.4.1",
+    "electron": "^45.5.0",
     "electron-builder": "^26.18.1",
     "electron-publish": "26.18.1",
     "eslint": "^10.15.0",
