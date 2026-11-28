@@ -6,6 +6,8 @@ import {
   lstatSync,
   mkdtempSync,
   realpathSync,
+  readFileSync,
+  writeFileSync,
   renameSync,
   rmSync,
 } from "node:fs";
@@ -75,42 +77,73 @@ export async function prepareReleaseDataImport(
 }
 
 // Run before opening the development database or creating any services.
-export function applyReleaseDataImport(developmentPath: string): void {
+export function applyReleaseDataImport(developmentPath: string, required = true): boolean {
   const stage = join(developmentPath, ".release-import-pending");
-  const managed = ["eda.db", "eda.db-wal", "eda.db-shm", "eda.db-journal", "secrets.vault"];
-  const moved: string[] = [];
-  const installed: string[] = [];
-  let preserveBackup = false;
+  const retired = join(developmentPath, ".release-import-retired");
+  const previousCleanup = existsSync(retired);
+  if (previousCleanup) rmSync(retired, { recursive: true, force: true });
+  if (!required && !existsSync(stage)) return previousCleanup;
 
+  const managed = ["eda.db", "eda.db-wal", "eda.db-shm", "eda.db-journal", "secrets.vault"];
+  const journal = join(stage, "original-files.json");
+  const previous = (name: string) => join(stage, "previous-" + name);
+  const finish = () => {
+    // Detach the transaction before deleting its files. Recursive deletion can be interrupted.
+    renameSync(stage, retired);
+    rmSync(retired, { recursive: true, force: true });
+  };
+  const recordOriginal = (original: string[]) => {
+    writeFileSync(journal + ".tmp", JSON.stringify(original), { mode: 0o600 });
+    renameSync(journal + ".tmp", journal);
+  };
+  const rollback = (original: string[]) => {
+    for (const name of managed) {
+      const live = join(developmentPath, name);
+      if (existsSync(previous(name))) renameSync(previous(name), live);
+      else if (!original.includes(name)) rmSync(live, { force: true });
+    }
+    finish();
+  };
+
+  if (existsSync(journal)) {
+    const original: unknown = JSON.parse(readFileSync(journal, "utf8"));
+    if (!Array.isArray(original) || !original.every((name) => managed.includes(name)))
+      throw new GitError({
+        kind: "invalid-input",
+        operation: t("operations.importReleaseData"),
+        message: errorText("main.appData.releaseDataUnavailable"),
+      });
+    rollback(original);
+    return true;
+  }
+  // Older installers wrote backups without a journal.
+  if (managed.some((name) => existsSync(previous(name)))) {
+    const movingOriginals = existsSync(join(stage, "eda.db"));
+    const original = managed.filter(
+      (name) =>
+        existsSync(previous(name)) || (movingOriginals && existsSync(join(developmentPath, name))),
+    );
+    recordOriginal(original);
+    rollback(original);
+    return true;
+  }
   if (!lstatSync(join(stage, "eda.db")).isFile())
     throw new GitError({
       kind: "invalid-input",
       operation: t("operations.importReleaseData"),
       message: errorText("main.appData.releaseDataUnavailable"),
     });
-
+  const original = managed.filter((name) => existsSync(join(developmentPath, name)));
+  recordOriginal(original);
   try {
-    for (const name of managed) {
-      const path = join(developmentPath, name);
-      if (existsSync(path)) {
-        renameSync(path, join(stage, `previous-${name}`));
-        moved.push(name);
-      }
-    }
+    for (const name of original) renameSync(join(developmentPath, name), previous(name));
     for (const name of ["eda.db", "secrets.vault"]) {
-      if (existsSync(join(stage, name))) {
-        renameSync(join(stage, name), join(developmentPath, name));
-        installed.push(name);
-      }
+      if (existsSync(join(stage, name))) renameSync(join(stage, name), join(developmentPath, name));
     }
   } catch (error) {
-    preserveBackup = true;
-    for (const name of installed) rmSync(join(developmentPath, name), { force: true });
-    for (const name of moved)
-      renameSync(join(stage, `previous-${name}`), join(developmentPath, name));
-    preserveBackup = false;
+    rollback(original);
     throw error;
-  } finally {
-    if (!preserveBackup) rmSync(stage, { recursive: true, force: true });
   }
+  finish();
+  return true;
 }

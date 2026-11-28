@@ -181,22 +181,25 @@ it("offers startup recovery for migration history mismatches instead of an exit-
   expect(startup.showErrorBox).not.toHaveBeenCalled();
 });
 
-it("installs the staged release snapshot before opening the development database", async () => {
-  vi.stubEnv("VITE_DEV_SERVER_URL", "http://localhost:5173");
-  const argv = [...process.argv];
-  process.argv.push("--eda-import-release-data");
-  try {
-    await import("@main/index");
-    await vi.waitFor(() => expect(startup.createServices).toHaveBeenCalled());
-    expect(startup.applyReleaseDataImport).toHaveBeenCalledWith(appData);
-    expect(startup.applyReleaseDataImport.mock.invocationCallOrder[0]).toBeLessThan(
-      startup.createServices.mock.invocationCallOrder[0]!,
-    );
-    expect(process.argv).not.toContain("--eda-import-release-data");
-  } finally {
-    process.argv.splice(0, process.argv.length, ...argv);
-  }
-});
+it.each([true, false])(
+  "checks for a staged release snapshot before opening the development database (explicit restart=%s)",
+  async (restart) => {
+    vi.stubEnv("VITE_DEV_SERVER_URL", "http://localhost:5173");
+    const argv = [...process.argv];
+    if (restart) process.argv.push("--eda-import-release-data");
+    try {
+      await import("@main/index");
+      await vi.waitFor(() => expect(startup.createServices).toHaveBeenCalled());
+      expect(startup.applyReleaseDataImport).toHaveBeenCalledWith(appData, restart);
+      expect(startup.applyReleaseDataImport.mock.invocationCallOrder[0]).toBeLessThan(
+        startup.createServices.mock.invocationCallOrder[0]!,
+      );
+      expect(process.argv).not.toContain("--eda-import-release-data");
+    } finally {
+      process.argv.splice(0, process.argv.length, ...argv);
+    }
+  },
+);
 
 it("rejects the import startup argument outside a development session", async () => {
   const argv = [...process.argv];

@@ -42,12 +42,13 @@ app.on("open-url", (event, url) => {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
+const liveDevelopment = isDev && !!process.env["VITE_DEV_SERVER_URL"];
 const appIcon = app.isPackaged
   ? join(process.resourcesPath, "icon.png")
   : join(__dirname, "../../build/icon.png");
 
 if (!app.commandLine.hasSwitch("user-data-dir")) {
-  const name = isDev && process.env["VITE_DEV_SERVER_URL"] ? "Eda-Dev" : "Eda";
+  const name = liveDevelopment ? "Eda-Dev" : "Eda";
   const userData = join(app.getPath("appData"), name);
   const legacyData = join(app.getPath("appData"), name.toLowerCase());
 
@@ -62,7 +63,6 @@ if (!app.commandLine.hasSwitch("user-data-dir")) {
   app.setPath("userData", userData);
 }
 
-const liveDevelopment = isDev && !!process.env["VITE_DEV_SERVER_URL"];
 app.setName(liveDevelopment ? DEVELOPMENT_DESKTOP.name : "Eda");
 if (liveDevelopment && process.platform === "linux") app.setDesktopName(DEVELOPMENT_DESKTOP.file);
 if (process.platform === "win32")
@@ -161,19 +161,20 @@ async function start(): Promise<void> {
     const importIndex = process.argv.indexOf(DEVELOPMENT_RESTART.argument);
     if (importIndex !== -1) {
       process.argv.splice(importIndex, 1);
-      if (app.isPackaged || !process.env["VITE_DEV_SERVER_URL"])
+      if (!liveDevelopment)
         throw new GitError({
           kind: "invalid-input",
           operation: t("operations.importReleaseData"),
           message: errorText("main.appData.developmentOnly"),
         });
-      applyReleaseDataImport(app.getPath("userData"));
     }
+    const imported =
+      liveDevelopment && applyReleaseDataImport(app.getPath("userData"), importIndex !== -1);
     configureGraphics();
     await app.whenReady();
     if (isDev && process.platform === "darwin") app.dock?.setIcon(appIcon);
     setLocale(app.getPreferredSystemLanguages());
-    if (importIndex !== -1) {
+    if (imported) {
       await session.defaultSession.clearStorageData();
       await session.defaultSession.clearCache();
     }

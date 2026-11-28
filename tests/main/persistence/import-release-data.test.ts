@@ -130,3 +130,37 @@ it("rolls back the development database and credentials if installing the copied
   );
   expect(strength(release)).toBe(70);
 });
+
+it.each([
+  ...[0, 1, 2, 3, 4].map((count) => ({ count, journal: true })),
+  ...[1, 2, 3, 4].map((count) => ({ count, journal: false })),
+])(
+  "restores both original files after interruption at rename $count (journal=$journal)",
+  async ({ count, journal }) => {
+    await writeFile(join(release, "secrets.vault"), "new vault");
+    await prepareReleaseDataImport(release, development);
+    const stage = join(development, ".release-import-pending");
+    const names = ["eda.db", "secrets.vault"];
+    if (journal) await writeFile(join(stage, "original-files.json"), JSON.stringify(names));
+    const moves = [
+      ...names.map((name) => [join(development, name), join(stage, "previous-" + name)] as const),
+      ...names.map((name) => [join(stage, name), join(development, name)] as const),
+    ];
+    for (const [from, to] of moves.slice(0, count)) fs.renameSync(from, to);
+    expect(applyReleaseDataImport(development, false)).toBe(true);
+    expect(strength(development)).toBe(20);
+    expect(await readFile(join(development, "secrets.vault"), "utf8")).toBe(
+      "development credentials",
+    );
+  },
+);
+
+it("finishes interrupted cleanup on an ordinary development restart", async () => {
+  const retired = join(development, ".release-import-retired");
+  await mkdir(retired);
+  await writeFile(join(retired, "previous-secrets.vault"), "old vault");
+  expect(applyReleaseDataImport(development, false)).toBe(true);
+  expect(await readdir(development)).toEqual(["eda.db", "secrets.vault"]);
+  expect(strength(development)).toBe(20);
+  expect(applyReleaseDataImport(development, false)).toBe(false);
+});
