@@ -168,3 +168,8 @@ export function requireRecord(value: unknown, label: string): Record<string, unk
 export function optionalRecord(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : {};
 }
+
+export function repositoryRequest(raw: unknown, label: string) {
+  const input = requireRecord(raw, label);
+  return { input, repositoryId: requireId(input["repositoryId"], t("fields.repositoryId")) };
+}

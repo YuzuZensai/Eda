@@ -1,37 +1,31 @@
-import { keyError } from "../../providers/public-signing-keys";
+import { saveRepositoryExport } from "./patch-handlers";
 import { isFlowConfig, isFlowPlan, flowKinds, type FlowAction } from "@shared/workflows/gitflow";
 import { isOneOf } from "@shared/validation";
+import type { PartialStageRequest } from "@shared/repository/partial-stage";
 import type { WorktreeAction, SubmoduleAction } from "@shared/repository/repository-write";
-import type {
-  DiffDisplayOptions,
-  PatchExportRequest,
-  PublicKeyRequest,
+import {
+  type DiffDisplayOptions,
+  isHistorySearchField,
+  MAX_HISTORY_PAGE_SIZE,
+  submoduleUpdateModes,
 } from "@shared/repository/repository-read";
 import { errorText } from "@shared/error-codes";
 import { ok } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { IPC_CHANNELS, IPC_EVENTS } from "@shared/ipc";
-import type { PartialStageRequest } from "@shared/repository/partial-stage";
 import type { InitRepositoryOptions } from "@shared/repository/repository";
-import {
-  isHistorySearchField,
-  MAX_HISTORY_PAGE_SIZE,
-  submoduleUpdateModes,
-} from "@shared/repository/repository-read";
 import { shell } from "electron";
-import { readRegularFile } from "../../filesystem/read-regular-file";
-import { saveFile } from "../../filesystem/save-file";
-import { writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { repositoryCapabilities } from "../../repo/lifecycle/repository-capabilities";
 import { RepositoryWatcher } from "../../repo/lifecycle/repository-watcher";
 import type { ImagePreviewRequest } from "@shared/repository/image-preview";
 import { readImagePreview } from "../../repo/working-tree/image-preview";
 import type { Services } from "../../services";
-import { showOpenDialog, showSaveDialog } from "../dialogs";
+import { showOpenDialog } from "../dialogs";
 import { invalidRequest } from "../../request-errors";
 import { broadcast, handle, withRepositoryChange } from "../transport";
 import {
+  repositoryRequest,
   optionalInteger,
   requireAbsolutePath,
   requireBoolean,
@@ -54,77 +48,6 @@ function diffDisplayOptions(input: Record<string, unknown>): DiffDisplayOptions 
 
 export function registerRepositoryHandlers(services: Services): void {
   const { git, repositories } = services;
-
-  handle(IPC_CHANNELS.repositoryForgetSigningKey, async (_e, rawId, fingerprint) => {
-    const id = requireId(rawId);
-    services.commitSignatures.forgetKey(
-      id,
-      requireString(fingerprint, t("diff.commitDetails.signatureKey"), 64),
-    );
-    broadcast(IPC_EVENTS.repositoryChanged, id);
-    return ok(undefined);
-  });
-  handle(IPC_CHANNELS.repositoryCancelKeyDiscovery, async (_e, id) => {
-    services.commitSignatures.cancelDiscovery(requireId(id));
-    return ok(undefined);
-  });
-  handle(IPC_CHANNELS.repositorySignerDecisions, async (_e, id) =>
-    ok(services.commitSignatures.listSigners(requireId(id))),
-  );
-  handle(IPC_CHANNELS.repositoryDecideSigner, async (_e, rawId, raw, remove) => {
-    const id = requireId(rawId);
-    const input = requireRecord(raw, t("diff.commitDetails.signatureTrust"));
-    const scope = input["scope"];
-    const decision = input["decision"];
-    if (
-      (scope !== "profile" && scope !== "repository") ||
-      (decision !== "trusted" && decision !== "distrusted") ||
-      typeof remove !== "boolean"
-    )
-      throw keyError();
-    services.commitSignatures.decide(
-      id,
-      {
-        fingerprint: requireString(input["fingerprint"], t("diff.commitDetails.signatureKey"), 100),
-        identity: requireString(input["identity"], t("diff.commitDetails.signatureSigner"), 320),
-        scope,
-        decision,
-      },
-      remove,
-    );
-    broadcast(IPC_EVENTS.repositoryChanged, id);
-    return ok(undefined);
-  });
-  handle(IPC_CHANNELS.repositoryDiscoverSigningKey, async (_e, rawId, rawOid, raw) => {
-    const id = requireId(rawId);
-    const oid = requireString(rawOid, t("fields.commitObjectId"), 64);
-    const input = requireRecord(raw, t("diff.commitDetails.signatureKey"));
-    let request: PublicKeyRequest;
-    if (input["source"] === "automatic") request = { source: "automatic" };
-    else if (input["source"] === "github")
-      request = {
-        source: "github",
-        account: requireString(input["account"], t("signature.github"), 39),
-      };
-    else if (input["source"] === "keyserver")
-      request = {
-        source: "keyserver",
-        server: requireString(input["server"], t("signature.server"), 2048),
-      };
-    else if (input["source"] === "manual")
-      request = {
-        source: "manual",
-        armoredKey: requireString(
-          input["armoredKey"],
-          t("diff.commitDetails.signatureKey"),
-          256 * 1024,
-        ),
-      };
-    else throw keyError();
-    const result = await services.commitSignatures.discover(id, oid, request);
-    broadcast(IPC_EVENTS.repositoryChanged, id);
-    return ok(result);
-  });
 
   handle(IPC_CHANNELS.repositoryReviewTrust, async (_event, rawId) => {
     const repository = repositories.resolveActiveRepository(requireId(rawId));
@@ -187,8 +110,9 @@ export function registerRepositoryHandlers(services: Services): void {
       if (stage !== undefined && (typeof stage !== "number" || ![0, 1, 2, 3].includes(stage)))
         throw invalidRequest(errorText("main.repositoryHandlers.chooseASavedIndexStage"));
 
+      const owner = repositories.resolveActiveRepository(requireId(rawId));
       const bytes = services.writer.savedRecoveryFile(
-        requireId(rawId),
+        owner.id,
         requireId(rawSnapshot),
         path,
         stage,
@@ -199,13 +123,7 @@ export function registerRepositoryHandlers(services: Services): void {
         defaultPath: `${basename(path)}.recovered`,
       };
 
-      const destination = await showSaveDialog(event, options);
-
-      if (destination.canceled || !destination.filePath) return ok(false);
-
-      await writeFile(destination.filePath, bytes);
-
-      return ok(true);
+      return saveRepositoryExport(repositories, event, owner, options, bytes);
     },
   );
 
@@ -493,118 +411,6 @@ export function registerRepositoryHandlers(services: Services): void {
       ),
     ),
   );
-
-  handle(IPC_CHANNELS.repositoryInspectCommit, async (_e, id, oid, refreshSignature) => {
-    if (refreshSignature !== undefined && typeof refreshSignature !== "boolean")
-      throw invalidRequest(
-        errorText("main.repositoryHandlers.chooseWhetherToVerifySignatureAgain"),
-      );
-
-    return ok(
-      await services.commitSignatures.inspect(
-        requireId(id),
-        requireString(oid, t("fields.commitObjectId"), 64),
-        refreshSignature === true,
-      ),
-    );
-  });
-
-  handle(IPC_CHANNELS.repositoryCommitSignature, async (_e, id, oid) => {
-    return ok(
-      await services.commitSignatures.read(
-        requireId(id),
-        requireString(oid, t("fields.commitObjectId"), 64),
-      ),
-    );
-  });
-
-  const repositoryRequest = (raw: unknown, label: string) => {
-    const input = requireRecord(raw, label);
-    return { input, repositoryId: requireId(input["repositoryId"], t("fields.repositoryId")) };
-  };
-
-  handle(IPC_CHANNELS.repositoryExportPatch, async (event, raw, rawMailbox) => {
-    const { input, repositoryId } = repositoryRequest(raw, t("patch.export"));
-    const area = input["area"];
-    const path =
-      input["path"] === undefined ? undefined : requireString(input["path"], t("fields.filePath"));
-    const oldPath =
-      input["oldPath"] === undefined
-        ? undefined
-        : requireString(input["oldPath"], t("fields.filePath"));
-    const oid =
-      input["oid"] === undefined
-        ? undefined
-        : requireString(input["oid"], t("fields.commitObjectId"), 64);
-    let request: PatchExportRequest;
-    if (oid && area === undefined && (!oldPath || path)) {
-      request = { repositoryId, oid, ...(path && { path }), ...(oldPath && { oldPath }) };
-    } else if (!oid && !oldPath && path && (area === "staged" || area === "unstaged")) {
-      request = { repositoryId, area, path };
-    } else {
-      throw invalidRequest(errorText("main.repositoryHandlers.chooseAValidDiffArea"));
-    }
-    const owner = repositories.resolveActiveRepository(repositoryId);
-    const mailbox =
-      rawMailbox === undefined ? undefined : requireRecord(rawMailbox, t("mailbox.export"));
-    if (mailbox && (!oid || path)) throw invalidRequest(errorText("mailbox.range"));
-    const after =
-      mailbox?.["after"] === undefined
-        ? undefined
-        : requireString(mailbox["after"], t("mailbox.base"), 64);
-    const bytes =
-      mailbox && oid
-        ? await services.repositoryReader.mailboxPatch(repositoryId, oid, after)
-        : await services.repositoryReader.filePatch(request);
-    const name = "oid" in request ? (request.path ?? request.oid.slice(0, 12)) : request.path;
-    if (!bytes.length) throw invalidRequest(errorText("patch.empty"));
-    const options = {
-      title: t("patch.save", { path: name, bytes: bytes.length }),
-      defaultPath: basename(name) + (mailbox ? ".mbox" : ".patch"),
-      filters: mailbox
-        ? [{ name: t("mailbox.export"), extensions: ["mbox"] }]
-        : [{ name: t("patch.export"), extensions: ["patch", "diff"] }],
-    };
-    const result = await showSaveDialog(event, options);
-    if (result.canceled || !result.filePath) return ok(false);
-    repositories.assertCurrentRepository(owner);
-    await saveFile(result.filePath, bytes);
-    return ok(true);
-  });
-
-  handle(IPC_CHANNELS.repositoryResumeMailbox, async (_e, rawId, action, rawToken) => {
-    if (action !== "continue" && action !== "abort")
-      throw invalidRequest(errorText("mailbox.invalid"));
-    const id = requireId(rawId);
-    const token = requireString(rawToken, t("mailbox.preview"), 64);
-    await withRepositoryChange(id, () => writer.mailbox(id, { action, token }));
-    return ok(undefined);
-  });
-  handle(IPC_CHANNELS.repositoryApplyPatch, async (event, rawId, mailbox) => {
-    const id = requireId(rawId);
-    const owner = repositories.resolveActiveRepository(id);
-    const file = await showOpenDialog(event, {
-      title: t(mailbox === true ? "mailbox.apply" : "patch.apply"),
-      buttonLabel: t(mailbox === true ? "mailbox.apply" : "patch.apply"),
-      properties: ["openFile"],
-      filters: [
-        {
-          name: t("patch.files"),
-          extensions: mailbox === true ? ["mbox", "patch"] : ["patch", "diff"],
-        },
-        { name: t("patch.allFiles"), extensions: ["*"] },
-      ],
-    });
-    if (file.canceled || !file.filePaths[0]) return ok(false);
-    const { bytes } = await readRegularFile(file.filePaths[0], 32 * 1024 * 1024, () =>
-      invalidRequest(errorText("patch.invalidFile")),
-    );
-    repositories.assertCurrentRepository(owner);
-    await withRepositoryChange(id, () =>
-      mailbox === true ? writer.mailbox(id, { bytes }) : writer.applyPatch(id, bytes),
-    );
-    return ok(true);
-  });
 
   handle(IPC_CHANNELS.repositoryChangeSubmodule, async (_e, rawId, raw) => {
     const id = requireId(rawId);
@@ -936,31 +742,20 @@ export function registerRepositoryHandlers(services: Services): void {
   const optionalPaths = (raw: unknown) =>
     raw === undefined ? undefined : requireStringArray(raw, t("fields.paths"), 256);
 
-  handle(IPC_CHANNELS.repositoryStage, async (_e, raw) => {
-    const { input, repositoryId } = repositoryRequest(
-      raw,
-      t("main.repositoryHandlers.stageRequest"),
-    );
-
+  const stagePaths = async (raw: unknown, action: "stage" | "unstage") => {
+    const label =
+      action === "stage"
+        ? t("main.repositoryHandlers.stageRequest")
+        : t("main.repositoryHandlers.unstageRequest");
+    const { input, repositoryId } = repositoryRequest(raw, label);
     await withRepositoryChange(repositoryId, async () =>
-      writer.stage(repositoryId, optionalPaths(input["paths"])),
+      writer[action](repositoryId, optionalPaths(input["paths"])),
     );
-
     return ok(undefined);
-  });
+  };
 
-  handle(IPC_CHANNELS.repositoryUnstage, async (_e, raw) => {
-    const { input, repositoryId } = repositoryRequest(
-      raw,
-      t("main.repositoryHandlers.unstageRequest"),
-    );
-
-    await withRepositoryChange(repositoryId, async () =>
-      writer.unstage(repositoryId, optionalPaths(input["paths"])),
-    );
-
-    return ok(undefined);
-  });
+  handle(IPC_CHANNELS.repositoryStage, async (_event, raw) => stagePaths(raw, "stage"));
+  handle(IPC_CHANNELS.repositoryUnstage, async (_event, raw) => stagePaths(raw, "unstage"));
 
   handle(IPC_CHANNELS.repositoryCommit, async (_e, raw) => {
     const { input, repositoryId } = repositoryRequest(

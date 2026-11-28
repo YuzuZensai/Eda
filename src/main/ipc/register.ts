@@ -1,3 +1,4 @@
+import { registerPatchHandlers } from "./handlers/patch-handlers";
 import { registerTerminalHandlers } from "./handlers/terminal-handlers";
 import { registerConflictHandlers } from "./handlers/conflict-handlers";
 import { registerWorkflowHandlers } from "./handlers/workflow-handlers";
@@ -9,6 +10,7 @@ import { registerProfileHandlers } from "./handlers/profile-handlers";
 import { registerRepositoryHandlers } from "./handlers/repository-handlers";
 import { registerSessionHandlers } from "./handlers/session-handlers";
 import { registerSettingsHandlers } from "./handlers/settings-handlers";
+import { registerSignatureHandlers } from "./handlers/signature-handlers";
 import { registerSshHandlers } from "./handlers/ssh-handlers";
 import { registerOperationHandlers } from "./handlers/operation-handlers";
 import { registerRemoteHandlers } from "./handlers/remote-handlers";
@@ -34,6 +36,8 @@ export function registerIpcHandlers(services: Services): void {
   registerApplicationHandlers(services);
   registerProfileHandlers(services);
   registerRepositoryHandlers(services);
+  registerPatchHandlers(services);
+  registerSignatureHandlers(services);
   registerSshHandlers(services);
   registerCredentialHandlers(services);
   registerSettingsHandlers(services);

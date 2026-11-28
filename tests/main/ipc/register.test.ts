@@ -1,6 +1,9 @@
 import { errorFixture } from "../../helpers/error";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rendererUrl } from "@main/application/renderer-url";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { GitError, type Result } from "@shared/errors";
 import { IPC_CHANNELS, IPC_EVENTS, type IpcChannel } from "@shared/ipc";
@@ -128,6 +131,7 @@ const electron = vi.hoisted(() => ({
   isMaximized: vi.fn(() => false),
   fromWebContents: vi.fn(),
   showMessageBox: vi.fn(),
+  showSaveDialog: vi.fn(),
   forcefullyCrashRenderer: vi.fn(),
   openDevTools: vi.fn(),
   openExternal: vi.fn(),
@@ -154,7 +158,7 @@ vi.mock("electron", () => ({
     ],
     fromWebContents: electron.fromWebContents,
   },
-  dialog: { showMessageBox: electron.showMessageBox },
+  dialog: { showMessageBox: electron.showMessageBox, showSaveDialog: electron.showSaveDialog },
   shell: { openExternal: electron.openExternal },
   clipboard: { writeText: electron.writeText },
 }));
@@ -291,6 +295,7 @@ function setup() {
       fetch: vi.fn(async () => "Fetched."),
     },
     repositories: {
+      assertCurrentRepository: vi.fn(),
       resolveActiveRepository: vi.fn(() => ({
         id: repositoryId,
         identityId: profile.id,
@@ -307,7 +312,7 @@ function setup() {
     },
     identities: { findById: vi.fn(() => profile) },
     sessions: { change: vi.fn(), open: vi.fn(), hasBinding: vi.fn(() => true), close: vi.fn() },
-    writer: { stage: vi.fn(), clearLocalCommitConfig: vi.fn() },
+    writer: { stage: vi.fn(), clearLocalCommitConfig: vi.fn(), savedRecoveryFile: vi.fn() },
     terminals: { dispose: vi.fn(), forget: vi.fn() },
     credentials: { unlockActiveKey: vi.fn() },
     repositoryTrust: { current: vi.fn(() => null), respond: vi.fn(() => true) },
@@ -329,6 +334,33 @@ function invoke(channel: IpcChannel, ...args: unknown[]) {
   if (!handler) throw new Error(`Missing handler: ${channel}`);
   return handler(event, ...args);
 }
+
+it("preserves the destination if the repository changes while choosing a recovery export path", async () => {
+  const { repositories, writer } = setup();
+  const directory = await mkdtemp(join(tmpdir(), "eda-export-"));
+  const destination = join(directory, "saved.txt");
+  try {
+    await writeFile(destination, "existing contents");
+    writer.savedRecoveryFile.mockReturnValue(Buffer.from("recovered contents"));
+    electron.showSaveDialog.mockImplementationOnce(async () => {
+      repositories.assertCurrentRepository.mockImplementationOnce(() => {
+        throw new Error("Repository changed");
+      });
+      return { canceled: false, filePath: destination };
+    });
+
+    const result = await invoke(
+      IPC_CHANNELS.repositoryExportRecoveryFile,
+      repositoryId,
+      "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "saved.txt",
+    );
+    expect(result.ok).toBe(false);
+    expect(await readFile(destination, "utf8")).toBe("existing contents");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 it("validates repository reads before forwarding them to the reader", async () => {
   const { repositoryReader } = setup();
@@ -588,77 +620,47 @@ describe("IPC registration", () => {
     expect(electron.writeText).toHaveBeenCalledOnce();
   });
 
-  it("accepts SSH trust decisions only from the main frame with a valid request and boolean", async () => {
-    const { sshHostTrust } = setup();
-    expect(await invoke(IPC_CHANNELS.sshPendingHostTrust)).toEqual({ ok: true, value: null });
-    expect(sshHostTrust.current).toHaveBeenCalledWith(event.sender.id);
-    const handler = handlers.get(IPC_CHANNELS.sshRespondHostTrust)!;
+  it.each([
+    ["sshHostTrust", IPC_CHANNELS.sshPendingHostTrust, IPC_CHANNELS.sshRespondHostTrust],
+    ["repositoryTrust", IPC_CHANNELS.repositoryPendingTrust, IPC_CHANNELS.repositoryRespondTrust],
+  ] as const)(
+    "accepts %s decisions only from the main frame with a valid request and boolean",
+    async (service, pending, respond) => {
+      const trust = setup()[service];
+      expect(await invoke(pending)).toEqual({ ok: true, value: null });
+      expect(trust.current).toHaveBeenCalledWith(event.sender.id);
+      const handler = handlers.get(respond)!;
 
-    expect(
-      await handler(
-        { ...event, senderFrame: {} } as Electron.IpcMainInvokeEvent,
-        repositoryId,
-        true,
-      ),
-    ).toMatchObject({ ok: false });
+      expect(
+        await handler(
+          { ...event, senderFrame: {} } as Electron.IpcMainInvokeEvent,
+          repositoryId,
+          true,
+        ),
+      ).toMatchObject({ ok: false });
 
-    expect(await invoke(IPC_CHANNELS.sshRespondHostTrust, repositoryId, "yes")).toMatchObject({
-      ok: false,
-    });
+      expect(await invoke(respond, repositoryId, "yes")).toMatchObject({
+        ok: false,
+      });
 
-    expect(await invoke(IPC_CHANNELS.sshRespondHostTrust, "invalid", true)).toMatchObject({
-      ok: false,
-    });
+      expect(await invoke(respond, "invalid", true)).toMatchObject({
+        ok: false,
+      });
 
-    expect(sshHostTrust.respond).not.toHaveBeenCalled();
+      expect(trust.respond).not.toHaveBeenCalled();
 
-    expect(await invoke(IPC_CHANNELS.sshRespondHostTrust, repositoryId, true)).toMatchObject({
-      ok: true,
-    });
+      expect(await invoke(respond, repositoryId, true)).toMatchObject({
+        ok: true,
+      });
 
-    expect(sshHostTrust.respond).toHaveBeenCalledWith(event.sender.id, repositoryId, true);
-    sshHostTrust.respond.mockReturnValue(false);
+      expect(trust.respond).toHaveBeenCalledWith(event.sender.id, repositoryId, true);
+      trust.respond.mockReturnValue(false);
 
-    expect(await invoke(IPC_CHANNELS.sshRespondHostTrust, repositoryId, true)).toMatchObject({
-      ok: false,
-    });
-  });
-
-  it("accepts repository trust decisions only from the main frame with a valid request and boolean", async () => {
-    const { repositoryTrust } = setup();
-    expect(await invoke(IPC_CHANNELS.repositoryPendingTrust)).toEqual({ ok: true, value: null });
-    expect(repositoryTrust.current).toHaveBeenCalledWith(event.sender.id);
-    const handler = handlers.get(IPC_CHANNELS.repositoryRespondTrust)!;
-
-    expect(
-      await handler(
-        { ...event, senderFrame: {} } as Electron.IpcMainInvokeEvent,
-        repositoryId,
-        true,
-      ),
-    ).toMatchObject({ ok: false });
-
-    expect(await invoke(IPC_CHANNELS.repositoryRespondTrust, repositoryId, "yes")).toMatchObject({
-      ok: false,
-    });
-
-    expect(await invoke(IPC_CHANNELS.repositoryRespondTrust, "invalid", true)).toMatchObject({
-      ok: false,
-    });
-
-    expect(repositoryTrust.respond).not.toHaveBeenCalled();
-
-    expect(await invoke(IPC_CHANNELS.repositoryRespondTrust, repositoryId, true)).toMatchObject({
-      ok: true,
-    });
-
-    expect(repositoryTrust.respond).toHaveBeenCalledWith(event.sender.id, repositoryId, true);
-    repositoryTrust.respond.mockReturnValue(false);
-
-    expect(await invoke(IPC_CHANNELS.repositoryRespondTrust, repositoryId, true)).toMatchObject({
-      ok: false,
-    });
-  });
+      expect(await invoke(respond, repositoryId, true)).toMatchObject({
+        ok: false,
+      });
+    },
+  );
 
   it("validates explicit global apply and forwards the captured profile to the coordinator", async () => {
     const { identity } = setup();
