@@ -41,6 +41,53 @@ function api(history: EdaApi["repository"]["history"]): EdaApi {
 describe("repository read store", () => {
   beforeEach(() => useRepositoryStore.getState().clear());
 
+  it.each(["opening", "refreshing"] as const)(
+    "applies a burst of disk changes during a slow %s read with one follow-up snapshot",
+    async (phase) => {
+      const bridge = api(async () => ok({ commits: [], nextOffset: null }));
+      vi.stubGlobal("eda", bridge);
+      const store = useRepositoryStore.getState();
+      if (phase === "refreshing") await store.open("repo", "profile", true);
+      const slow = deferred<Awaited<ReturnType<typeof bridge.repository.status>>>();
+      const original = await bridge.repository.status("repo");
+      if (!original.ok) throw new Error("Expected fixture status");
+      const status = vi
+        .spyOn(bridge.repository, "status")
+        .mockReturnValueOnce(slow.promise)
+        .mockResolvedValue(
+          ok({ ...original.value, branch: { ...original.value.branch, head: "latest" } }),
+        );
+
+      const reading =
+        phase === "opening" ? store.open("repo", "profile", true) : store.syncFromDisk();
+      const notifications = Array.from({ length: 8 }, () => store.syncFromDisk());
+      slow.resolve(original);
+      await Promise.all([reading, ...notifications]);
+
+      expect(status).toHaveBeenCalledTimes(2);
+      expect(useRepositoryStore.getState().status?.branch.head).toBe("latest");
+    },
+  );
+
+  it("keeps the new repository current while an old repository still has a queued refresh", async () => {
+    const bridge = api(async () => ok({ commits: [], nextOffset: null }));
+    const oldStatus = await bridge.repository.status("old");
+    const slow = deferred<typeof oldStatus>();
+    const status = vi.spyOn(bridge.repository, "status").mockReturnValueOnce(slow.promise);
+    vi.stubGlobal("eda", bridge);
+    const store = useRepositoryStore.getState();
+
+    const opening = store.open("old", "profile", true);
+    const stale = store.syncFromDisk();
+    await store.open("new", "profile", true);
+    await store.syncFromDisk();
+    slow.resolve(oldStatus);
+    await Promise.all([opening, stale]);
+
+    expect(status.mock.calls.map(([id]) => id)).toEqual(["old", "new", "new"]);
+    expect(useRepositoryStore.getState()).toMatchObject({ repositoryId: "new", phase: "ready" });
+  });
+
   it("refreshes in place while keeping the current view and diff visible", async () => {
     const bridge = api(async () => ok({ commits: [makeCommit(0)], nextOffset: null }));
     vi.stubGlobal("eda", bridge);

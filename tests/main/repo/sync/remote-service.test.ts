@@ -406,6 +406,53 @@ it("uses origin for commit avatars and switches to another remote after origin i
   expect(await service.primaryFetchUrl(client.id)).toBe("https://gitlab.com/team/project.git");
 });
 
+it.each(["disable", "postpone", "close"] as const)(
+  "honors a %s decision made while scheduled remote inspection is pending",
+  async (action) => {
+    const { service, client, profile, identity, repositories, db } = await setup();
+    const sessions = new ProfileSessionRepository(db);
+    const now = 1_000_000;
+    const scheduler = new BackgroundFetchService(
+      identity,
+      sessions,
+      new SettingsRepository(db),
+      repositories,
+      service,
+      () => ({ online: true, suspended: false }),
+      vi.fn(),
+      () => now,
+    );
+    sessions.change(profile.id, "main", {
+      kind: "tabs",
+      tabs: [client.id],
+      selectedRepositoryId: client.id,
+    });
+    scheduler.configure(client.id, 1);
+    const inspection = deferred<Awaited<ReturnType<typeof service.fetchStates>>>();
+    vi.spyOn(service, "fetchStates").mockReturnValueOnce(inspection.promise);
+    const fetch = vi.spyOn(service, "fetch").mockResolvedValue("");
+    const tick = scheduler.tick();
+    if (action === "close")
+      sessions.change(profile.id, "main", { kind: "tabs", tabs: [], selectedRepositoryId: null });
+    else scheduler.configure(client.id, action === "disable" ? 0 : 15);
+    inspection.resolve([
+      {
+        name: "origin",
+        supported: true,
+        history: {
+          lastAttempt: now - 120_000,
+          lastSuccess: now - 120_000,
+          retryAt: null,
+          failures: 0,
+          error: null,
+        },
+      },
+    ]);
+    await tick;
+    expect(fetch).not.toHaveBeenCalled();
+  },
+);
+
 it("schedules only open repositories, pauses when offline or suspended, backs off failures and refreshes refs without changing local work", async () => {
   const { service, source, server, client, run, profile, identity, repositories, db, identities } =
     await setup();

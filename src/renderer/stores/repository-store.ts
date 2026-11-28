@@ -29,8 +29,6 @@ import {
   type RepositorySelection,
 } from "./repository-state";
 
-let openRequest: Promise<void> | null = null;
-
 const emptyState = {
   commandDialog: null,
   historyTip: null,
@@ -90,6 +88,10 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
   const loadDiff = diff.load;
   const history = createHistoryPagination(get, set);
 
+  let openRequest: Promise<void> | null = null;
+  let diskRead: Promise<void> | null = null;
+  let queuedDiskRead: Promise<void> | null = null;
+
   const readFirstPage = (repositoryId: string, resetHistory = false) =>
     Promise.all([
       window.eda.repository
@@ -124,6 +126,8 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     }
 
     openRequest = null;
+    diskRead = null;
+    queuedDiskRead = null;
 
     history.invalidate();
     history.replaceFirst();
@@ -455,8 +459,26 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
       else await load(repositoryId, identityId, phase !== "missing", true);
     },
     async syncFromDisk() {
-      const { repositoryId, phase } = get();
-      if (repositoryId && phase === "ready") await reload(repositoryId);
+      const { generation, repositoryId, phase } = get();
+      if (!repositoryId || (phase !== "ready" && phase !== "loading")) return;
+      if (queuedDiskRead) return queuedDiskRead;
+
+      const read = async () => {
+        if (get().generation !== generation) return;
+        queuedDiskRead = null;
+        if (get().phase === "ready") await reload(repositoryId);
+      };
+
+      const previous = diskRead ?? openRequest;
+      const request = previous ? previous.then(read) : read();
+      diskRead = request;
+      if (previous) queuedDiskRead = request;
+      try {
+        await request;
+      } finally {
+        if (diskRead === request) diskRead = null;
+        if (queuedDiskRead === request) queuedDiskRead = null;
+      }
     },
     loadMore: history.loadMore,
     loadPrevious: history.loadPrevious,
@@ -590,6 +612,8 @@ export const useRepositoryStore = create<RepositoryReadState>((set, get) => {
     clear() {
       const generation = get().generation + 1;
       openRequest = null;
+      diskRead = null;
+      queuedDiskRead = null;
       history.invalidate();
       diff.invalidate();
       set({ ...emptyState, generation });

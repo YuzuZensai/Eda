@@ -3,10 +3,12 @@ import { t } from "@shared/i18n";
 import { watch, type FSWatcher } from "node:fs";
 
 const DEFAULT_DEBOUNCE_MS = 150;
+const POLL_INTERVAL_MS = 5_000;
 
 interface Entry {
   watchers?: FSWatcher[];
   timer?: NodeJS.Timeout;
+  deadline?: number;
   poll?: NodeJS.Timeout;
 }
 
@@ -76,7 +78,7 @@ export class RepositoryWatcher {
   }
 
   private poll(repositoryId: string): void {
-    const poll = setInterval(() => this.onChange(repositoryId), 5000);
+    const poll = setInterval(() => this.onChange(repositoryId), POLL_INTERVAL_MS);
 
     poll.unref();
     this.entries.set(repositoryId, { poll });
@@ -91,14 +93,22 @@ export class RepositoryWatcher {
     const entry = this.entries.get(repositoryId);
 
     if (!entry) return;
-    if (entry.timer) clearTimeout(entry.timer);
+    // Keep the usual quiet period, but give busy worktrees the same latency bound as polling.
+    const now = performance.now();
+    entry.deadline ??= now + POLL_INTERVAL_MS;
+    const delay = Math.min(this.debounceMs, entry.deadline - now);
+    if (entry.timer) {
+      if (delay <= 0) return;
+      clearTimeout(entry.timer);
+    }
 
     entry.timer = setTimeout(() => {
       const current = this.entries.get(repositoryId);
       if (current !== entry) return;
       delete current.timer;
+      delete current.deadline;
       this.onChange(repositoryId);
-    }, this.debounceMs);
+    }, delay);
   }
 }
 

@@ -52,7 +52,7 @@ export class BackgroundFetchService {
     if (!minutes) return null;
     return (
       history?.retryAt ??
-      (history?.lastSuccess ? history.lastSuccess + minutes * 60_000 : this.now())
+      (history?.lastSuccess != null ? history.lastSuccess + minutes * 60_000 : this.now())
     );
   }
 
@@ -64,20 +64,17 @@ export class BackgroundFetchService {
     }).value;
   }
 
-  private async remoteStates(repositoryId: string, intervalMinutes: number) {
-    return (await this.remotes.fetchStates(repositoryId)).map((remote) => ({
-      ...remote,
-      nextFetch: remote.supported ? this.due(remote.history, intervalMinutes) : null,
-    }));
-  }
-
   async inspect(repositoryId: string): Promise<BackgroundFetchState> {
+    const remotes = await this.remotes.fetchStates(repositoryId);
     const intervalMinutes = this.interval(repositoryId);
     return {
       intervalMinutes,
       ...this.conditions(),
       fetching: this.fetching?.repositoryId === repositoryId,
-      remotes: await this.remoteStates(repositoryId, intervalMinutes),
+      remotes: remotes.map((remote) => ({
+        ...remote,
+        nextFetch: remote.supported ? this.due(remote.history, intervalMinutes) : null,
+      })),
     };
   }
 
@@ -144,16 +141,16 @@ export class BackgroundFetchService {
 
       try {
         if (this.paused()) return;
-        const interval = this.interval(repositoryId);
-        if (!interval) continue;
+        if (!this.interval(repositoryId)) continue;
 
-        for (const remote of await this.remoteStates(repositoryId, interval)) {
-          if (!isCurrent()) return;
+        for (const remote of await this.remotes.fetchStates(repositoryId)) {
+          if (!isCurrent() || this.paused()) return;
+          if (!remote.supported) continue;
 
-          if (this.paused()) return;
-
-          if (!remote.supported || remote.nextFetch === null || remote.nextFetch > this.now())
-            continue;
+          const nextFetch = this.due(remote.history, this.interval(repositoryId));
+          if (nextFetch === null) break;
+          if (nextFetch > this.now()) continue;
+          if (!this.sessions.openRepositoryIds(profile.id).includes(repositoryId)) break;
 
           this.fetching = { profileId: profile.id, repositoryId };
 

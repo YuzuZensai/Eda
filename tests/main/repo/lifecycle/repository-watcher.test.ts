@@ -57,6 +57,22 @@ it("coalesces named and unnamed changes while filtering Git internal churn", () 
   expect(change).toHaveBeenCalledExactlyOnceWith("repo");
 });
 
+it("keeps reporting changes during continuous writes and delivers the final change", () => {
+  const change = vi.fn();
+  create(change).watch("repo", "/repo");
+
+  for (let i = 0; i < 510; i++) {
+    handles[0]!.emit("change", "change", "build.log");
+    vi.advanceTimersByTime(10);
+  }
+
+  expect(change).toHaveBeenCalledWith("repo");
+  change.mockClear();
+  handles[0]!.emit("change", "change", "last.txt");
+  vi.advanceTimersByTime(20);
+  expect(change).toHaveBeenCalledExactlyOnceWith("repo");
+});
+
 it("ignores events from replaced watches and cancels pending work on close", () => {
   const change = vi.fn();
   const subscription = create(change);
