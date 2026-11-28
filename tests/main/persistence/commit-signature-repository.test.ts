@@ -178,3 +178,49 @@ it("expires verification evidence so local key and trust changes are rechecked",
     db.close();
   }
 });
+
+it("prunes expired signatures and preserves fresh, damaged and unsupported records", () => {
+  const db = openInMemoryDatabase();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(100000);
+  try {
+    const { cache, work, repository } = setup(db);
+    const signature = {
+      status: "unsigned",
+      format: null,
+      reasonCode: null,
+      diagnostics: "",
+    } as const;
+    cache.record(work.id, repository.id, "a".repeat(40), signature);
+    const damaged = { checkedAt: 100_000, signature: { ...signature, signer: 23 } };
+    db.insert(commitSignatures)
+      .values([
+        {
+          profileId: work.id,
+          repositoryId: repository.id,
+          oid: "c".repeat(40),
+          version: 3,
+          value: JSON.stringify(damaged),
+        },
+        {
+          profileId: work.id,
+          repositoryId: repository.id,
+          oid: "d".repeat(40),
+          version: 4,
+          value: JSON.stringify({ checkedAt: 100_000, signature }),
+        },
+      ])
+      .run();
+    clock.mockReturnValue(160001);
+    cache.record(work.id, repository.id, "b".repeat(40), signature);
+    expect(
+      db
+        .select({ oid: commitSignatures.oid })
+        .from(commitSignatures)
+        .orderBy(commitSignatures.oid)
+        .all(),
+    ).toEqual([{ oid: "b".repeat(40) }, { oid: "c".repeat(40) }, { oid: "d".repeat(40) }]);
+  } finally {
+    clock.mockRestore();
+    db.close();
+  }
+});

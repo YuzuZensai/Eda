@@ -178,11 +178,10 @@ function GitSettings({ scope }: { scope: "profile" | "repository" }) {
     const hasLocal = (group: CommitConfigGroup) =>
       data?.localOverrides?.some((key) => commitConfigKeys(group).includes(key)) ?? false;
     const signing = entry("commit.gpgsign")?.value;
-    const signingEnabled = signing !== undefined && !/^(false|no|off|0)$/i.test(signing);
+    const signingEnabled = signing !== undefined && signing !== "false";
     let signingLabel = t("profileGitSettings.off");
 
-    if (signingEnabled)
-      signingLabel = /^(true|yes|on|1)?$/i.test(signing) ? t("profileGitSettings.on") : signing;
+    if (signingEnabled) signingLabel = signing === "true" ? t("profileGitSettings.on") : signing;
 
     const format = entry("gpg.format")?.value;
     let formatLabel = format || "GPG";

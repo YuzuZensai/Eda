@@ -45,6 +45,7 @@ import { resolveExecutable } from "./execution/executable";
 import { runGitProcess, type ProcessRunner } from "./execution/process-runner";
 import { readStashHistory } from "./operations/stash-history";
 import { readCommitTemplate } from "./commit-template";
+import { parseConfigEntry } from "./parsers/config-entry";
 import { parseUnifiedDiff } from "./parsers/diff-parser";
 import { LOG_ARGUMENTS, parseLog } from "./parsers/log-parser";
 import { BRANCH_ARGUMENTS, TAG_ARGUMENTS, parseBranches, parseTags } from "./parsers/ref-parser";
@@ -1445,34 +1446,41 @@ export class GitService {
     options: { cwd?: string; scope?: "global" } = {},
   ): Promise<GitConfigEntry[]> {
     const keys = commitConfigKeys("all");
-    const showScope = this.engine.versionParts.major > 2 || this.engine.versionParts.minor >= 26;
-    const fields = await this.execFields(
-      [
-        "config",
-        ...(options.scope ? [`--${options.scope}`] : []),
-        "--null",
-        "--show-origin",
-        ...(showScope ? ["--show-scope"] : []),
-        "--get-regexp",
-        "--",
-        `^(${keys.map((key) => key.replaceAll(".", "\\.")).join("|")})$`,
-      ],
-      {
-        ...(options.cwd ? { cwd: options.cwd } : {}),
-        operation: t("operations.inspectGitConfiguration"),
-        allowedExitCodes: [0, 1],
-      },
-    );
-
     const entries = new Map<string, GitConfigEntry>();
-    for (let index = 0; index < fields.length;) {
-      const scope = showScope ? fields[index++] : options.scope;
-      const origin = fields[index++]!;
-      const entry = fields[index++]!;
-      const newline = entry.indexOf("\n");
-      const key = newline < 0 ? entry : entry.slice(0, newline);
-      const value = newline < 0 ? "" : entry.slice(newline + 1);
-      entries.set(key, { key, origin, value, ...(scope !== undefined && { scope }) });
+    const read = async (pattern: string, type?: "--type=bool-or-str") => {
+      const fields = await this.execFields(
+        [
+          "config",
+          ...(options.scope ? [`--${options.scope}`] : []),
+          "--null",
+          "--show-origin",
+          "--show-scope",
+          ...(type ? [type] : []),
+          "--get-regexp",
+          "--",
+          pattern,
+        ],
+        {
+          ...(options.cwd ? { cwd: options.cwd } : {}),
+          operation: t("operations.inspectGitConfiguration"),
+          allowedExitCodes: [0, 1],
+        },
+      );
+
+      for (let index = 0; index < fields.length; index += 3) {
+        const scope = fields[index]!;
+        const origin = fields[index + 1]!;
+        const [key, value] = parseConfigEntry(fields[index + 2]!, "");
+        entries.set(key, { key, origin, value, scope });
+      }
+    };
+
+    await read(`^(${keys.map((key) => key.replaceAll(".", "\\.")).join("|")})$`);
+    const signing = entries.get("commit.gpgsign");
+    if (signing && signing.value !== "true" && signing.value !== "false") {
+      // Let Git distinguish bare, empty, numeric and invalid values without coercing author names.
+      entries.delete("commit.gpgsign");
+      await read("^commit\\.gpgsign$", "--type=bool-or-str");
     }
     return keys.map((key) => entries.get(key) ?? { key });
   }

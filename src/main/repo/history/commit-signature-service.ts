@@ -1,5 +1,9 @@
 import type { SignerService } from "./signer-service";
-import type { PublicKeyRequest, SignerDecision } from "@shared/repository/repository-read";
+import type {
+  CommitSignatureVerification,
+  PublicKeyRequest,
+  SignerDecision,
+} from "@shared/repository/repository-read";
 import { keyError } from "../../providers/public-signing-keys";
 import { t } from "@shared/i18n";
 import {
@@ -7,7 +11,6 @@ import {
   readActiveRepository,
   type RepositoryContext,
 } from "../lifecycle/repository-context";
-import type { CommitSignatureVerification } from "@shared/repository/repository-read";
 import type { GitService } from "../../git/git-service";
 import { assertFullObjectId } from "../../git/validation";
 import type { CommitSignatureRepository } from "../../persistence/commit-signature-repository";
@@ -77,7 +80,7 @@ export class CommitSignatureService {
       .then((signature) => {
         assertCurrent();
         return discoverMissing && revision === this.revision
-          ? this.findMissingKey(repository.id, oid, signature, refresh)
+          ? this.findMissingKey(repository, oid, signature, refresh)
           : signature;
       })
       .then((signature) => {
@@ -105,7 +108,7 @@ export class CommitSignatureService {
   }
 
   private async findMissingKey(
-    repositoryId: string,
+    repository: RepositoryContext,
     oid: string,
     signature: CommitSignatureVerification,
     refresh: boolean,
@@ -116,7 +119,6 @@ export class CommitSignatureService {
     const identifier = signature.fingerprint ?? signature.keyId;
     if (!identifier || !/^(?:[A-F\d]{16}|[A-F\d]{40}|[A-F\d]{64})$/i.test(identifier))
       return signature;
-    const repository = this.repositories.resolveActiveRepository(repositoryId);
     const key = JSON.stringify([repository.identityId, identifier.slice(-16).toUpperCase()]);
     const unavailable: CommitSignatureVerification = { ...signature, keyDiscovery: "unavailable" };
     let lookup = this.automatic.get(key);
@@ -129,7 +131,7 @@ export class CommitSignatureService {
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
       const revision = this.revision;
       const work = (async () => {
-        const candidate = await signers.discover(
+        const key = await signers.discover(
           repository.identityId,
           repository.path,
           oid,
@@ -137,29 +139,16 @@ export class CommitSignatureService {
           { source: "automatic" },
           signal,
         );
-        const current = this.repositories.resolveActiveRepository(repositoryId);
-        if (
-          signal.aborted ||
-          revision !== this.revision ||
-          current.identityId !== repository.identityId ||
-          current.path !== repository.path
-        )
-          throw keyError();
-        signers.store.saveKey(
-          repository.identityId,
-          candidate.fingerprint,
-          candidate.armoredKey,
-          candidate.source,
-        );
+        this.saveDiscoveredKey(repository, key, revision, signal);
         this.cache.clear(repository.identityId);
       })();
-      lookup = { repositoryId, controller, work };
+      lookup = { repositoryId: repository.id, controller, work };
       this.automatic.set(key, lookup);
       this.pauseLookup(key, false);
     }
     try {
       await lookup.work;
-      const current = this.repositories.resolveActiveRepository(repositoryId);
+      const current = this.repositories.resolveActiveRepository(repository.id);
       if (current.identityId !== repository.identityId || current.path !== repository.path)
         throw keyError();
       const verified = await signers.verify(repository.identityId, repository.path, oid, signature);
@@ -169,6 +158,29 @@ export class CommitSignatureService {
     } finally {
       if (this.automatic.get(key) === lookup) this.automatic.delete(key);
     }
+  }
+
+  private saveDiscoveredKey(
+    repository: RepositoryContext,
+    candidate: Awaited<ReturnType<SignerService["discover"]>>,
+    revision: number,
+    signal: AbortSignal,
+  ) {
+    const current = this.repositories.resolveActiveRepository(repository.id);
+    if (
+      !this.signers ||
+      signal.aborted ||
+      revision !== this.revision ||
+      current.identityId !== repository.identityId ||
+      current.path !== repository.path
+    )
+      throw keyError();
+    this.signers.store.saveKey(
+      repository.identityId,
+      candidate.fingerprint,
+      candidate.armoredKey,
+      candidate.source,
+    );
   }
 
   private pauseLookup(key: string, paused: boolean) {
@@ -200,7 +212,7 @@ export class CommitSignatureService {
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
     try {
       const signature = await this.readRaw(repository, oid, true, false);
-      const candidate = await this.signers.discover(
+      const key = await this.signers.discover(
         repository.identityId,
         repository.path,
         oid,
@@ -208,20 +220,7 @@ export class CommitSignatureService {
         input,
         signal,
       );
-      const current = this.repositories.resolveActiveRepository(repositoryId);
-      if (
-        signal.aborted ||
-        revision !== this.revision ||
-        current.identityId !== repository.identityId ||
-        current.path !== repository.path
-      )
-        throw keyError();
-      this.signers.store.saveKey(
-        repository.identityId,
-        candidate.fingerprint,
-        candidate.armoredKey,
-        candidate.source,
-      );
+      this.saveDiscoveredKey(repository, key, revision, signal);
       this.invalidate(repository.identityId);
       return await this.read(repositoryId, oid, true);
     } finally {

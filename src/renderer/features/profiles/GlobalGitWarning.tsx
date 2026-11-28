@@ -414,9 +414,9 @@ function settingValue(key: string, value: string | undefined): string {
   if (value === undefined) return t("globalGitWarning.notConfigured");
 
   if (key === "commit.gpgsign") {
-    if (/^(true|yes|on|1)?$/i.test(value)) return t("globalGitWarning.on");
+    if (value === "true") return t("globalGitWarning.on");
 
-    if (/^(false|no|off|0)$/i.test(value)) return t("globalGitWarning.off");
+    if (value === "false") return t("globalGitWarning.off");
   }
 
   if (key === "gpg.format")

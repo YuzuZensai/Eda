@@ -12,7 +12,7 @@ import { transportOptions } from "@main/git/operations/remotes";
 import { ProcessSpawnError } from "@main/git/execution/process-runner";
 import type { GitEngine } from "@main/git/execution/git-engine";
 import { assertHermetic, createTempRepo, type TempRepo } from "../../helpers/temp-repo";
-import { access, writeFile, unlink, rename } from "node:fs/promises";
+import { access, appendFile, writeFile, unlink, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { pushErrorFixtures } from "../../fixtures/git-errors";
 
@@ -274,6 +274,29 @@ describe("GitService against real Git", () => {
       origin: expect.stringContaining("config"),
     });
     expect(entries).toContainEqual({ key: "user.signingkey" });
+  });
+
+  it("reports Git’s effective signing boolean while preserving author strings and invalid values", async () => {
+    repo = await createTempRepo();
+    await repo.run(["config", "user.name", "yes"]);
+    for (const [setting, expected] of [
+      ["gpgsign", "true"],
+      ["gpgsign =", "false"],
+      ["gpgsign = Yes", "true"],
+      ["gpgsign = 0", "false"],
+      ["gpgsign = 2", "true"],
+      ["gpgsign = unknown", "unknown"],
+    ] as const) {
+      await appendFile(join(repo.path, ".git/config"), `\n[commit]\n    ${setting}\n`);
+      const entries = await repo.git.inspectCommitConfig({ cwd: repo.path });
+      expect(entries).toContainEqual({
+        key: "commit.gpgsign",
+        value: expected,
+        scope: "local",
+        origin: expect.stringContaining("config"),
+      });
+      expect(entries.find((entry) => entry.key === "user.name")?.value).toBe("yes");
+    }
   });
 
   it("reports a plain directory as not-a-repository rather than throwing", async () => {

@@ -1,10 +1,30 @@
 import type { CommitSignatureVerification } from "@shared/repository/repository-read";
 import { isOneOf, isRecord } from "@shared/validation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { commitSignatures, repositories } from "./schema";
 import type { Database } from "./types";
 
+const FRESHNESS_MS = 60_000;
+const PRUNE_BATCH = 64;
+
+function parseEnvelope(value: string) {
+  try {
+    const envelope: unknown = JSON.parse(value);
+    if (isRecord(envelope)) {
+      const { checkedAt, signature } = envelope;
+      if (typeof checkedAt === "number" && Number.isFinite(checkedAt) && isSignature(signature))
+        return { checkedAt, signature };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export class CommitSignatureRepository {
+  private lastPruned: number | undefined;
+  private pruneCursor = 0;
+
   constructor(private readonly db: Database) {}
 
   read(profileId: string, repositoryId: string, oid: string): CommitSignatureVerification | null {
@@ -22,23 +42,49 @@ export class CommitSignatureRepository {
 
     if (!row || row.version !== 3) return null;
 
-    let value: unknown;
-
-    try {
-      const envelope = JSON.parse(row.value) as { checkedAt?: unknown; signature?: unknown };
-      if (
-        typeof envelope.checkedAt !== "number" ||
-        !Number.isFinite(envelope.checkedAt) ||
-        envelope.checkedAt > Date.now() ||
-        Date.now() - envelope.checkedAt > 60_000
-      )
-        return null;
-      value = envelope.signature;
-    } catch {
+    const envelope = parseEnvelope(row.value);
+    const now = Date.now();
+    if (!envelope || envelope.checkedAt > now || now - envelope.checkedAt > FRESHNESS_MS)
       return null;
-    }
+    return envelope.signature;
+  }
 
-    return isSignature(value) ? value : null;
+  private pruneExpired(now: number) {
+    if (
+      this.lastPruned !== undefined &&
+      now >= this.lastPruned &&
+      now - this.lastPruned < FRESHNESS_MS
+    )
+      return;
+
+    // Walk large caches across writes so one verification can't block on the whole history.
+    const rowId = sql<number>`rowid`;
+    const next = this.db.transaction(() => {
+      const batch = this.db
+        .select({ id: rowId, version: commitSignatures.version, value: commitSignatures.value })
+        .from(commitSignatures)
+        .where(gt(rowId, this.pruneCursor))
+        .orderBy(rowId)
+        .limit(PRUNE_BATCH)
+        .all();
+      const expired = batch.filter((row) => {
+        const entry = row.version === 3 && parseEnvelope(row.value);
+        return entry && now - entry.checkedAt > FRESHNESS_MS;
+      });
+      if (expired.length)
+        this.db
+          .delete(commitSignatures)
+          .where(
+            inArray(
+              rowId,
+              expired.map((row) => row.id),
+            ),
+          )
+          .run();
+      return batch.length === PRUNE_BATCH ? batch[batch.length - 1]!.id : 0;
+    });
+    this.pruneCursor = next;
+    if (!next) this.lastPruned = now;
   }
 
   clear(profileId: string): void {
@@ -59,7 +105,9 @@ export class CommitSignatureRepository {
 
     if (!owner) return;
 
-    const value = JSON.stringify({ checkedAt: Date.now(), signature });
+    const now = Date.now();
+    this.pruneExpired(now);
+    const value = JSON.stringify({ checkedAt: now, signature });
 
     this.db
       .insert(commitSignatures)
