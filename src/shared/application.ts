@@ -31,3 +31,8 @@ export const DEVELOPMENT_RESTART = {
 } as const;
 
 export type DevelopmentRestartAction = "restart" | "import-release-data";
+
+export interface DetectedEditor {
+  name: string;
+  executable: string;
+}

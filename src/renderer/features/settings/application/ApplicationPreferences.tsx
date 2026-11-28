@@ -2,7 +2,7 @@ import { defaultDiffArgs, isDiffTool } from "@shared/integrations/merge-tool";
 import { HTTPS_HELPERS } from "@shared/integrations/remotes";
 import { errorMessage } from "@shared/errors";
 import { t } from "@shared/i18n";
-import type { DetectedEditor } from "@shared/integrations/editor";
+import type { DetectedEditor } from "@shared/application";
 import { useEffect, useId, useState } from "react";
 import { useAppStore } from "../../../stores/app-store";
 import { ErrorDialog, Select, Checkbox, TextButton, Textarea } from "../../../components/ui/index";

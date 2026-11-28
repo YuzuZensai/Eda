@@ -2,7 +2,8 @@ import { access, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
-import type { DetectedEditor } from "@shared/integrations/editor";
+import type { DetectedMergeTool } from "@shared/integrations/merge-tool";
+import type { DetectedEditor } from "@shared/application";
 
 interface ApplicationCandidate {
   name: string;
@@ -11,7 +12,7 @@ interface ApplicationCandidate {
   windows?: string;
 }
 
-export async function detectApplications(
+async function detectApplications(
   candidates: readonly ApplicationCandidate[],
 ): Promise<DetectedEditor[]> {
   const home = homedir();
@@ -51,4 +52,80 @@ export async function detectApplications(
   );
 
   return detected.filter((editor): editor is DetectedEditor => editor !== null);
+}
+
+const EDITOR_CANDIDATES = [
+  {
+    name: "Visual Studio Code",
+    command: "code",
+    mac: "Visual Studio Code.app/Contents/Resources/app/bin/code",
+    windows: "Microsoft VS Code/Code.exe",
+  },
+  {
+    name: "Visual Studio Code Insiders",
+    command: "code-insiders",
+    mac: "Visual Studio Code - Insiders.app/Contents/Resources/app/bin/code-insiders",
+    windows: "Microsoft VS Code Insiders/Code - Insiders.exe",
+  },
+  {
+    name: "VSCodium",
+    command: "codium",
+    mac: "VSCodium.app/Contents/Resources/app/bin/codium",
+    windows: "VSCodium/VSCodium.exe",
+  },
+  {
+    name: "Cursor",
+    command: "cursor",
+    mac: "Cursor.app/Contents/Resources/app/bin/cursor",
+    windows: "cursor/Cursor.exe",
+  },
+  {
+    name: "Windsurf",
+    command: "windsurf",
+    mac: "Windsurf.app/Contents/Resources/app/bin/windsurf",
+    windows: "Windsurf/Windsurf.exe",
+  },
+  { name: "Zed", command: "zed", mac: "Zed.app/Contents/MacOS/cli", windows: "Zed/zed.exe" },
+  {
+    name: "Sublime Text",
+    command: "subl",
+    mac: "Sublime Text.app/Contents/SharedSupport/bin/subl",
+    windows: "Sublime Text/subl.exe",
+  },
+  { name: "Notepad++", command: "notepad++", windows: "Notepad++/notepad++.exe" },
+  { name: "Kate", command: "kate" },
+  { name: "GNOME Text Editor", command: "gnome-text-editor" },
+  { name: "Gedit", command: "gedit" },
+] as const;
+
+export function detectEditors(): Promise<DetectedEditor[]> {
+  return detectApplications(EDITOR_CANDIDATES);
+}
+
+export async function detectMergeTools(): Promise<DetectedMergeTool[]> {
+  const tools = await detectApplications([
+    ...EDITOR_CANDIDATES.filter((editor) => ["code", "code-insiders"].includes(editor.command)),
+    {
+      name: "Meld",
+      command: "meld",
+      mac: "Meld.app/Contents/MacOS/Meld",
+      windows: "Meld/Meld.exe",
+    },
+    {
+      name: "KDiff3",
+      command: "kdiff3",
+      mac: "kdiff3.app/Contents/MacOS/kdiff3",
+      windows: "KDiff3/kdiff3.exe",
+    },
+  ]);
+
+  return tools.map((tool) => ({
+    ...tool,
+    args:
+      tool.name === "Meld"
+        ? ["--output={result}", "{current}", "{base}", "{incoming}"]
+        : tool.name === "KDiff3"
+          ? ["{base}", "{current}", "{incoming}", "--output", "{result}"]
+          : ["--wait", "--merge", "{incoming}", "{current}", "{base}", "{result}"],
+  }));
 }

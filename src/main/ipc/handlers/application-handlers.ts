@@ -5,8 +5,7 @@ import { AppError, ok } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { IPC_CHANNELS, IPC_EVENTS } from "@shared/ipc";
 import { app, BrowserWindow, clipboard, dialog, shell } from "electron";
-import { detectEditors } from "../../application/detect-editors";
-import { detectMergeTools } from "../../application/detect-merge-tools";
+import { detectEditors, detectMergeTools } from "../../application/detect-applications";
 import { graphicsStatus } from "../../application/graphics";
 import { applyWindowZoom } from "../../application/window-zoom";
 import type { Services } from "../../services";
@@ -14,6 +13,17 @@ import { showOpenDialog } from "../dialogs";
 import { invalidRequest } from "../../request-errors";
 import { broadcast, exclusivelyReset, handle, withRepositoryChange } from "../transport";
 import { requireId, requireString } from "../validate";
+
+async function chooseExecutable(event: Electron.IpcMainInvokeEvent, title: string) {
+  const result = await showOpenDialog(event, {
+    title,
+    properties: ["openFile"],
+    ...(process.platform === "win32"
+      ? { filters: [{ name: t("main.fileFilters.application"), extensions: ["exe"] }] }
+      : {}),
+  });
+  return ok(result.canceled ? null : (result.filePaths[0] ?? null));
+}
 
 export function registerApplicationHandlers(services: Services): void {
   handle(IPC_CHANNELS.appCopyText, async (_event, value) => {
@@ -136,35 +146,17 @@ export function registerApplicationHandlers(services: Services): void {
 
   handle(IPC_CHANNELS.appDetectMergeTools, async () => ok(await detectMergeTools()));
 
-  handle(IPC_CHANNELS.appChooseMergeTool, async (event) => {
-    const result = await showOpenDialog(event, {
-      title: t("main.applicationHandlers.chooseMergeToolExecutable"),
-      properties: ["openFile"],
-      ...(process.platform === "win32"
-        ? { filters: [{ name: t("main.fileFilters.application"), extensions: ["exe"] }] }
-        : {}),
-    });
-
-    return ok(result.canceled ? null : (result.filePaths[0] ?? null));
-  });
-
+  handle(IPC_CHANNELS.appChooseMergeTool, (event) =>
+    chooseExecutable(event, t("main.applicationHandlers.chooseMergeToolExecutable")),
+  );
   handle(IPC_CHANNELS.appDetectEditors, async () => ok(await detectEditors()));
-
-  handle(IPC_CHANNELS.appChooseBrowser, async (event) => {
-    const result = await showOpenDialog(event, {
-      title: t("main.browser.chooseApplication"),
-      properties: ["openFile"],
-      ...(process.platform === "win32"
-        ? { filters: [{ name: t("main.fileFilters.application"), extensions: ["exe"] }] }
-        : {}),
-    });
-
-    return ok(result.canceled ? null : (result.filePaths[0] ?? null));
-  });
-
-  handle(IPC_CHANNELS.appChooseEditor, async (event, kind) => {
-    const result = await showOpenDialog(event, {
-      title: t(
+  handle(IPC_CHANNELS.appChooseBrowser, (event) =>
+    chooseExecutable(event, t("main.browser.chooseApplication")),
+  );
+  handle(IPC_CHANNELS.appChooseEditor, (event, kind) =>
+    chooseExecutable(
+      event,
+      t(
         kind === "git" || kind === "ssh" || kind === "gpg"
           ? "settings.tools.select"
           : kind === "diff"
@@ -173,14 +165,8 @@ export function registerApplicationHandlers(services: Services): void {
               ? "worktrees.chooseTerminal"
               : "main.applicationHandlers.chooseEditorExecutable",
       ),
-      properties: ["openFile"],
-      ...(process.platform === "win32"
-        ? { filters: [{ name: t("main.fileFilters.application"), extensions: ["exe"] }] }
-        : {}),
-    });
-
-    return ok(result.canceled ? null : (result.filePaths[0] ?? null));
-  });
+    ),
+  );
 
   handle(IPC_CHANNELS.repositoryWorkingFile, async (_e, rawId, rawPath, action) => {
     const id = requireId(rawId);

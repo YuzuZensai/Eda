@@ -17,7 +17,12 @@ import type {
   GitLabSignInResult,
   GitLabAccountProfile,
 } from "./integrations/gitlab";
-import type { DesktopPlatform, GraphicsStatus, InstallationInfo } from "./application";
+import type {
+  DesktopPlatform,
+  GraphicsStatus,
+  InstallationInfo,
+  DetectedEditor,
+} from "./application";
 import type { GitEngineInfo, GitDiagnostics } from "./integrations/git-engine";
 import type { AvatarImage } from "./identity/avatar";
 import type { BuildInfo } from "./version";
@@ -29,7 +34,6 @@ import type {
   GitHubAccountProfile,
 } from "./integrations/github";
 import type { DetectedMergeTool } from "./integrations/merge-tool";
-import type { DetectedEditor } from "./integrations/editor";
 import type { BackgroundFetchState } from "./integrations/background-fetch";
 import type { ReplayAction, ReplayKind, ReplayReview, ReplayResult } from "./workflows/replay";
 import type { ResetMode, ResetReview, ResetResult } from "./workflows/reset";
