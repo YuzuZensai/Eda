@@ -1,13 +1,14 @@
 import { t } from "@shared/i18n";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useScopedSetting } from "../hooks/useScopedSetting";
-import { Checkbox, Select } from "../../../components/ui/index";
+import { Select } from "../../../components/ui/index";
 import { usePreferencesStore } from "../../../stores/preferences-store";
+import { GitPreferenceCheckbox } from "./GitPreferenceCheckbox";
 
 export function FetchSettings({ repositoryId }: { repositoryId?: string }) {
-  const owner = repositoryId ? "repository" : "application";
-  const interval = useScopedSetting("backgroundFetchMinutes", owner, repositoryId);
+  const override = useScopedSetting("backgroundFetchMinutes", "repository", repositoryId);
   const inherited = useScopedSetting("backgroundFetchMinutes", "application");
+  const interval = repositoryId ? override : inherited;
   const saving = usePreferencesStore((state) => state.saving);
   const [busy, setBusy] = useState(false);
   const label = (minutes: number) =>
@@ -53,21 +54,21 @@ export function FetchSettings({ repositoryId }: { repositoryId?: string }) {
       {repositoryId && (
         <div className="space-y-3 border-t border-border-subtle pt-4">
           <h2 className="text-sm font-medium">{t("settings.fetchSettings.fetchDefaults")}</h2>
-          <FetchCheckbox
+          <GitPreferenceCheckbox
             settingKey="fetchPrune"
-            owner="repository"
+            className="flex w-full"
             repositoryId={repositoryId}
             label={t("settings.fetchSettings.pruneDeletedRemoteTrackingBranches")}
           />
-          <FetchCheckbox
+          <GitPreferenceCheckbox
             settingKey="predictUpstreamConflicts"
-            owner="repository"
+            className="flex w-full"
             repositoryId={repositoryId}
             label={t("mergePrediction.preference")}
           />
-          <FetchCheckbox
+          <GitPreferenceCheckbox
             settingKey="fetchTags"
-            owner="repository"
+            className="flex w-full"
             repositoryId={repositoryId}
             label={t("settings.fetchSettings.fetchAllTags")}
           />
@@ -82,40 +83,5 @@ export function FetchSettings({ repositoryId }: { repositoryId?: string }) {
         </div>
       )}
     </div>
-  );
-}
-
-function FetchCheckbox({
-  settingKey,
-  owner,
-  repositoryId,
-  label,
-}: {
-  settingKey: "fetchPrune" | "fetchTags" | "predictUpstreamConflicts";
-  owner: "application" | "repository";
-  repositoryId?: string;
-  label: string;
-}) {
-  const setting = useScopedSetting(settingKey, owner, repositoryId);
-  const saving = usePreferencesStore((state) => state.saving);
-  const [checked, setChecked] = useState(setting.resolved.value);
-  useEffect(() => {
-    if (!setting.unavailable) setChecked(setting.resolved.value);
-  }, [setting.unavailable, setting.resolved.value]);
-  return (
-    <Checkbox
-      className="flex w-full"
-      checked={checked}
-      disabled={saving || setting.unavailable}
-      onChange={(event) => {
-        const previous = checked;
-        setChecked(event.target.checked);
-        void setting.set(event.target.checked).then((saved) => {
-          if (!saved) setChecked(previous);
-        });
-      }}
-    >
-      {label}
-    </Checkbox>
   );
 }

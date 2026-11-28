@@ -10,7 +10,7 @@ import { GitLabSelfHostedAccountCard } from "./GitLabSelfHostedAccountCard";
 import { GitLabSelfHostedSetup } from "./GitLabSelfHostedSetup";
 import { ServiceAccountCard } from "./ServiceAccountCard";
 import { GitLabSelfHostedAccountActions } from "./GitLabSelfHostedAccountActions";
-import { ConnectionActionSkeleton } from "./ConnectionSkeleton";
+import { ConnectionActionSkeleton } from "./ConnectionCard";
 
 export function GitLabSelfHostedConnection({
   profileId,

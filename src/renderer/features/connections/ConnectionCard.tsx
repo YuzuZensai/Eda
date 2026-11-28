@@ -1,7 +1,7 @@
 import { t } from "@shared/i18n";
 import type { ReactNode } from "react";
 import { CheckIcon as Check } from "../../components/ui/icons";
-import { Disclosure } from "../../components/ui/index";
+import { Button, Disclosure, Skeleton } from "../../components/ui/index";
 
 export function ConnectionCard({
   title,
@@ -58,5 +58,15 @@ export function ConnectionCard({
         )}
       </div>
     </Disclosure>
+  );
+}
+
+export function ConnectionActionSkeleton({ label }: { label: string }) {
+  return (
+    <Skeleton className="h-auto w-fit rounded-sm">
+      <Button size="sm" disabled className="invisible">
+        {label}
+      </Button>
+    </Skeleton>
   );
 }

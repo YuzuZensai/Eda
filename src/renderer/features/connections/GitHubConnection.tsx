@@ -13,7 +13,7 @@ import {
 } from "../../components/ui/index";
 import { useAppStore } from "../../stores/app-store";
 import { AccountActions, ServiceAccountCard } from "./ServiceAccountCard";
-import { ConnectionActionSkeleton } from "./ConnectionSkeleton";
+import { ConnectionActionSkeleton } from "./ConnectionCard";
 import { useConnectionStatus } from "./useConnectionStatus";
 
 type ConnectionProps = { profileId: string; compact?: boolean };

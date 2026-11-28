@@ -85,3 +85,9 @@ it("restores the saved tag choice if changing it fails", async () => {
   await act(async () => checkbox().click());
   expect(checkbox().checked).toBe(true);
 });
+
+it("reads the application fetch interval once when no repository override is displayed", async () => {
+  const resolve = vi.spyOn(window.eda.settings, "resolve");
+  await act(async () => root.render(<FetchSettings />));
+  expect(resolve.mock.calls.filter(([key]) => key === "backgroundFetchMinutes")).toHaveLength(1);
+});
