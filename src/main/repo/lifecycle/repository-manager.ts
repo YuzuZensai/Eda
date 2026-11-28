@@ -1,3 +1,4 @@
+import { nullIfFileMissing } from "../../filesystem/missing-file";
 import { assertRepositoryContext } from "./repository-context";
 import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
@@ -136,10 +137,7 @@ export class RepositoryManager {
       const files = initFiles(options, basename(path), active.gitName);
 
       for (const name of Object.keys(files)) {
-        const existing = await lstat(join(path, name)).catch((error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT") return null;
-          throw error;
-        });
+        const existing = await lstat(join(path, name)).catch(nullIfFileMissing);
 
         if (existing)
           throw new GitError({

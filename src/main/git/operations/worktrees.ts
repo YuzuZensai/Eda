@@ -6,6 +6,7 @@ import { AppError, GitError } from "@shared/errors";
 import { ERROR_CODE, errorText } from "@shared/error-codes";
 import { t } from "@shared/i18n";
 import type { WorktreeSummary } from "@shared/repository/repository-read";
+import { nullIfFileMissing } from "../../filesystem/missing-file";
 import type { GitService } from "../git-service";
 
 import type { WorktreeAction } from "@shared/repository/repository-write";
@@ -78,12 +79,7 @@ export async function changeWorktree(
       })
     )
       throw fail("worktrees.invalid");
-    try {
-      await lstat(destination);
-      throw fail("worktrees.invalid");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
+    if (await lstat(destination).catch(nullIfFileMissing)) throw fail("worktrees.invalid");
     const start = action.base ?? "refs/heads/" + action.branch;
     if (action.base) assertValidRefName(action.base, operation);
     const { stdout } = await git.exec(
@@ -155,12 +151,8 @@ export async function changeWorktree(
     "rebase-apply",
     "sequencer",
   ]) {
-    try {
-      await lstat(join(metadata.stdout.trimEnd(), file));
+    if (await lstat(join(metadata.stdout.trimEnd(), file)).catch(nullIfFileMissing))
       throw fail("worktrees.inUse");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
   }
   if (action.kind === "cleanup") {
     if (

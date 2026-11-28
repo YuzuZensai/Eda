@@ -1,3 +1,4 @@
+import { nullIfFileMissing } from "../filesystem/missing-file";
 import { errorText } from "@shared/error-codes";
 import { AppError, GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -14,8 +15,7 @@ import { homedir } from "node:os";
 import { readRegularFile } from "../filesystem/read-regular-file";
 import { basename, dirname, join } from "node:path";
 import { buildGitEnvironment, SSH_HOST_TRUST_OPTIONS } from "../git/execution/environment";
-import type { ProcessRunner } from "../git/execution/process-runner";
-import { ProcessSpawnError } from "../git/execution/process-runner";
+import { type ProcessRunner, ProcessSpawnError } from "../git/execution/process-runner";
 import type { SshAgent } from "../git/security/ssh-agent";
 import { assertNotOptionLike, parseValidSshDestination } from "../git/validation";
 import {
@@ -128,15 +128,10 @@ export class SshService {
         message: errorText("main.sshHandlers.invalidKeyParameters"),
       });
     const publicPath = `${request.path}.pub`;
-    const exists = async (path: string) =>
-      lstat(path).then(
-        () => true,
-        (error: NodeJS.ErrnoException) => {
-          if (error.code !== "ENOENT") throw error;
-          return false;
-        },
-      );
-    if ((await exists(request.path)) || (await exists(publicPath))) {
+    if (
+      (await lstat(request.path).catch(nullIfFileMissing)) ||
+      (await lstat(publicPath).catch(nullIfFileMissing))
+    ) {
       throw new GitError({
         kind: "invalid-input",
         operation: t("operations.generateSshKey"),

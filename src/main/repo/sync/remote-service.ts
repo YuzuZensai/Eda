@@ -1,3 +1,4 @@
+import { nullIfFileMissing } from "../../filesystem/missing-file";
 import { workingFilePath } from "../../filesystem/working-file-path";
 import { readActiveRepository } from "../lifecycle/repository-context";
 import type { GitHosts } from "../../providers/git-hosts";
@@ -515,14 +516,7 @@ export class RemoteService {
         if (this.git.trust && (isAbsolute(url) || url.startsWith("file://"))) {
           const target = isAbsolute(url) ? url : fileURLToPath(url);
 
-          const worktree = await lstat(join(target, ".git")).then(
-            () => true,
-            (error: NodeJS.ErrnoException) => {
-              if (error.code !== "ENOENT") throw error;
-              return false;
-            },
-          );
-
+          const worktree = await lstat(join(target, ".git")).catch(nullIfFileMissing);
           await this.git.trust.authorize(target, !worktree);
         }
 

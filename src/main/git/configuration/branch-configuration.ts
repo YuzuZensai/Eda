@@ -2,6 +2,7 @@ import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { GitService } from "../git-service";
+import { parseConfigEntry } from "../parsers/config-entry";
 import { withLocalConfiguration } from "./local-configuration";
 
 export type BranchConfiguration = [string, string][];
@@ -26,10 +27,7 @@ export async function branchConfiguration(
   return result.stdout
     .split("\0")
     .filter(Boolean)
-    .map((entry): [string, string] => {
-      const split = entry.indexOf("\n");
-      return split < 0 ? [entry, "true"] : [entry.slice(0, split), entry.slice(split + 1)];
-    })
+    .map((entry) => parseConfigEntry(entry, "true"))
     .map(([key, value]): [string, string] =>
       renameFrom && key.slice(0, key.lastIndexOf(".")) === `branch.${renameFrom}`
         ? [`${section}.${key.slice(key.lastIndexOf(".") + 1)}`, value]

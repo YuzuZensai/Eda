@@ -1,3 +1,4 @@
+import { nullIfFileMissing } from "./missing-file";
 import { lstat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { errorText } from "@shared/error-codes";
@@ -30,10 +31,7 @@ export async function workingFilePath(
   for (const part of local.split(sep)) {
     current = join(current, part);
 
-    const stat = await lstat(current).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    });
+    const stat = await lstat(current).catch(nullIfFileMissing);
 
     if (stat?.isSymbolicLink())
       throw new GitError({

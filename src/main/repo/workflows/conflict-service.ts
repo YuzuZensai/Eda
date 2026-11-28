@@ -1,3 +1,4 @@
+import { nullIfFileMissing } from "../../filesystem/missing-file";
 import { isFullObjectId } from "@shared/repository/object-id";
 import { scanConflictMarkers } from "@shared/workflows/conflict-markers";
 import { errorText, type ErrorText } from "@shared/error-codes";
@@ -83,10 +84,7 @@ export class ConflictService {
     for (const part of local.split(sep).slice(0, -1)) {
       parent = join(parent, part);
 
-      const entry = await lstat(parent).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return null;
-        throw error;
-      });
+      const entry = await lstat(parent).catch(nullIfFileMissing);
 
       if (entry && (!entry.isDirectory() || entry.isSymbolicLink()))
         throw invalid(errorText("main.conflictService.aParentPathIsALinkOrNon"));
@@ -96,10 +94,7 @@ export class ConflictService {
   }
 
   private async working(target: string, markerSize?: number) {
-    const info = await lstat(target).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    });
+    const info = await lstat(target).catch(nullIfFileMissing);
     let kind: ConflictPreview["outputKind"] = "missing";
     let bytes = Buffer.alloc(0);
 
@@ -556,9 +551,7 @@ export class ConflictService {
               await chmod(temporary, mode === GIT_FILE_MODE.executable ? 0o755 : 0o644);
               await rename(temporary, target);
             } finally {
-              await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
-                if (error.code !== "ENOENT") throw error;
-              });
+              await unlink(temporary).catch(nullIfFileMissing);
             }
           }
         }

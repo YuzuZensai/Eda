@@ -1,7 +1,9 @@
+import { nullIfFileMissing } from "../../filesystem/missing-file";
 import { t } from "@shared/i18n";
 import { access, constants } from "node:fs/promises";
 import { join } from "node:path";
 import type { GitService } from "../../git/git-service";
+import { parseConfigEntry } from "../../git/parsers/config-entry";
 import type { RepositoryCapabilities } from "@shared/repository/repository-read";
 
 export async function repositoryCapabilities(
@@ -47,10 +49,7 @@ export async function repositoryCapabilities(
       config.stdout
         .split("\0")
         .filter(Boolean)
-        .map((record) => {
-          const end = record.indexOf("\n");
-          return end < 0 ? [record, "true"] : [record.slice(0, end), record.slice(end + 1)];
-        }),
+        .map((record) => parseConfigEntry(record, "true")),
     );
     const enabled = (value: string | undefined) => !!value && /^(1|true|yes|on)$/i.test(value);
     format.sparse = enabled(settings.get("core.sparsecheckout"));
@@ -61,9 +60,7 @@ export async function repositoryCapabilities(
 
   try {
     await Promise.all([path, ...roots].map((root) => access(root, constants.W_OK)));
-    await access(join(roots[0]!, "index"), constants.W_OK).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== "ENOENT") throw error;
-    });
+    await access(join(roots[0]!, "index"), constants.W_OK).catch(nullIfFileMissing);
     return { ...format, write: true };
   } catch {
     return {

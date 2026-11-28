@@ -1,7 +1,8 @@
+import { nullIfFileMissing } from "../../filesystem/missing-file";
+import { readRegularFile } from "../../filesystem/read-regular-file";
 import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
-import { readRegularFile } from "../../filesystem/read-regular-file";
 import { join } from "node:path";
 import type { GitService } from "../git-service";
 
@@ -18,12 +19,7 @@ export async function assertSafeRebaseState(git: GitService, root: string): Prom
       operation: t("operations.rebase"),
       message: errorText("main.git.rebaseState.unsafeInstructions"),
     });
-  const file = await readRegularFile(path, 64 * 1024, invalid).catch(
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    },
-  );
+  const file = await readRegularFile(path, 64 * 1024, invalid).catch(nullIfFileMissing);
   if (!file) return;
   const text = file.bytes.toString("utf8");
   for (const line of text.split("\n")) {

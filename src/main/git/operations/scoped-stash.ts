@@ -1,3 +1,4 @@
+import { nullIfFileMissing } from "../../filesystem/missing-file";
 import { errorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -119,9 +120,7 @@ export async function createScopedStash(
       `${finalIndex}.lock`,
       ...(ownsLock ? [lockPath] : []),
     ]) {
-      await unlink(path).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "ENOENT") throw error;
-      });
+      await unlink(path).catch(nullIfFileMissing);
     }
   }
 }

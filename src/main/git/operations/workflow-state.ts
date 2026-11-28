@@ -1,3 +1,4 @@
+import { nullIfFileMissing } from "../../filesystem/missing-file";
 import { isFullObjectId } from "@shared/repository/object-id";
 import { constants } from "node:fs";
 import { errorText } from "@shared/error-codes";
@@ -104,10 +105,7 @@ export async function readWorkflowState(
   const markers = Object.fromEntries(files.map((name, index) => [name, markerValues[index]]));
   const directories = await Promise.all(
     ["rebase-merge", "rebase-apply", "sequencer"].map(async (name) => {
-      const entry = await stat(join(directory, name)).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return null;
-        throw error;
-      });
+      const entry = await stat(join(directory, name)).catch(nullIfFileMissing);
       return entry?.isDirectory() ?? false;
     }),
   );

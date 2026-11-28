@@ -1,3 +1,4 @@
+import { nullIfFileMissing } from "../../filesystem/missing-file";
 import { ERROR_CODE, errorText } from "@shared/error-codes";
 import { AppError, GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -61,8 +62,6 @@ export async function withLockedIndex<T>(
   } finally {
     await lock.close();
     for (const file of [temporary, `${temporary}.lock`, ...(ownsLock ? [lockPath] : [])])
-      await unlink(file).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "ENOENT") throw error;
-      });
+      await unlink(file).catch(nullIfFileMissing);
   }
 }

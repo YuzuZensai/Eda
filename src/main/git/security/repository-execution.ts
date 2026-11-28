@@ -5,6 +5,7 @@ import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { unsupportedRepositoryFormat } from "../execution/error-mapping";
 import { buildGitEnvironment } from "../execution/environment";
+import { parseConfigEntry } from "../parsers/config-entry";
 import type { GitEngine } from "../execution/git-engine";
 import { runGitProcess, type ProcessRunner } from "../execution/process-runner";
 
@@ -64,11 +65,10 @@ export class RepositoryExecutionInspector {
     );
     const config: { key: string; value: string; local: boolean }[] = [];
     for (let i = 0; i + 1 < fields.length; i += 2) {
-      const entry = fields[i + 1]!;
-      const split = entry.indexOf("\n");
+      const [key, value] = parseConfigEntry(fields[i + 1]!, "");
       config.push({
-        key: split < 0 ? entry : entry.slice(0, split),
-        value: split < 0 ? "" : entry.slice(split + 1),
+        key,
+        value,
         local: fields[i] === "local" || fields[i] === "worktree",
       });
     }

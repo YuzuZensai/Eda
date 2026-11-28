@@ -1,8 +1,9 @@
+import { nullIfFileMissing } from "../../filesystem/missing-file";
+import { readRegularFile } from "../../filesystem/read-regular-file";
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
 import type { IgnoreInspection, IgnoreKind } from "@shared/repository/ignore";
-import { readRegularFile } from "../../filesystem/read-regular-file";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { join, posix } from "node:path";
@@ -77,10 +78,7 @@ export class IgnoreService {
         errorText("main.ignoreService.theRootGitignoreMustBeARegularFileUnder1MiBEditItExternally"),
       );
     const snapshot = await readRegularFile(filename, 1024 * 1024, invalidFile).catch(
-      (error: NodeJS.ErrnoException) => {
-        if (error.code === "ENOENT") return null;
-        throw error;
-      },
+      nullIfFileMissing,
     );
     const stat = snapshot?.entry;
     if (stat && stat.nlink !== 1) throw invalidFile();
