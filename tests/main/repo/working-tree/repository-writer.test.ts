@@ -1,3 +1,4 @@
+import { DiscardService } from "@main/repo/working-tree/discard-service";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GitError } from "@shared/errors";
 import { IdentityManager } from "@main/identity/identity-manager";
@@ -67,7 +68,7 @@ async function setup(options: { gitName?: string; gitEmail?: string } = {}) {
     manager,
     identities,
     undefined,
-    new ContentRecoveryRepository(db),
+    new DiscardService(repo.git, new ContentRecoveryRepository(db)),
   );
 
   return { repo, writer, identities, identity, paths, settings, manager };

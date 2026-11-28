@@ -21,11 +21,10 @@ import { createPullAutostash, dropPullAutostash } from "../../git/operations/pul
 import { readWorkflowState } from "../../git/operations/workflow-state";
 import { assertFullObjectId } from "../../git/validation";
 import type { IdentityManager } from "../../identity/identity-manager";
-import type { ContentRecoveryRepository } from "../../persistence/content-recovery-repository";
 import type { WorkflowJournal, WorkflowJournalRecord } from "../../persistence/workflow-journal";
 import { matchesReviewContext, PreviewStore } from "../preview-store";
 import type { RepositoryManager } from "../lifecycle/repository-manager";
-import { DiscardService } from "../working-tree/discard-service";
+import type { DiscardService } from "../working-tree/discard-service";
 import type { RepositoryWriter } from "../working-tree/repository-writer";
 import { addRecoveryDiffPaths, trackedChangePaths } from "./recovery-paths";
 
@@ -77,7 +76,6 @@ export class WorkflowService {
     identity: Identity;
     autostash: boolean;
   }>();
-  private readonly recovery: DiscardService;
   private readonly aborts = new PreviewStore<{
     snapshot: Awaited<ReturnType<DiscardService["prepareOperation"]>>;
     workflow: string;
@@ -90,9 +88,26 @@ export class WorkflowService {
     private readonly writer: RepositoryWriter,
     private readonly identity: IdentityManager,
     private readonly journal: WorkflowJournal,
-    recovery: ContentRecoveryRepository,
-  ) {
-    this.recovery = new DiscardService(git, recovery);
+    private readonly recovery: DiscardService,
+  ) {}
+
+  async finishRewriteJournal(
+    record: WorkflowJournalRecord,
+    kind: "rebase" | "cherry-pick" | "revert",
+  ): Promise<void> {
+    if (record.state === "running") {
+      record.state = "paused";
+      try {
+        const remaining = await this.observe(record.root, await this.git.status(record.root));
+        if (remaining?.instance && !record.nativeInstance)
+          record.nativeInstance = remaining.instance;
+        if (remaining?.kind !== kind) record.state = "completed";
+      } catch {
+        // Keep the operation recoverable when Git cannot report its state.
+      }
+    }
+    record.updatedAt = new Date().toISOString();
+    this.journal.save(record);
   }
 
   async observe(root: string, status: RepositoryStatus): Promise<WorkflowState | null> {

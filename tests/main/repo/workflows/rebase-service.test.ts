@@ -7,7 +7,6 @@ import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 import { openDatabase } from "@main/persistence/database";
 import type { Database } from "@main/persistence/types";
 import { RebaseService } from "@main/repo/workflows/rebase-service";
-import { DiscardService } from "@main/repo/working-tree/discard-service";
 import { autosquashPlan } from "@shared/workflows/rebase";
 
 let repo: TempRepo;
@@ -38,7 +37,7 @@ function services() {
       journal,
       recovery,
     ),
-    recovery: new DiscardService(repo.git, recovery),
+    recovery,
   };
 }
 

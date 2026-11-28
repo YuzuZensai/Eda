@@ -6,7 +6,6 @@ import { createTempRepo, type TempRepo } from "../../../helpers/temp-repo";
 import { openDatabase } from "@main/persistence/database";
 import type { Database } from "@main/persistence/types";
 import { ReplayService } from "@main/repo/workflows/replay-service";
-import { DiscardService } from "@main/repo/working-tree/discard-service";
 
 let repo: TempRepo;
 let db: Database;
@@ -25,6 +24,7 @@ function services() {
   return {
     identities,
     repositories,
+    journal,
     workflows,
     replay: new ReplayService(
       repo.git,
@@ -35,7 +35,7 @@ function services() {
       journal,
       recovery,
     ),
-    recovery: new DiscardService(repo.git, recovery),
+    recovery,
   };
 }
 
@@ -267,3 +267,20 @@ it("reverts ordered selections and explicit merge mainlines, then resumes an ext
   expect(await readFile(join(repo.path, "file.txt"), "utf8")).toBe("base\n");
   expect(await repo.run(["status", "--porcelain"])).toBe("");
 }, 60_000);
+
+it("closes the replay journal if collecting undo information fails before Git starts", async () => {
+  const { context, repository, base } = await setup();
+  const review = await context.replay.prepare(repository.id, "revert", "start", [base]);
+  const exec = repo.git.exec.bind(repo.git);
+  vi.spyOn(repo.git, "exec").mockImplementation((args, options) => {
+    if (args[0] === "ls-files" && args.includes("-v"))
+      return Promise.reject(new Error("cannot read index flags"));
+    return exec(args, options);
+  });
+
+  await expect(context.replay.execute(repository.id, review.token)).rejects.toThrow(
+    "cannot read index flags",
+  );
+  expect(await head()).toBe(base);
+  expect(context.journal.activeLocal(repository.path, "revert")).toBeUndefined();
+});

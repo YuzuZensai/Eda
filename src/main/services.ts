@@ -1,3 +1,4 @@
+import { DiscardService } from "./repo/working-tree/discard-service";
 import { RepositoryExternalTools } from "./repo/external-tools";
 import { GitHosts } from "./providers/git-hosts";
 import { TerminalSessions } from "./git/terminal-sessions";
@@ -224,7 +225,8 @@ export async function createServices(): Promise<Services> {
     };
 
     identity.onChange(cancelSignIns);
-    const recovery = new ContentRecoveryRepository(db);
+    const content = new ContentRecoveryRepository(db);
+    const recovery = new DiscardService(git, content);
     const journal = new WorkflowJournal(db);
 
     const signers = new SignerService(
@@ -433,6 +435,7 @@ export async function createServices(): Promise<Services> {
         writer,
         workflows,
         journal,
+        content,
         recovery,
       ),
       gitHosts,

@@ -8,7 +8,6 @@ import { openDatabase } from "@main/persistence/database";
 import type { Database } from "@main/persistence/types";
 import { ContentRecoveryRepository } from "@main/persistence/content-recovery-repository";
 import { ResetService } from "@main/repo/workflows/reset-service";
-import { DiscardService } from "@main/repo/working-tree/discard-service";
 import { HistoryRecoveryService } from "@main/repo/history/history-recovery-service";
 import { HistoryReversalService } from "@main/repo/history/history-reversal-service";
 
@@ -23,17 +22,15 @@ afterEach(async () => {
 function services() {
   db = openDatabase(join(repo.home, "reset.db"));
 
-  const { identities, repositories, writer, workflows, journal, recovery } = workflowFixture(
-    db,
-    repo.git,
-  );
+  const { identities, repositories, writer, workflows, journal, content, recovery } =
+    workflowFixture(db, repo.git);
 
   return {
     identities,
     repositories,
     journal,
     reset: new ResetService(repo.git, repositories, writer, workflows, journal, recovery),
-    recovery: new DiscardService(repo.git, recovery),
+    recovery,
     historyRecovery: new HistoryRecoveryService(repo.git, repositories, writer, journal),
     reversal: new HistoryReversalService(
       repo.git,
@@ -41,6 +38,7 @@ function services() {
       writer,
       workflows,
       journal,
+      content,
       recovery,
     ),
   };
@@ -538,7 +536,7 @@ it("reviews all reset modes and preserves index/content recovery across restart 
 
   for (const direction of ["undo", "redo"] as const) {
     const failure = vi
-      .spyOn(DiscardService.prototype, "restoreOperationFiles")
+      .spyOn(context.recovery, "restoreOperationFiles")
       .mockImplementationOnce(async (snapshot) => {
         const file = snapshot.files.find((saved) => saved.path === "file.txt")!;
         await repo.writeFile(file.path, Buffer.from(file.content!, "base64").toString());

@@ -21,7 +21,7 @@ async function setup() {
   repo = await createTempRepo();
   db = openDatabase(join(repo.home, "rewrites.db"));
 
-  const { identities, identity, repositories, writer, workflows, journal, recovery } =
+  const { identities, identity, repositories, writer, workflows, journal, content, recovery } =
     workflowFixture(db, repo.git, { recordWriterHistory: true });
 
   activateTestProfile(identities);
@@ -54,6 +54,7 @@ async function setup() {
       writer,
       workflows,
       journal,
+      content,
       recovery,
     ),
   };

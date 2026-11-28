@@ -227,7 +227,7 @@ it("preserves tracked/index/untracked/ignored stash contents and shares the list
     writer,
     identity,
     new WorkflowJournal(db),
-    new ContentRecoveryRepository(db),
+    new DiscardService(repo.git, new ContentRecoveryRepository(db)),
   );
 
   let workflow = await resumed.observe(repository.path, await repo.git.status(repo.path));

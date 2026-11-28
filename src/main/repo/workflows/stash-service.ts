@@ -1,8 +1,10 @@
+import type { UnifiedDiff } from "@shared/repository/repository-read";
+import { nullIfFileMissing } from "../../filesystem/missing-file";
 import { isFullObjectId } from "@shared/repository/object-id";
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
-import { diffPaths } from "@shared/repository/diff-paths";
+
 import {
   MAX_STASH_ENTRIES,
   MAX_STASH_NAME_LENGTH,
@@ -22,10 +24,9 @@ import type { GitService } from "../../git/git-service";
 import { createScopedStash } from "../../git/operations/scoped-stash";
 import { assertFullObjectId, assertRepositoryPath, assertValidRefName } from "../../git/validation";
 import type { IdentityManager } from "../../identity/identity-manager";
-import type { ContentRecoveryRepository } from "../../persistence/content-recovery-repository";
 import { PreviewStore } from "../preview-store";
 import type { RepositoryManager } from "../lifecycle/repository-manager";
-import { DiscardService } from "../working-tree/discard-service";
+import type { DiscardService } from "../working-tree/discard-service";
 import type { RepositoryWriter } from "../working-tree/repository-writer";
 import type { WorkflowService } from "./workflow-service";
 
@@ -52,8 +53,6 @@ export class StashService {
     snapshot: Awaited<ReturnType<DiscardService["prepareOperation"]>>;
   }>();
 
-  private readonly recovery: DiscardService;
-
   private readonly branchPreviews = new PreviewStore<{
     preview: StashBranchPreview;
     stashToken: string;
@@ -65,10 +64,8 @@ export class StashService {
     private readonly writer: RepositoryWriter,
     private readonly identity: IdentityManager,
     private readonly workflows: WorkflowService,
-    recovery: ContentRecoveryRepository,
-  ) {
-    this.recovery = new DiscardService(git, recovery);
-  }
+    private readonly recovery: DiscardService,
+  ) {}
 
   private async read(root: string) {
     const result = await this.git.exec(
@@ -460,9 +457,7 @@ export class StashService {
         try {
           if (saved.preview.deleted)
             await unlink(await this.recovery.safePath(root, saved.preview.path)).catch(
-              (error: NodeJS.ErrnoException) => {
-                if (error.code !== "ENOENT") throw error;
-              },
+              nullIfFileMissing,
             );
           else
             await this.git.exec(
@@ -821,4 +816,14 @@ export class StashService {
       },
     );
   }
+}
+
+function diffPaths(diff: UnifiedDiff | null): string[] {
+  return [
+    ...new Set(
+      diff?.files
+        .flatMap((file) => [file.oldPath, file.newPath])
+        .filter((path): path is string => path !== undefined && path !== "/dev/null") ?? [],
+    ),
+  ];
 }

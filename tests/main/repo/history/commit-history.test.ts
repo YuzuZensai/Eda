@@ -20,11 +20,8 @@ afterEach(async () => {
 function services() {
   db = openDatabase(join(repo.home, "history.db"));
 
-  const { identities, repositories, writer, workflows, journal, recovery } = workflowFixture(
-    db,
-    repo.git,
-    { recordWriterHistory: true },
-  );
+  const { identities, repositories, writer, workflows, journal, content, recovery } =
+    workflowFixture(db, repo.git, { recordWriterHistory: true });
 
   return {
     identities,
@@ -38,6 +35,7 @@ function services() {
       writer,
       workflows,
       journal,
+      content,
       recovery,
     ),
   };

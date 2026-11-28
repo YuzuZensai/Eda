@@ -27,7 +27,6 @@ import { assertFullObjectId, assertRepositoryPath } from "../../git/validation";
 import type { GitService } from "../../git/git-service";
 import type { IdentityManager } from "../../identity/identity-manager";
 import type { OperationManager } from "../../operations/operation-manager";
-import type { ContentRecoveryRepository } from "../../persistence/content-recovery-repository";
 import type { IdentityRepository } from "../../persistence/identity-repository";
 import type { WorkflowJournal } from "../../persistence/workflow-journal";
 import { CommitHistory } from "../history/commit-history";
@@ -35,7 +34,7 @@ import { RefHistory } from "../history/ref-history";
 import { repositoryCapabilities } from "../lifecycle/repository-capabilities";
 import { repositoryCommonDirectory } from "../lifecycle/repository-location";
 import type { RepositoryManager } from "../lifecycle/repository-manager";
-import { DiscardService } from "./discard-service";
+import type { DiscardService } from "./discard-service";
 import { IgnoreService } from "./ignore-service";
 import { PartialStageService } from "./partial-stage-service";
 import { WriteQueue } from "../../operations/write-queue";
@@ -56,7 +55,6 @@ export class RepositoryWriter {
   private readonly queue = new WriteQueue();
   private readonly partial: PartialStageService;
   private readonly ignore: IgnoreService;
-  private readonly discard?: DiscardService;
   private readonly commitHistory?: CommitHistory;
   private readonly refHistory?: RefHistory;
 
@@ -66,14 +64,12 @@ export class RepositoryWriter {
     private readonly identity: IdentityManager,
     private readonly identities: IdentityRepository,
     private readonly operations?: OperationManager,
-    recovery?: ContentRecoveryRepository,
+    private readonly discard?: DiscardService,
     journal?: WorkflowJournal,
     private readonly signers?: Pick<SignerService, "decorate">,
   ) {
     this.partial = new PartialStageService(git);
     this.ignore = new IgnoreService(git);
-
-    if (recovery) this.discard = new DiscardService(git, recovery);
 
     if (journal) {
       this.commitHistory = new CommitHistory(git, journal);

@@ -1,3 +1,4 @@
+import { DiscardService } from "@main/repo/working-tree/discard-service";
 import type { GitService } from "@main/git/git-service";
 import { IdentityManager } from "@main/identity/identity-manager";
 import { ContentRecoveryRepository } from "@main/persistence/content-recovery-repository";
@@ -24,7 +25,8 @@ export function workflowFixture(
     identities,
   );
   const journal = new WorkflowJournal(db);
-  const recovery = new ContentRecoveryRepository(db);
+  const content = new ContentRecoveryRepository(db);
+  const recovery = new DiscardService(git, content);
   const writer = new RepositoryWriter(
     git,
     repositories,
@@ -36,7 +38,7 @@ export function workflowFixture(
   );
   const workflows = new WorkflowService(git, repositories, writer, identity, journal, recovery);
 
-  return { identities, identity, repositories, journal, recovery, writer, workflows };
+  return { identities, identity, repositories, journal, content, recovery, writer, workflows };
 }
 
 export function activateTestProfile(identities: IdentityRepository) {

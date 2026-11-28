@@ -14,12 +14,11 @@ import { randomUUID } from "node:crypto";
 import type { GitService } from "../../git/git-service";
 import { assertFullObjectId } from "../../git/validation";
 import type { IdentityManager } from "../../identity/identity-manager";
-import type { ContentRecoveryRepository } from "../../persistence/content-recovery-repository";
 import type { WorkflowJournal, WorkflowJournalRecord } from "../../persistence/workflow-journal";
 import { matchesReviewContext, PreviewStore } from "../preview-store";
-import { captureRewriteStart, finalizeRewrite } from "../history/rewrite-history";
+import { recordRewriteStart, finalizeRewrite } from "../history/rewrite-history";
 import type { RepositoryManager } from "../lifecycle/repository-manager";
-import { DiscardService, type OperationSnapshot } from "../working-tree/discard-service";
+import type { DiscardService, OperationSnapshot } from "../working-tree/discard-service";
 import type { RepositoryWriter } from "../working-tree/repository-writer";
 import { addRecoveryDiffPaths, trackedChangePaths } from "./recovery-paths";
 import { workflowFingerprint } from "./workflow-fingerprint";
@@ -29,8 +28,6 @@ const invalid = (message: ErrorText) =>
   new GitError({ kind: "invalid-input", operation: t("operations.replayCommits"), message });
 
 export class ReplayService {
-  private readonly recovery: DiscardService;
-
   private readonly reviews = new PreviewStore<{
     review: ReplayReview;
     root: string;
@@ -49,10 +46,8 @@ export class ReplayService {
     private readonly identities: IdentityManager,
     private readonly workflows: WorkflowService,
     private readonly journal: WorkflowJournal,
-    recovery: ContentRecoveryRepository,
-  ) {
-    this.recovery = new DiscardService(git, recovery);
-  }
+    private readonly recovery: DiscardService,
+  ) {}
 
   private async commits(root: string, oids: string[]): Promise<ReplayCommit[]> {
     if (!oids.length) return [];
@@ -274,22 +269,17 @@ export class ReplayService {
         this.journal.save(record);
         this.reviews.delete(token);
 
-        const rewriteStart =
-          review.action === "abort"
-            ? undefined
-            : (record.rewriteStart ?? (await captureRewriteStart(this.git, root)));
-
-        if (rewriteStart && !record.rewriteStart) {
-          record.rewriteStart = rewriteStart;
-          this.journal.save(record);
-        }
-
-        const config = {
-          ...commitGitConfig(identity),
-          "submodule.recurse": "false",
-        };
-
         try {
+          const rewriteStart =
+            review.action === "abort"
+              ? undefined
+              : await recordRewriteStart(this.git, this.journal, record);
+
+          const config = {
+            ...commitGitConfig(identity),
+            "submodule.recurse": "false",
+          };
+
           const result = await this.git.exec(
             [
               ...Object.entries(config).flatMap(([key, value]) => ["-c", `${key}=${value}`]),
@@ -375,19 +365,7 @@ export class ReplayService {
             ...(record.recoveryWarning ? { recoveryWarning: record.recoveryWarning } : {}),
           };
         } finally {
-          if (record.state === "running") {
-            record.state = "paused";
-
-            try {
-              const remaining = await this.workflows.observe(root, await this.git.status(root));
-              if (remaining?.instance && !record.nativeInstance)
-                record.nativeInstance = remaining.instance;
-              if (remaining?.kind !== review.kind) record.state = "completed";
-            } catch {}
-          }
-
-          record.updatedAt = new Date().toISOString();
-          this.journal.save(record);
+          await this.workflows.finishRewriteJournal(record, review.kind);
 
           if (pending.snapshot) await this.recovery.finishOperation(pending.snapshot.record);
         }

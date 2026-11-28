@@ -1,3 +1,4 @@
+import { hasSpecialIndexFlags } from "../../git/parsers/status-parser";
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -703,11 +704,7 @@ export async function completedRefIntent(git: GitService, record: WorkflowJourna
       operation.kind === "checkout" || (operation.kind === "branch-create" && operation.checkedOut);
 
     if (changesCheckout) {
-      if (
-        !operation.cleanStart ||
-        status.changes.length ||
-        flags.split("\0").some((line) => line && !line.startsWith("H "))
-      )
+      if (!operation.cleanStart || status.changes.length || hasSpecialIndexFlags(flags))
         throw invalid(
           errorText("main.refHistory.thisInterruptedCheckoutHasLocalChangesInspectThe"),
         );

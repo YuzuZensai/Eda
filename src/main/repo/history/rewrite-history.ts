@@ -1,3 +1,4 @@
+import { hasSpecialIndexFlags } from "../../git/parsers/status-parser";
 import { isUtf8 } from "node:buffer";
 import { ERROR_CODE, errorText } from "@shared/error-codes";
 import { AppError, errorMessage } from "@shared/errors";
@@ -13,17 +14,25 @@ export interface RewriteStart {
   fingerprint: string;
 }
 
-export async function captureRewriteStart(git: GitService, root: string): Promise<RewriteStart> {
+export async function recordRewriteStart(
+  git: GitService,
+  journal: WorkflowJournal,
+  record: WorkflowJournalRecord,
+): Promise<RewriteStart> {
+  if (record.rewriteStart) return record.rewriteStart;
+  const root = record.root;
   const status = await git.status(root);
   const flags = await git.exec(["ls-files", "-v", "-z"], {
     cwd: root,
     operation: t("operations.captureRewriteIndexFlags"),
   });
 
-  return {
+  record.rewriteStart = {
     flags: flags.stdout,
     fingerprint: await workflowFingerprint(git, root, status),
   };
+  journal.save(record);
+  return record.rewriteStart;
 }
 
 export async function ensureRecoveryRefs(
@@ -145,7 +154,7 @@ export async function finalizeRewrite(
   else if (!start.fingerprint)
     blockedReason = t("main.rewriteHistory.theOriginalRepositoryFingerprintWasNotRecordedUse");
 
-  if (beforeFlags !== "" && beforeFlags.split("\0").some((line) => line && !line.startsWith("H ")))
+  if (hasSpecialIndexFlags(beforeFlags))
     blockedReason = t("main.rewriteHistory.theOriginalIndexHasSpecialFlagsUseSaved");
 
   if (!isUtf8(changed.stdoutBytes)) {
@@ -170,7 +179,7 @@ export async function finalizeRewrite(
     }
   }
 
-  if (afterFlags !== "" && afterFlags.split("\0").some((line) => line && !line.startsWith("H ")))
+  if (hasSpecialIndexFlags(afterFlags))
     blockedReason = t("main.rewriteHistory.theRewrittenIndexHasSpecialFlagsUseSaved");
 
   record.tree = originalTree;

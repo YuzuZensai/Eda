@@ -180,3 +180,8 @@ function assertOid(value: string): void {
 function malformed(): never {
   throw new AppError(ERROR_CODE.INVALID_STATUS_OUTPUT);
 }
+
+// In git ls-files -v output, H is an ordinary cached entry.
+export function hasSpecialIndexFlags(flags: string): boolean {
+  return flags.split("\0").some((entry) => entry.length > 0 && !entry.startsWith("H "));
+}

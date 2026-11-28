@@ -1,3 +1,4 @@
+import { DiscardService } from "@main/repo/working-tree/discard-service";
 import { lfsLockServer } from "../../../helpers/lfs-lock-server";
 import { RepositoryMemberships } from "@main/persistence/repository-memberships";
 import { errorFixture } from "../../../helpers/error";
@@ -177,7 +178,7 @@ async function setup(
   const run = (args: string[]) => source.run(args, client.path);
   const openWorkflows = () => {
     const journal = new WorkflowJournal(db);
-    const recovery = new ContentRecoveryRepository(db);
+    const recovery = new DiscardService(source.git, new ContentRecoveryRepository(db));
 
     const workflows = new WorkflowService(
       source.git,

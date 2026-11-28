@@ -259,10 +259,6 @@ export class HistoryRecoveryInspection {
     ).stdout.trim();
   }
 
-  specialFlags(flags: string) {
-    return flags.split("\0").some((line) => line && !line.startsWith("H "));
-  }
-
   async inspectInterruptedReset(record: WorkflowJournalRecord): Promise<"execute" | "record"> {
     const reset = record.refChange;
 

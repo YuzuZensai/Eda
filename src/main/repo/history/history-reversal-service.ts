@@ -1,3 +1,4 @@
+import { hasSpecialIndexFlags } from "../../git/parsers/status-parser";
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -15,7 +16,7 @@ import type { WorkflowJournal, WorkflowJournalRecord } from "../../persistence/w
 import type { RepositoryManager } from "../lifecycle/repository-manager";
 import { workflowFingerprint } from "../workflows/workflow-fingerprint";
 import type { WorkflowService } from "../workflows/workflow-service";
-import { DiscardService } from "../working-tree/discard-service";
+import type { DiscardService } from "../working-tree/discard-service";
 import type { RepositoryWriter } from "../working-tree/repository-writer";
 import {
   executeRefHistory,
@@ -43,7 +44,6 @@ function assertRecordContext(
 }
 
 export class HistoryReversalService {
-  private readonly recovery: DiscardService;
   private readonly inspection: HistoryRecoveryInspection;
 
   constructor(
@@ -53,15 +53,9 @@ export class HistoryReversalService {
     private readonly workflows: WorkflowService,
     private readonly journal: WorkflowJournal,
     private readonly content: ContentRecoveryRepository,
+    private readonly recovery: DiscardService,
   ) {
-    this.recovery = new DiscardService(git, content);
-    this.inspection = new HistoryRecoveryInspection(
-      git,
-      workflows,
-      journal,
-      content,
-      this.recovery,
-    );
+    this.inspection = new HistoryRecoveryInspection(git, workflows, journal, content, recovery);
   }
 
   private records(repositoryId: string) {
@@ -122,7 +116,7 @@ export class HistoryReversalService {
       blockedReason = t("main.historyReversalService.theOriginalResetDidNotRecordIndexFlags");
     else if (
       reset.mode !== "soft" &&
-      (this.inspection.specialFlags(reset.beforeFlags) || this.inspection.specialFlags(afterFlags))
+      (hasSpecialIndexFlags(reset.beforeFlags) || hasSpecialIndexFlags(afterFlags))
     )
       blockedReason = t("main.historyReversalService.theOriginalOrResultingIndexHasSpecialFlags");
 

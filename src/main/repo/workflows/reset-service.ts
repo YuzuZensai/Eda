@@ -1,3 +1,4 @@
+import { hasSpecialIndexFlags } from "../../git/parsers/status-parser";
 import { isFullObjectId } from "@shared/repository/object-id";
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
@@ -7,14 +8,13 @@ import type { ResetMode, ResetResult, ResetReview } from "@shared/workflows/rese
 import { createHash, randomUUID } from "node:crypto";
 import type { GitService } from "../../git/git-service";
 import { assertFullObjectId } from "../../git/validation";
-import type { ContentRecoveryRepository } from "../../persistence/content-recovery-repository";
 import type { WorkflowJournal, WorkflowJournalRecord } from "../../persistence/workflow-journal";
 import { matchesReviewContext, PreviewStore } from "../preview-store";
 import { pruneHistoryRecords } from "../history/history-retention";
 import { publishedRangeCount } from "../history/shared-history";
 import { repositoryCommonDirectory } from "../lifecycle/repository-location";
 import type { RepositoryManager } from "../lifecycle/repository-manager";
-import { DiscardService, type OperationSnapshot } from "../working-tree/discard-service";
+import type { DiscardService, OperationSnapshot } from "../working-tree/discard-service";
 import type { RepositoryWriter } from "../working-tree/repository-writer";
 import { trackedChangePaths } from "./recovery-paths";
 import {
@@ -88,7 +88,6 @@ export async function protectResetPaths(
 }
 
 export class ResetService {
-  private readonly recovery: DiscardService;
   private readonly reviews = new PreviewStore<{
     review: ResetReview;
     root: string;
@@ -104,10 +103,8 @@ export class ResetService {
     private readonly writer: RepositoryWriter,
     private readonly workflows: WorkflowService,
     private readonly journal: WorkflowJournal,
-    recovery: ContentRecoveryRepository,
-  ) {
-    this.recovery = new DiscardService(git, recovery);
-  }
+    private readonly recovery: DiscardService,
+  ) {}
 
   private async inspect(root: string, target: string, mode: ResetMode) {
     const status = await this.git.status(root);
@@ -403,8 +400,7 @@ create ${recoveryRef}/after-index ${afterIndexTree}
             afterIndexTree,
             beforeFlags: current.flags,
             afterFlags,
-            ...(review.mode !== "soft" &&
-            (intentToAdd || current.flags.split("\0").some((row) => row && !row.startsWith("H ")))
+            ...(review.mode !== "soft" && (intentToAdd || hasSpecialIndexFlags(current.flags))
               ? {
                   blockedReason: t("main.resetService.theOriginalIndexHasSpecialFlagsUseSaved"),
                 }
