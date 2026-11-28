@@ -4,7 +4,7 @@ import { readResponseBytes } from "../network/response";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AvatarImage } from "@shared/identity/avatar";
+import type { AvatarImage } from "@shared/identity/identity";
 import { isRecord } from "@shared/validation";
 import { isGitLabInstanceHttps } from "@shared/integrations/gitlab-self-hosted";
 import { ProviderProfileCache } from "../providers/provider-profile-cache";
@@ -232,15 +232,7 @@ export class AvatarCache {
     }
   }
 
-  getGitHub(accountId: string, avatarUrl: string | null): Promise<AvatarImage> {
-    return this.getProviderImage("github", accountId, avatarUrl);
-  }
-
-  getGitLab(accountId: string, avatarUrl: string | null): Promise<AvatarImage> {
-    return this.getProviderImage("gitlab", accountId, avatarUrl);
-  }
-
-  private async getProviderImage(
+  async getProviderImage(
     provider: "github" | "gitlab",
     accountId: string,
     avatarUrl: string | null,

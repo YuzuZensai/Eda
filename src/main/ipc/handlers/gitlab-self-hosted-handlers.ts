@@ -5,6 +5,7 @@ import { t } from "@shared/i18n";
 import { IPC_CHANNELS } from "@shared/ipc";
 import type { Services } from "../../services";
 import { handle } from "../transport";
+import { profileWithAvatar } from "./provider-account-handlers";
 import { captureProfile, profileOperation } from "../profile-context";
 import { optionalInteger, requireBoolean, requireId, requireString } from "../validate";
 import { invalidRequest } from "../../request-errors";
@@ -23,13 +24,9 @@ export function registerGitLabSelfHostedHandlers(services: Services): void {
   handle(IPC_CHANNELS.gitlabSelfHostedProfile, async (_event, profile, url) => {
     const baseUrl = instance(url);
 
-    return work(profile, async (id) => {
-      const details = await gitlab.profile(id, baseUrl);
-      if (!details) return null;
-      const image = await services.avatars.getGitLab(details.id, details.avatarUrl);
-      const { avatarUrl: _avatarUrl, ...accountProfile } = details;
-      return { ...accountProfile, avatarDataUrl: image.dataUrl };
-    });
+    return work(profile, async (id) =>
+      profileWithAvatar(services.avatars, "gitlab", await gitlab.profile(id, baseUrl)),
+    );
   });
 
   handle(

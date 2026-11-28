@@ -100,3 +100,8 @@ export interface EffectiveIdentityCheck {
   expected: CommitIdentity;
   actual: Partial<CommitIdentity>;
 }
+
+export interface AvatarImage {
+  dataUrl: string | null;
+  expiresAt: number;
+}

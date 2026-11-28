@@ -1,5 +1,6 @@
 import { OAuthCredentials } from "./oauth-credentials";
 import {
+  parseTokenResponse,
   requestOAuth,
   tokenText as text,
   tokenSeconds as secondsValue,
@@ -11,6 +12,7 @@ import { t } from "@shared/i18n";
 import { INTEGRATIONS } from "@shared/integrations/config";
 import {
   isGitHubHttps,
+  isGitHubLogin,
   MAINTAINER_GITHUB_LOGIN,
   type GitHubSignIn,
   type GitHubSignInResult,
@@ -82,7 +84,7 @@ export class GitHubAuth {
     const account = this.credentialsStore.visibleAccount(profileId);
     if (!account) throw fail(errorText("main.providers.githubAuth.connectAGitHubAccountFirst"));
     const login = this.profiles.peek(account.accountId)?.login ?? account.login;
-    if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(login))
+    if (!isGitHubLogin(login))
       throw fail(errorText("main.providers.githubAuth.theGitHubAccountProfileIsInvalid"));
     return `https://github.com/${login}`;
   }
@@ -193,7 +195,7 @@ export class GitHubAuth {
       if (
         !Number.isSafeInteger(user["id"]) ||
         (user["id"] as number) <= 0 ||
-        !/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(text(user["login"]) ?? "")
+        !isGitHubLogin(user["login"])
       )
         throw fail(errorText("main.providers.githubAuth.gitHubReturnedAnInvalidAccountIdentity"));
 
@@ -204,7 +206,7 @@ export class GitHubAuth {
         signInId: id,
         profileId,
         accountId: String(user["id"]),
-        login: user["login"] as string,
+        login: user["login"],
         tokens,
       });
 
@@ -301,29 +303,16 @@ export class GitHubAuth {
   }
 
   private tokens(response: Record<string, unknown>): Tokens {
-    const accessToken = text(response["access_token"]);
-    const refreshToken = text(response["refresh_token"]);
-    const expires = secondsValue(response["expires_in"]);
-    const refreshExpires = secondsValue(response["refresh_token_expires_in"]);
-
+    const tokens = parseTokenResponse(response, this.clientId, this.now());
     if (
-      !accessToken?.startsWith("gho_") ||
+      !tokens?.accessToken.startsWith("gho_") ||
       typeof response["scope"] !== "string" ||
       !response["scope"].split(/[ ,]+/).includes("repo") ||
-      response["token_type"] !== "bearer" ||
-      (response["expires_in"] !== undefined && !expires) ||
-      (response["refresh_token"] !== undefined && !refreshToken) ||
-      (response["refresh_token_expires_in"] !== undefined && !refreshExpires)
+      response["token_type"] !== "bearer"
     )
       throw fail(errorText("main.providers.githubAuth.gitHubReturnedAnInvalidAccessTokenResponse"));
 
-    return {
-      clientId: this.clientId,
-      accessToken,
-      ...(expires ? { expiresAt: this.now() + expires * 1000 } : {}),
-      ...(refreshToken ? { refreshToken } : {}),
-      ...(refreshExpires ? { refreshExpiresAt: this.now() + refreshExpires * 1000 } : {}),
-    };
+    return tokens;
   }
 
   private requirePending(profileId: string, id: string): Pending {

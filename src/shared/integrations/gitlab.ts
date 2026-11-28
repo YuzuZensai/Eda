@@ -22,6 +22,10 @@ export interface GitLabSignIn {
 export type GitLabSignInResult =
   { state: "pending" } | { state: "connected"; status: GitLabStatus };
 
+export function isGitLabLogin(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$/.test(value);
+}
+
 export function isGitLabHttps(url: string): boolean {
   try {
     const value = new URL(url);

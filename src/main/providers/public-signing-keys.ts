@@ -1,3 +1,4 @@
+import { isGitHubLogin } from "@shared/integrations/github";
 import { AppError } from "@shared/errors";
 import { errorText } from "@shared/error-codes";
 import type { PublicKeyRequest } from "@shared/repository/repository-read";
@@ -18,7 +19,7 @@ export class PublicSigningKeys {
   ) {
     let url: URL;
     if (input.source === "github") {
-      if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(input.account)) throw keyError();
+      if (!isGitHubLogin(input.account)) throw keyError();
       url = new URL(`https://github.com/${input.account}.gpg`);
     } else {
       url = new URL(input.server);

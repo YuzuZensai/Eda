@@ -24,7 +24,6 @@ import type {
   DetectedEditor,
 } from "./application";
 import type { GitEngineInfo, GitDiagnostics } from "./integrations/git-engine";
-import type { AvatarImage } from "./identity/avatar";
 import type { BuildInfo } from "./version";
 import type { UpdateState } from "./updates";
 import type {
@@ -76,6 +75,7 @@ import type { DiscardPreview, RecoverySummary } from "./workflows/recovery";
 
 import type { RepositoryNavigation } from "./repository/navigation";
 import type {
+  AvatarImage,
   Identity,
   IdentityCreateOptions,
   IdentityDraft,

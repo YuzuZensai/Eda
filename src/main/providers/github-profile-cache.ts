@@ -1,4 +1,4 @@
-import type { GitHubAccountProfile } from "@shared/integrations/github";
+import { isGitHubLogin, type GitHubAccountProfile } from "@shared/integrations/github";
 import { isRecord } from "@shared/validation";
 import { ProviderProfileCache } from "./provider-profile-cache";
 
@@ -8,7 +8,6 @@ export type GitHubProfileDetails = Omit<GitHubAccountProfile, "avatarDataUrl"> &
 type PublicProfile = GitHubProfileDetails;
 type Account = { id?: string; login: string };
 
-const LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 const ID = /^[1-9][0-9]{0,15}$/;
 
 function field(value: unknown, limit: number): string | null {
@@ -26,7 +25,7 @@ function profile(value: unknown): PublicProfile | null {
   const id = String(value["id"]);
   const login = value["login"];
 
-  if (!ID.test(id) || typeof login !== "string" || !LOGIN.test(login)) return null;
+  if (!ID.test(id) || !isGitHubLogin(login)) return null;
 
   return {
     id,
@@ -57,7 +56,7 @@ export class GitHubProfileCache {
   }
 
   async get(account: Account): Promise<PublicProfile | null> {
-    if (!LOGIN.test(account.login) || (account.id !== undefined && !ID.test(account.id)))
+    if (!isGitHubLogin(account.login) || (account.id !== undefined && !ID.test(account.id)))
       return null;
     const key = account.id ?? `login:${account.login.toLowerCase()}`;
     const fallback = account.id

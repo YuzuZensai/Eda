@@ -284,8 +284,7 @@ function setup() {
     },
     avatars: {
       getCommit: vi.fn(async () => ({ dataUrl: "data:image/png;base64,AQID", expiresAt: 123 })),
-      getGitHub: vi.fn(async () => ({ dataUrl: "data:image/png;base64,AQID" })),
-      getGitLab: vi.fn(async () => ({ dataUrl: "data:image/png;base64,AQID" })),
+      getProviderImage: vi.fn(async () => ({ dataUrl: "data:image/png;base64,AQID" })),
     },
     remotes: {
       primaryFetchUrl: vi.fn(async () => "https://github.com/team/project.git"),
@@ -517,7 +516,8 @@ describe("IPC registration", () => {
     expect(github.maintainerProfile).toHaveBeenCalledExactlyOnceWith();
     expect(github.profile).not.toHaveBeenCalled();
 
-    expect(avatars.getGitHub).toHaveBeenCalledExactlyOnceWith(
+    expect(avatars.getProviderImage).toHaveBeenCalledExactlyOnceWith(
+      "github",
       "7",
       "https://avatars.githubusercontent.com/u/7?v=4",
     );
@@ -537,7 +537,8 @@ describe("IPC registration", () => {
 
     expect(github.profile).toHaveBeenCalledWith(profile.id);
 
-    expect(avatars.getGitHub).toHaveBeenCalledExactlyOnceWith(
+    expect(avatars.getProviderImage).toHaveBeenCalledExactlyOnceWith(
+      "github",
       "7",
       "https://avatars.githubusercontent.com/u/7?v=4",
     );
@@ -1148,7 +1149,8 @@ it("loads GitLab profile details and avatars for the active profile without expo
     },
   });
 
-  expect(avatars.getGitLab).toHaveBeenCalledExactlyOnceWith(
+  expect(avatars.getProviderImage).toHaveBeenCalledExactlyOnceWith(
+    "gitlab",
     "7",
     "https://gitlab.com/uploads/-/system/user/avatar/7/photo.png",
   );
@@ -1173,7 +1175,11 @@ it("loads self-hosted profile details through the active profile without exposin
     },
   });
   expect(gitlabSelfHosted.profile).toHaveBeenCalledWith(profile.id, baseUrl);
-  expect(avatars.getGitLab).toHaveBeenCalledWith("7", "https://git.company.test/uploads/photo.png");
+  expect(avatars.getProviderImage).toHaveBeenCalledWith(
+    "gitlab",
+    "7",
+    "https://git.company.test/uploads/photo.png",
+  );
 });
 
 it("guards self-hosted GitLab credentials and browser actions with active profile ownership", async () => {

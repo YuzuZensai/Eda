@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AvatarImage } from "@shared/identity/avatar";
+import type { AvatarImage } from "@shared/identity/identity";
 
 const requests = new Map<
   string,

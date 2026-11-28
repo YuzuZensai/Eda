@@ -1,16 +1,12 @@
 import { OAuthCredentials } from "./oauth-credentials";
-import {
-  requestOAuth,
-  tokenText as text,
-  tokenSeconds as secondsValue,
-  type OAuthTokens as Tokens,
-} from "./oauth";
+import { parseTokenResponse, requestOAuth, type OAuthTokens as Tokens } from "./oauth";
 import { errorText, type ErrorText } from "@shared/error-codes";
 import { GitError } from "@shared/errors";
 import { t } from "@shared/i18n";
 import { INTEGRATIONS } from "@shared/integrations/config";
 import {
   isGitLabHttps,
+  isGitLabLogin,
   type GitLabSignIn,
   type GitLabSignInResult,
   type GitLabStatus,
@@ -90,7 +86,7 @@ export class GitLabAuth {
     const account = this.credentialsStore.visibleAccount(profileId);
     if (!account) throw fail(errorText("main.providers.gitlabAuth.connectAGitLabAccountFirst"));
     const login = account.login;
-    if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$/.test(login))
+    if (!isGitLabLogin(login))
       throw fail(errorText("main.providers.gitlabAuth.theGitLabAccountProfileIsInvalid"));
     return `https://gitlab.com/${login}`;
   }
@@ -196,7 +192,7 @@ export class GitLabAuth {
     if (
       !Number.isSafeInteger(user["id"]) ||
       (user["id"] as number) <= 0 ||
-      !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$/.test(text(user["username"]) ?? "")
+      !isGitLabLogin(user["username"])
     )
       throw fail(errorText("main.providers.gitlabAuth.gitLabReturnedAnInvalidAccountIdentity"));
 
@@ -207,7 +203,7 @@ export class GitLabAuth {
       signInId: signIn.id,
       profileId,
       accountId,
-      login: user["username"] as string,
+      login: user["username"],
       tokens,
     });
     this.requirePending(profileId, signIn.id);
@@ -294,30 +290,16 @@ export class GitLabAuth {
   }
 
   private tokens(response: Record<string, unknown>): Tokens {
-    const accessToken = text(response["access_token"]);
-    const refreshToken = text(response["refresh_token"]);
-    const expires = secondsValue(response["expires_in"]);
-    const refreshExpires = secondsValue(response["refresh_token_expires_in"]);
-
+    const tokens = parseTokenResponse(response, this.clientId, this.now());
     if (
-      !accessToken ||
-      !refreshToken ||
-      !expires ||
+      !tokens?.refreshToken ||
+      tokens.expiresAt === undefined ||
       typeof response["token_type"] !== "string" ||
-      response["token_type"].toLowerCase() !== "bearer" ||
-      (response["expires_in"] !== undefined && !expires) ||
-      (response["refresh_token"] !== undefined && !refreshToken) ||
-      (response["refresh_token_expires_in"] !== undefined && !refreshExpires)
+      response["token_type"].toLowerCase() !== "bearer"
     )
       throw fail(errorText("main.providers.gitlabAuth.gitLabReturnedAnInvalidAccessTokenResponse"));
 
-    return {
-      clientId: this.clientId,
-      accessToken,
-      ...(expires ? { expiresAt: this.now() + expires * 1000 } : {}),
-      ...(refreshToken ? { refreshToken } : {}),
-      ...(refreshExpires ? { refreshExpiresAt: this.now() + refreshExpires * 1000 } : {}),
-    };
+    return tokens;
   }
 
   private requirePending(profileId: string, id: string): Pending {

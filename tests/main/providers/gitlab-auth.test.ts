@@ -1,3 +1,4 @@
+import { checkSavedRepositoryAccess } from "../../helpers/provider-repositories";
 import { afterEach, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { INTEGRATIONS } from "@shared/integrations/config";
@@ -418,26 +419,11 @@ it("reuses the sign-in profile across page visits, deduplicates refreshes and ke
 });
 
 it("browses with the active profile's saved GitLab credential and refuses an unconnected profile", async () => {
-  const ctx = setup();
-  await ctx.connect();
-  ctx.fetch.mockClear();
-  ctx.fetch.mockResolvedValueOnce(json([]));
-
-  await expect(ctx.service.repositories(ctx.profile.id)).resolves.toEqual({
-    repositories: [],
-    nextPage: null,
-  });
-
-  expect(ctx.fetch).toHaveBeenCalledWith(
-    expect.stringContaining("https://gitlab.com/api/v4/projects?"),
-    expect.objectContaining({
-      headers: expect.objectContaining({ Authorization: `Bearer ${token.access_token}` }),
-    }),
+  await checkSavedRepositoryAccess(
+    setup(),
+    "https://gitlab.com/api/v4/projects?",
+    token.access_token,
   );
-
-  ctx.fetch.mockClear();
-  await expect(ctx.service.repositories(ctx.other.id)).rejects.toThrow();
-  expect(ctx.fetch).not.toHaveBeenCalled();
 });
 
 it("keeps a late refresh from restoring the disconnected account's vault entry", async () => {

@@ -110,6 +110,33 @@ export function tokenSeconds(value: unknown): number | undefined {
     : undefined;
 }
 
+export function parseTokenResponse(
+  response: Record<string, unknown>,
+  clientId: string,
+  now: number,
+): OAuthTokens | undefined {
+  const accessToken = tokenText(response["access_token"]);
+  const refreshToken = tokenText(response["refresh_token"]);
+  const expires = tokenSeconds(response["expires_in"]);
+  const refreshExpires = tokenSeconds(response["refresh_token_expires_in"]);
+
+  if (
+    !accessToken ||
+    (response["expires_in"] !== undefined && !expires) ||
+    (response["refresh_token"] !== undefined && !refreshToken) ||
+    (response["refresh_token_expires_in"] !== undefined && !refreshExpires)
+  )
+    return undefined;
+
+  return {
+    clientId,
+    accessToken,
+    ...(expires ? { expiresAt: now + expires * 1000 } : {}),
+    ...(refreshToken ? { refreshToken } : {}),
+    ...(refreshExpires ? { refreshExpiresAt: now + refreshExpires * 1000 } : {}),
+  };
+}
+
 export function readOAuthTokens(
   raw: string | undefined,
   expectedClientId: string,

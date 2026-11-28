@@ -1597,6 +1597,33 @@ it.each([
   },
 );
 
+function interceptPush(
+  ctx: Awaited<ReturnType<typeof setup>>,
+  credentials: () => { username: string; password: string },
+) {
+  const execute = ctx.source.git.exec.bind(ctx.source.git);
+  const transports: string[] = [];
+
+  const spy = vi.spyOn(ctx.source.git, "exec").mockImplementation(async (args, options) => {
+    const expected = credentials();
+    const push = args.includes("push");
+    if (args[0] !== "ls-remote" && !push) return execute(args, options);
+    transports.push(push ? "push" : "preview");
+    expect(options.identityName).toBe(ctx.profile.name);
+
+    expect(Object.values(options.env?.overrides ?? {})).toContain(
+      `Authorization: Basic ${Buffer.from(`${expected.username}:${expected.password}`).toString("base64")}`,
+    );
+
+    expect(options.redactValues).toContain(expected.password);
+    const local = [...args];
+    local[local.indexOf("--") + 1] = ctx.server.path;
+    expect(options.env?.overrides?.["GIT_ALLOW_PROTOCOL"]).toBe("https");
+    return execute(local, { ...options, env: { overrides: { GIT_ALLOW_PROTOCOL: "file" } } });
+  });
+  return { spy, transports };
+}
+
 it.each([false, true])(
   "authenticates push preview and execution with saved OAuth or an explicit override (manual: %s)",
   async (manual) => {
@@ -1607,26 +1634,8 @@ it.each([false, true])(
     const ctx = await setup(github);
     const url = "https://github.com/example/push-only.git";
     await ctx.run(["remote", "set-url", "--push", "origin", url]);
-    const execute = ctx.source.git.exec.bind(ctx.source.git);
-    const transports: string[] = [];
     let expected = manual ? override : saved;
-
-    const spy = vi.spyOn(ctx.source.git, "exec").mockImplementation(async (args, options) => {
-      const push = args.includes("push");
-      if (args[0] !== "ls-remote" && !push) return execute(args, options);
-      transports.push(push ? "push" : "preview");
-      expect(options.identityName).toBe(ctx.profile.name);
-
-      expect(Object.values(options.env?.overrides ?? {})).toContain(
-        `Authorization: Basic ${Buffer.from(`${expected.username}:${expected.password}`).toString("base64")}`,
-      );
-
-      expect(options.redactValues).toContain(expected.password);
-      const local = [...args];
-      local[local.indexOf("--") + 1] = ctx.server.path;
-      expect(options.env?.overrides?.["GIT_ALLOW_PROTOCOL"]).toBe("https");
-      return execute(local, { ...options, env: { overrides: { GIT_ALLOW_PROTOCOL: "file" } } });
-    });
+    const { spy, transports } = interceptPush(ctx, () => expected);
 
     try {
       const preview = await ctx.service.preparePush({
@@ -1819,26 +1828,8 @@ it.each([false, true])(
     const ctx = await setup(undefined, gitlab);
     const url = "https://gitlab.com/example/push-only.git";
     await ctx.run(["remote", "set-url", "--push", "origin", url]);
-    const execute = ctx.source.git.exec.bind(ctx.source.git);
-    const transports: string[] = [];
     let expected = manual ? override : saved;
-
-    const spy = vi.spyOn(ctx.source.git, "exec").mockImplementation(async (args, options) => {
-      const push = args.includes("push");
-      if (args[0] !== "ls-remote" && !push) return execute(args, options);
-      transports.push(push ? "push" : "preview");
-      expect(options.identityName).toBe(ctx.profile.name);
-
-      expect(Object.values(options.env?.overrides ?? {})).toContain(
-        `Authorization: Basic ${Buffer.from(`${expected.username}:${expected.password}`).toString("base64")}`,
-      );
-
-      expect(options.redactValues).toContain(expected.password);
-      const local = [...args];
-      local[local.indexOf("--") + 1] = ctx.server.path;
-      expect(options.env?.overrides?.["GIT_ALLOW_PROTOCOL"]).toBe("https");
-      return execute(local, { ...options, env: { overrides: { GIT_ALLOW_PROTOCOL: "file" } } });
-    });
+    const { spy, transports } = interceptPush(ctx, () => expected);
 
     try {
       const preview = await ctx.service.preparePush({

@@ -1,3 +1,4 @@
+import { isGitLabLogin } from "@shared/integrations/gitlab";
 import { readResponseBytes } from "../network/response";
 import { createHash, randomUUID } from "node:crypto";
 import { errorText } from "@shared/error-codes";
@@ -106,7 +107,7 @@ export class GitLabSelfHostedAuth {
   profileUrl(profileId: string, input: string): string {
     const account = this.requireAccount(profileId, this.baseUrl(input));
 
-    if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$/.test(account.login)) throw fail("invalidResponse");
+    if (!isGitLabLogin(account.login)) throw fail("invalidResponse");
 
     return `${account.baseUrl}/${account.login}`;
   }
@@ -216,8 +217,7 @@ export class GitLabSelfHostedAuth {
     if (
       !Number.isSafeInteger(user["id"]) ||
       (user["id"] as number) <= 0 ||
-      typeof user["username"] !== "string" ||
-      !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$/.test(user["username"])
+      !isGitLabLogin(user["username"])
     )
       throw fail("invalidResponse", "network-failed");
 

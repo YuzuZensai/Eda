@@ -200,11 +200,11 @@ it("caches GitHub avatars by durable account ID across restarts using the provid
     const file = join(directory, "avatars");
     const cache = new AvatarCache(file, fetchImage);
     for (const invalid of ["../7", "7?redirect=evil", "https://evil.invalid", "", "0"])
-      expect((await cache.getGitHub(invalid, githubAvatar)).dataUrl).toBeNull();
+      expect((await cache.getProviderImage("github", invalid, githubAvatar)).dataUrl).toBeNull();
     expect(fetchImage).not.toHaveBeenCalled();
     const [first, second] = await Promise.all([
-      cache.getGitHub("7", githubAvatar),
-      cache.getGitHub("7", githubAvatar),
+      cache.getProviderImage("github", "7", githubAvatar),
+      cache.getProviderImage("github", "7", githubAvatar),
     ]);
     expect(first).toEqual(second);
     expect(first.dataUrl).toBe("data:image/png;base64,AQID");
@@ -221,7 +221,7 @@ it("caches GitHub avatars by durable account ID across restarts using the provid
     expect(await readFile(imageFile)).toEqual(Buffer.from([1, 2, 3]));
     expect(await readFile(join(file, "index"), "utf8")).not.toContain("base64");
     const restarted = new AvatarCache(file, fetchImage);
-    expect(await restarted.getGitHub("7", githubAvatar)).toEqual(first);
+    expect(await restarted.getProviderImage("github", "7", githubAvatar)).toEqual(first);
     expect(fetchImage).toHaveBeenCalledOnce();
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -341,10 +341,10 @@ it("clears persisted and in-memory avatars before accepting fresh requests", asy
   try {
     const file = join(directory, "avatars");
     const cache = new AvatarCache(file, fetchImage);
-    await cache.getGitHub("7", githubAvatar);
+    await cache.getProviderImage("github", "7", githubAvatar);
     await cache.clear();
     await expect(readFile(file)).rejects.toMatchObject({ code: "ENOENT" });
-    await cache.getGitHub("7", githubAvatar);
+    await cache.getProviderImage("github", "7", githubAvatar);
     expect(fetchImage).toHaveBeenCalledTimes(2);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -384,7 +384,7 @@ it("waits for requests still loading the disk index before clearing the cache", 
   const fetchImage = vi.fn<typeof fetch>().mockReturnValueOnce(response.promise);
   const file = join(directory, "avatars");
   const cache = new AvatarCache(file, fetchImage);
-  const image = cache.getGitHub("7", githubAvatar);
+  const image = cache.getProviderImage("github", "7", githubAvatar);
   let cleared = false;
   const clearing = cache.clear().then(() => {
     cleared = true;
@@ -399,7 +399,7 @@ it("waits for requests still loading the disk index before clearing the cache", 
     await Promise.all([image, clearing]);
     await expect(readFile(join(file, "index"))).rejects.toMatchObject({ code: "ENOENT" });
     fetchImage.mockResolvedValueOnce(new Response(null, { status: 404 }));
-    expect((await cache.getGitHub("7", githubAvatar)).dataUrl).toBeNull();
+    expect((await cache.getProviderImage("github", "7", githubAvatar)).dataUrl).toBeNull();
     expect(fetchImage).toHaveBeenCalledTimes(2);
   } finally {
     response.resolve(
@@ -417,7 +417,7 @@ it("refetches a missing image", async () => {
     async () => new Response(new Uint8Array([1]), { headers: { "content-type": "image/webp" } }),
   );
   try {
-    await new AvatarCache(file, fetchImage).getGitHub("7", githubAvatar);
+    await new AvatarCache(file, fetchImage).getProviderImage("github", "7", githubAvatar);
     await rm(
       join(
         file,
@@ -426,7 +426,7 @@ it("refetches a missing image", async () => {
           .digest("hex"),
       ),
     );
-    await new AvatarCache(file, fetchImage).getGitHub("7", githubAvatar);
+    await new AvatarCache(file, fetchImage).getProviderImage("github", "7", githubAvatar);
     expect(fetchImage).toHaveBeenCalledTimes(2);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -441,7 +441,7 @@ it("cancels an unread missing-avatar response body", async () => {
   );
   try {
     const cache = new AvatarCache(join(directory, "avatars"), fetchImage);
-    expect((await cache.getGitHub("7", githubAvatar)).dataUrl).toBeNull();
+    expect((await cache.getProviderImage("github", "7", githubAvatar)).dataUrl).toBeNull();
     expect(cancel).toHaveBeenCalledOnce();
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -457,16 +457,16 @@ it("loads uploaded GitLab avatars from the provider, persists them, and refreshe
   const url = "https://gitlab.com/uploads/-/system/user/avatar/7/photo.png";
   try {
     const cache = new AvatarCache(directory, fetchImage);
-    const first = await cache.getGitLab("7", url);
+    const first = await cache.getProviderImage("gitlab", "7", url);
     expect(first.dataUrl).toMatch(/^data:image\/png;base64,/);
     expect(fetchImage).toHaveBeenCalledExactlyOnceWith(
       url,
       expect.objectContaining({ redirect: "follow", credentials: "omit" }),
     );
     const restarted = new AvatarCache(directory, fetchImage);
-    expect(await restarted.getGitLab("7", url)).toEqual(first);
+    expect(await restarted.getProviderImage("gitlab", "7", url)).toEqual(first);
     expect(fetchImage).toHaveBeenCalledOnce();
-    await restarted.getGitLab("7", url.replace("photo.png", "updated.png"));
+    await restarted.getProviderImage("gitlab", "7", url.replace("photo.png", "updated.png"));
     expect(fetchImage).toHaveBeenCalledTimes(2);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -485,7 +485,7 @@ it("rejects malformed or non-HTTPS provider avatar URLs", async () => {
       "file:///photo.png",
       "not-a-url",
     ]) {
-      expect((await cache.getGitLab("7", url)).dataUrl).toBeNull();
+      expect((await cache.getProviderImage("gitlab", "7", url)).dataUrl).toBeNull();
     }
     expect(fetchImage).not.toHaveBeenCalled();
   } finally {
@@ -504,8 +504,7 @@ it.each(["github", "gitlab"] as const)(
     const url = "https://secure.gravatar.com/avatar/provider-selected-hash?s=80&d=identicon";
     try {
       const cache = new AvatarCache(directory, fetchImage);
-      const get = (cache: AvatarCache) =>
-        provider === "github" ? cache.getGitHub("7", url) : cache.getGitLab("7", url);
+      const get = (cache: AvatarCache) => cache.getProviderImage(provider, "7", url);
       const first = await get(cache);
       expect(first.dataUrl).toBe("data:image/png;base64,AQID");
       expect(fetchImage).toHaveBeenCalledExactlyOnceWith(
@@ -527,11 +526,15 @@ it("accepts full-size provider avatars larger than the old 256 KiB limit", async
     async () => new Response(bytes, { headers: { "content-type": "image/png" } }),
   );
   try {
-    const first = await new AvatarCache(directory, fetchImage).getGitHub("7", githubAvatar);
-    expect(first.dataUrl).toBe(`data:image/png;base64,${Buffer.from(bytes).toString("base64")}`);
-    expect(await new AvatarCache(directory, fetchImage).getGitHub("7", githubAvatar)).toEqual(
-      first,
+    const first = await new AvatarCache(directory, fetchImage).getProviderImage(
+      "github",
+      "7",
+      githubAvatar,
     );
+    expect(first.dataUrl).toBe(`data:image/png;base64,${Buffer.from(bytes).toString("base64")}`);
+    expect(
+      await new AvatarCache(directory, fetchImage).getProviderImage("github", "7", githubAvatar),
+    ).toEqual(first);
     expect(fetchImage).toHaveBeenCalledOnce();
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -548,10 +551,12 @@ it("retries failed provider images after restarting instead of restoring a negat
     );
   try {
     expect(
-      (await new AvatarCache(directory, fetchImage).getGitHub("7", githubAvatar)).dataUrl,
+      (await new AvatarCache(directory, fetchImage).getProviderImage("github", "7", githubAvatar))
+        .dataUrl,
     ).toBeNull();
     expect(
-      (await new AvatarCache(directory, fetchImage).getGitHub("7", githubAvatar)).dataUrl,
+      (await new AvatarCache(directory, fetchImage).getProviderImage("github", "7", githubAvatar))
+        .dataUrl,
     ).toBe("data:image/png;base64,AQID");
     expect(fetchImage).toHaveBeenCalledTimes(2);
   } finally {
@@ -569,7 +574,8 @@ it("rejects provider images above the bounded 2 MiB limit", async () => {
   );
   try {
     expect(
-      (await new AvatarCache(directory, fetchImage).getGitHub("7", githubAvatar)).dataUrl,
+      (await new AvatarCache(directory, fetchImage).getProviderImage("github", "7", githubAvatar))
+        .dataUrl,
     ).toBeNull();
   } finally {
     await rm(directory, { recursive: true, force: true });

@@ -34,6 +34,10 @@ export interface GitHubSignIn {
 export type GitHubSignInResult =
   { state: "pending"; intervalMs: number } | { state: "connected"; status: GitHubStatus };
 
+export function isGitHubLogin(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(value);
+}
+
 export function isGitHubHttps(url: string): boolean {
   try {
     const value = new URL(url);
