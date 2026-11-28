@@ -26,43 +26,47 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it("uses only the async macOS keychain path for startup and credential access", async () => {
-  vi.stubGlobal("process", { platform: "darwin" });
+it.each(["darwin", "linux", "win32"])(
+  "reads existing credentials and persists updates with the async keychain on %s",
+  async (platform) => {
+    vi.stubGlobal("process", { platform });
+    vi.mocked(safeStorage.getSelectedStorageBackend).mockReturnValue("gnome_libsecret");
 
-  const root = await mkdtemp(join(tmpdir(), "eda-vault-macos-"));
+    const root = await mkdtemp(join(tmpdir(), "eda-vault-async-"));
 
-  try {
-    const path = join(root, "vault");
-    const key = secretKeys.sshPassphrase("work");
+    try {
+      const path = join(root, "vault");
+      const key = secretKeys.sshPassphrase("work");
 
-    await writeFile(
-      path,
-      JSON.stringify({ [key]: Buffer.from("saved secret").toString("base64") }),
-    );
+      await writeFile(
+        path,
+        JSON.stringify({ [key]: Buffer.from("saved secret").toString("base64") }),
+      );
 
-    const vault = await KeychainSecretStore.create(path);
+      const vault = await KeychainSecretStore.create(path);
 
-    expect(vault.available).toBe(true);
-    expect(await vault.get(key)).toBe("saved secret");
+      expect(vault.available).toBe(true);
+      expect(await vault.get(key)).toBe("saved secret");
 
-    await vault.set(key, "updated secret");
+      await vault.set(key, "updated secret");
 
-    expect(await vault.get(key)).toBe("updated secret");
-    expect(safeStorage.isAsyncEncryptionAvailable).toHaveBeenCalledOnce();
-    expect(safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
-    expect(safeStorage.encryptString).not.toHaveBeenCalled();
-    expect(safeStorage.decryptString).not.toHaveBeenCalled();
+      expect(await vault.get(key)).toBe("updated secret");
+      expect(safeStorage.isAsyncEncryptionAvailable).toHaveBeenCalledOnce();
+      expect(safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
+      expect(safeStorage.encryptString).not.toHaveBeenCalled();
+      expect(safeStorage.decryptString).not.toHaveBeenCalled();
 
-    const saved = await readFile(path, "utf8");
+      const saved = await readFile(path, "utf8");
 
-    vi.mocked(safeStorage.decryptStringAsync).mockRejectedValueOnce(new Error("Locked"));
+      vi.mocked(safeStorage.decryptStringAsync).mockRejectedValueOnce(new Error("Locked"));
 
-    expect(await vault.get(key)).toBeUndefined();
-    expect(await readFile(path, "utf8")).toBe(saved);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
+      expect(await vault.get(key)).toBeUndefined();
+      expect(await readFile(path, "utf8")).toBe(saved);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
 
 it("preserves the vault without trying the legacy path when macOS keychain access is rejected", async () => {
   vi.stubGlobal("process", { platform: "darwin" });
@@ -238,9 +242,7 @@ it.each(["darwin", "linux", "win32"])(
 
       await writeFile(path, original);
 
-      if (platform === "darwin")
-        vi.mocked(safeStorage.isAsyncEncryptionAvailable).mockResolvedValueOnce(false);
-      else vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValueOnce(false);
+      vi.mocked(safeStorage.isAsyncEncryptionAvailable).mockResolvedValueOnce(false);
 
       expect((await KeychainSecretStore.create(path)).available).toBe(false);
       expect(await readFile(path, "utf8")).toBe(original);

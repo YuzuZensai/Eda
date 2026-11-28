@@ -1,3 +1,4 @@
+import { WriteQueue } from "../operations/write-queue";
 import { errorText } from "@shared/error-codes";
 import { GitError, type GitErrorKind } from "@shared/errors";
 import { INTEGRATIONS } from "@shared/integrations/config";
@@ -41,7 +42,7 @@ const messages = {
 
 export class OAuthCredentials {
   private readonly authorized = new Map<string, AuthorizedAccount>();
-  private readonly writes = new Map<string, Promise<void>>();
+  private readonly writes = new WriteQueue();
   private readonly reading = new Map<string, Promise<OAuthTokens>>();
 
   constructor(
@@ -90,7 +91,7 @@ export class OAuthCredentials {
     const account = this.accounts.find(profileId);
     if (!account) return undefined;
     this.requireStorage();
-    await this.write(profileId, async () => {
+    await this.writes.run(profileId, async () => {
       if (this.owns(account)) await this.secrets.delete(account.credentialRef);
       this.accounts.delete(profileId, account.credentialRef);
     });
@@ -116,13 +117,13 @@ export class OAuthCredentials {
   }
 
   async settle(): Promise<void> {
-    await Promise.allSettled([...this.writes.values(), ...this.reading.values()]);
+    await Promise.allSettled([this.writes.settle(), ...this.reading.values()]);
   }
 
   commit(candidate: AuthorizedAccount): Promise<void> {
     const { profileId } = candidate;
     this.authorized.set(profileId, candidate);
-    return this.write(profileId, async () => {
+    return this.writes.run(profileId, async () => {
       try {
         if (this.authorized.get(profileId) !== candidate) throw this.failure("cancelled");
         await this.save(candidate);
@@ -130,15 +131,6 @@ export class OAuthCredentials {
         if (this.authorized.get(profileId) === candidate) this.authorized.delete(profileId);
       }
     });
-  }
-
-  private write(profileId: string, work: () => Promise<void>): Promise<void> {
-    const previous = this.writes.get(profileId) ?? Promise.resolve();
-    const next = previous.then(work, work).finally(() => {
-      if (this.writes.get(profileId) === next) this.writes.delete(profileId);
-    });
-    this.writes.set(profileId, next);
-    return next;
   }
 
   requireStorage() {
@@ -197,7 +189,7 @@ export class OAuthCredentials {
   }
 
   saveRefreshed(account: SavedProviderAccount, tokens: OAuthTokens): Promise<void> {
-    return this.write(account.profileId, async () => {
+    return this.writes.run(account.profileId, async () => {
       const saved = this.accounts.find(account.profileId, account.accountId);
       if (saved?.credentialRef !== account.credentialRef) throw this.failure("changed");
       await this.secrets.set(account.credentialRef, JSON.stringify(tokens));

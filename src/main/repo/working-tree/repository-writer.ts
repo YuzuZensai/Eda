@@ -38,7 +38,7 @@ import type { RepositoryManager } from "../lifecycle/repository-manager";
 import { DiscardService } from "./discard-service";
 import { IgnoreService } from "./ignore-service";
 import { PartialStageService } from "./partial-stage-service";
-import { WriteQueue } from "./write-queue";
+import { WriteQueue } from "../../operations/write-queue";
 
 import type { SignerService } from "../history/signer-service";
 

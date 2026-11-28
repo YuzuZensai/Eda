@@ -1,16 +1,6 @@
+import { deferred } from "../../../helpers/deferred";
 import { describe, expect, it } from "vitest";
-import { WriteQueue } from "@main/repo/working-tree/write-queue";
-
-const defer = <T>() => {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-
-  return { promise, resolve, reject };
-};
+import { WriteQueue } from "@main/operations/write-queue";
 
 describe("per-repository write serialization", () => {
   it("never runs two writes for one repository at the same time", async () => {
@@ -45,7 +35,7 @@ describe("per-repository write serialization", () => {
 
   it("runs different repositories in parallel", async () => {
     const queue = new WriteQueue();
-    const first = defer<void>();
+    const first = deferred<void>();
     const started: string[] = [];
 
     const a = queue.run("/a", async () => {
@@ -84,7 +74,7 @@ describe("per-repository write serialization", () => {
 
   it("reports busy while a write is in flight and clears afterwards", async () => {
     const queue = new WriteQueue();
-    const gate = defer<void>();
+    const gate = deferred<void>();
     const pending = queue.run("/repo", () => gate.promise);
 
     expect(queue.isBusy("/repo")).toBe(true);
@@ -92,7 +82,6 @@ describe("per-repository write serialization", () => {
 
     gate.resolve();
     await pending;
-    await Promise.resolve();
     expect(queue.isBusy("/repo")).toBe(false);
   });
 });

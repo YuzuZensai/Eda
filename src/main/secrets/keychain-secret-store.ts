@@ -6,10 +6,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { SecretStore } from "./secret-store";
-import { secretKeys } from "./secret-store";
+import { type SecretStore, secretKeys } from "./secret-store";
 import { applyVaultMigrations } from "../persistence/migrate-vault";
-import { isSecureStorageBackend } from "./storage-security";
 
 export class KeychainSecretStore implements SecretStore {
   private queue: Promise<unknown> = Promise.resolve();
@@ -24,22 +22,16 @@ export class KeychainSecretStore implements SecretStore {
     const store = new KeychainSecretStore(vaultPath, true);
 
     try {
-      const available =
-        process.platform === "darwin"
-          ? await safeStorage.isAsyncEncryptionAvailable()
-          : safeStorage.isEncryptionAvailable();
+      if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text")
+        return new UnavailableSecretStore(
+          t("main.secrets.keychainSecretStore.linuxSafeStorageIsUsingBasicTextInstead"),
+        );
+
+      const available = await safeStorage.isAsyncEncryptionAvailable();
 
       if (!available)
         return new UnavailableSecretStore(
           t("main.secrets.keychainSecretStore.noOsKeychainIsAvailableSoEdaCannot"),
-        );
-
-      const backend =
-        process.platform === "linux" ? safeStorage.getSelectedStorageBackend() : process.platform;
-
-      if (!isSecureStorageBackend(process.platform, backend))
-        return new UnavailableSecretStore(
-          t("main.secrets.keychainSecretStore.linuxSafeStorageIsUsingBasicTextInstead"),
         );
 
       const probe = await store.encrypt("probe");
@@ -121,15 +113,11 @@ export class KeychainSecretStore implements SecretStore {
   }
 
   private async encrypt(value: string): Promise<Buffer> {
-    if (process.platform === "darwin") return safeStorage.encryptStringAsync(value);
-
-    return safeStorage.encryptString(value);
+    return safeStorage.encryptStringAsync(value);
   }
 
   private async decrypt(value: Buffer): Promise<string> {
-    if (process.platform === "darwin") return (await safeStorage.decryptStringAsync(value)).result;
-
-    return safeStorage.decryptString(value);
+    return (await safeStorage.decryptStringAsync(value)).result;
   }
 
   private mutate(work: () => Promise<void>): Promise<void> {
