@@ -118,6 +118,33 @@ async function downloadArchive(target: GitArtifact, cache: string) {
   return archive;
 }
 
+export async function publishGitBundle(staging: string, destination: string) {
+  const directory = await mkdtemp(join(dirname(destination), ".previous-"));
+  const backup = join(directory, "installed");
+  let moved = false;
+  try {
+    try {
+      await rename(destination, backup);
+      moved = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    try {
+      await rename(staging, destination);
+    } catch (error) {
+      if (moved) {
+        await rename(backup, destination);
+        moved = false;
+      }
+      throw error;
+    }
+    moved = false;
+  } finally {
+    // Keep the backup if restoration itself failed.
+    if (!moved) await rm(directory, { recursive: true, force: true });
+  }
+}
+
 export async function prepareGit(platform: string = process.platform, arch: string = process.arch) {
   const target = targetFor(platform, arch);
   const sshManifestHash = createHash("sha256")
@@ -165,8 +192,7 @@ export async function prepareGit(platform: string = process.platform, arch: stri
 
     if (dirname(destination) !== parent) throw new Error("Invalid Git bundle destination.");
 
-    await rm(destination, { recursive: true, force: true });
-    await rename(staging, destination);
+    await publishGitBundle(staging, destination);
     console.log(`Bundled Git ready: ${destination}`);
   } finally {
     if (dirname(staging) !== parent) throw new Error("Invalid extraction directory.");

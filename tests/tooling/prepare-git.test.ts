@@ -4,7 +4,12 @@ import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, writeFile, rm, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { pruneCredentialManager, targetFor, verifyArchive } from "../../scripts/prepare-git.ts";
+import {
+  publishGitBundle,
+  pruneCredentialManager,
+  targetFor,
+  verifyArchive,
+} from "../../scripts/prepare-git.ts";
 
 test("each supported package target has a pinned upstream checksum", () => {
   for (const platform of ["win32", "darwin", "linux"])
@@ -116,6 +121,19 @@ test("keeps Windows documentation directories named git-credential-manager", asy
     await access(join(binaries, "git.exe"));
     await access(join(documentation, "README.md"));
     await pruneCredentialManager(root);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("keeps an installed bundle when publishing its replacement fails", async () => {
+  const root = await mkdtemp(join(tmpdir(), "eda-git-publish-"));
+  try {
+    const destination = join(root, "installed");
+    await mkdir(destination);
+    await writeFile(join(destination, "old"), "working");
+    await assert.rejects(publishGitBundle(join(root, "missing"), destination), { code: "ENOENT" });
+    await access(join(destination, "old"));
   } finally {
     await rm(root, { recursive: true, force: true });
   }

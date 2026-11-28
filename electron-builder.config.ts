@@ -22,9 +22,8 @@ export default {
     { from: "vendor/git/${os}-${arch}", to: "git", filter: ["**/*"] },
     { from: "LICENSE", to: "LICENSE" },
     {
-      from: "src/renderer/assets/providers",
-      to: "licenses/provider-icons",
-      filter: ["LICENSE-*.txt", "README.md"],
+      from: "src/renderer/assets/providers/LICENSE",
+      to: "licenses/provider-icons/LICENSE",
     },
   ],
   beforePack: async (context) => {
