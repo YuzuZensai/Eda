@@ -22,3 +22,9 @@ export interface RepositoryTrustRequest {
   path: string;
   reasons?: string[];
 }
+
+export interface RepositoryNavigation {
+  path: string;
+  commit?: string;
+  ref?: string;
+}

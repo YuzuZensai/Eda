@@ -1,5 +1,5 @@
 import { isAbsolute, resolve } from "node:path";
-import type { RepositoryNavigation } from "@shared/repository/navigation";
+import type { RepositoryNavigation } from "@shared/repository/repository";
 import { isValidObjectId, isValidRefName } from "../../git/validation";
 
 export function parseRepositoryLink(value: string): RepositoryNavigation | null {

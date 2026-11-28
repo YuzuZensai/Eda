@@ -121,8 +121,8 @@ import type { ImagePreview, ImagePreviewRequest } from "./repository/image-previ
 import type { IgnoreInspection, IgnoreKind } from "./repository/ignore";
 import type { DiscardPreview, RecoverySummary } from "./workflows/recovery";
 
-import type { RepositoryNavigation } from "./repository/navigation";
 import type {
+  RepositoryNavigation,
   RepositorySummary,
   InitRepositoryOptions,
   RepositoryTrustRequest,

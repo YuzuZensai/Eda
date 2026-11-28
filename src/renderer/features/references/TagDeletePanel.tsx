@@ -1,3 +1,4 @@
+import { deleteScopes, DeleteScopeChoices, type DeleteScope } from "./DeleteScopeChoices";
 import { useReferenceAction } from "./hooks/useReferenceAction";
 import { errorAction, errorMessage, GitError, type Result } from "@shared/errors";
 import { t } from "@shared/i18n";
@@ -12,7 +13,7 @@ import {
   repositoryCommandDispatcher,
   repositoryCommandReason,
 } from "../../commands/repository-commands";
-import { ActionIndicator, Button, NoticeBanner, Radio } from "../../components/ui/index";
+import { ActionIndicator, Button, NoticeBanner } from "../../components/ui/index";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { Select } from "../../components/ui/forms/FormControls";
 import { CredentialFields } from "../sync/TransportFields";
@@ -40,7 +41,7 @@ export function TagDeletePanel({
   const [local, setLocal] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [needsAuth, setNeedsAuth] = useState(false);
-  const [scope, setScope] = useState<"local" | "remote" | "both">(remoteOnly ? "remote" : "local");
+  const [scope, setScope] = useState<DeleteScope>(remoteOnly ? "remote" : "local");
   const [remoteDeleted, setRemoteDeleted] = useState(false);
   const [presentRemotely, setPresentRemotely] = useState<boolean | null>(null);
   const [checkingRemote, setCheckingRemote] = useState(false);
@@ -137,17 +138,7 @@ export function TagDeletePanel({
   const includesLocal = scope !== "remote";
   const includesRemote = scope !== "local";
 
-  const choices = (
-    [
-      ["local", t("referenceMenu.localOnly"), local],
-      ["remote", t("referenceMenu.remoteOnly"), presentRemotely === true && !remoteDeleted],
-      [
-        "both",
-        t("referenceMenu.localAndRemote"),
-        local && presentRemotely === true && !remoteDeleted,
-      ],
-    ] as const
-  ).filter(([, , available]) => available);
+  const choices = deleteScopes(local, presentRemotely === true && !remoteDeleted);
 
   const loading = (!loaded || checkingRemote) && !error && !lookupError;
 
@@ -202,18 +193,12 @@ export function TagDeletePanel({
             )}
           </legend>
 
-          {choices.map(([value, label]) => (
-            <label key={value} className="flex items-center gap-2">
-              <Radio
-                name="delete-tag-scope"
-                value={value}
-                checked={scope === value}
-                onChange={() => setScope(value)}
-              />
-
-              {label}
-            </label>
-          ))}
+          <DeleteScopeChoices
+            name="delete-tag-scope"
+            choices={choices}
+            scope={scope}
+            onChange={setScope}
+          />
         </fieldset>
       )}
 

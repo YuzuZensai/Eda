@@ -1,3 +1,4 @@
+import { deleteScopes, DeleteScopeChoices, type DeleteScope } from "./DeleteScopeChoices";
 import { useReferenceAction } from "./hooks/useReferenceAction";
 import { ERROR_CODE, errorText } from "@shared/error-codes";
 import { AppError, errorAction, errorMessage, GitError, type Result } from "@shared/errors";
@@ -9,12 +10,10 @@ import {
   repositoryCommandReason,
   type RepositoryCommandContext,
 } from "../../commands/repository-commands";
-import { Button, Checkbox, ErrorDialog, Radio } from "../../components/ui/index";
-import { branchDeleteTargets } from "../../repository/branch-delete-targets";
+import { Button, Checkbox, ErrorDialog } from "../../components/ui/index";
+import { remoteForTrackingRef, type RemoteState } from "@shared/integrations/remotes";
 import { useRepositoryStore } from "../../stores/repository-store";
 import { CredentialFields } from "../sync/TransportFields";
-
-type DeleteScope = "local" | "remote" | "both";
 
 export function BranchDeletePanel({
   context,
@@ -56,19 +55,10 @@ export function BranchDeletePanel({
   const includesLocal = scope !== "remote";
   const includesRemote = scope !== "local";
 
-  const branchChoices = targets
-    ? (
-        [
-          ["local", t("referenceMenu.localOnly"), !!targets.local && !targets.localBlocked],
-          ["remote", t("referenceMenu.remoteOnly"), !!targets.remote && !remoteDeleted],
-          [
-            "both",
-            t("referenceMenu.localAndRemote"),
-            !!targets.local && !targets.localBlocked && !!targets.remote && !remoteDeleted,
-          ],
-        ] as const
-      ).filter(([, , available]) => available)
-    : [];
+  const branchChoices = deleteScopes(
+    !!targets?.local && !targets.localBlocked,
+    !!targets?.remote && !remoteDeleted,
+  );
 
   const close = () => {
     if (!running.current) onClose();
@@ -175,18 +165,12 @@ export function BranchDeletePanel({
             <fieldset className="space-y-2" disabled={busy}>
               <legend className="mb-2 font-medium">{t("referenceMenu.deleteBranchFrom")}</legend>
 
-              {branchChoices.map(([value, label]) => (
-                <label key={value} className="flex items-center gap-2">
-                  <Radio
-                    name="delete-scope"
-                    value={value}
-                    checked={scope === value}
-                    onChange={() => setScope(value)}
-                  />
-
-                  {label}
-                </label>
-              ))}
+              <DeleteScopeChoices
+                name="delete-scope"
+                choices={branchChoices}
+                scope={scope}
+                onChange={setScope}
+              />
             </fieldset>
           )}
 
@@ -278,4 +262,34 @@ export function BranchDeletePanel({
       {error && <ErrorDialog onDismiss={() => setError(null)}>{error}</ErrorDialog>}
     </div>
   );
+}
+
+function branchDeleteTargets(branch: BranchSummary, state: RemoteState) {
+  const current = state.branches.find(
+    (item) => item.name === branch.name && item.remote === branch.remote,
+  );
+  const remoteRef = branch.remote ? current?.name : current?.upstream;
+  const remote = remoteForTrackingRef(state.remotes, remoteRef);
+  const destination = remote && remoteRef ? remoteRef.slice(remote.name.length + 1) : undefined;
+  const locals =
+    branch.remote && remoteRef
+      ? state.branches.filter((item) => !item.remote && item.upstream === remoteRef)
+      : [];
+  const local = branch.remote
+    ? (locals.find((item) => item.name === destination) ??
+      (locals.length === 1 ? locals[0] : undefined))
+    : current;
+  const localBlocked = local?.isHead
+    ? t("branchDeleteTargets.checkOutAnotherBranchBeforeDeletingThisLocalBranch")
+    : local?.worktreePath
+      ? t("branchDeleteTargets.thisBranchIsCheckedOutInSwitchThatWorktreeToAnotherBranchFirst", {
+          worktreePath: local.worktreePath,
+        })
+      : undefined;
+
+  return {
+    local,
+    localBlocked,
+    remote: remote && destination ? { name: remote.name, branch: destination } : undefined,
+  };
 }

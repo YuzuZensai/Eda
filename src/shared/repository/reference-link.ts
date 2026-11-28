@@ -20,9 +20,10 @@ export function referenceLink(
       gitlabInstances.some((baseUrl) => isGitLabInstanceHttps(input, baseUrl));
 
     if (/[\x00-\x20]/.test(name)) return null;
-    const cleanPath = url.pathname.replace(/\.git\/?$/, "").replace(/\/$/, "");
+    const path = url.pathname.replace(/\.git\/?$/, "").replace(/\/$/, "");
+    const ref = encodeURIComponent(name);
     const hosted = gitHosts.find((account) =>
-      ("https://" + url.host + cleanPath).startsWith(account.base + "/"),
+      ("https://" + url.host + path).startsWith(account.base + "/"),
     );
     if (
       hosted &&
@@ -30,10 +31,9 @@ export function referenceLink(
       !url.password &&
       !url.search &&
       !url.hash &&
-      /^(?:[\w./-]|%20)+$/.test(cleanPath)
+      /^(?:[\w./-]|%20)+$/.test(path)
     ) {
-      const ref = encodeURIComponent(name);
-      const web = "https://" + url.host + cleanPath;
+      const web = "https://" + url.host + path;
       if (hosted.kind === "github-enterprise")
         return web + (kind === "commit" ? "/commit/" : "/tree/") + ref;
       if (hosted.kind === "azure")
@@ -51,18 +51,8 @@ export function referenceLink(
               encodeURIComponent((kind === "tag" ? "refs/tags/" : "refs/heads/") + name);
       }
     }
-    if (
-      !["https:", "ssh:"].includes(url.protocol) ||
-      (url.port && !selfHosted) ||
-      /[\x00-\x20]/.test(name)
-    )
-      return null;
-
-    const path = url.pathname.replace(/\.git\/?$/, "").replace(/\/$/, "");
-
+    if (!["https:", "ssh:"].includes(url.protocol) || (url.port && !selfHosted)) return null;
     if (!/^\/[\w.-]+\/[\w./-]+$/.test(path)) return null;
-
-    const ref = encodeURIComponent(name);
 
     const host = selfHosted
       ? hostCapabilities.gitlabSelfHosted

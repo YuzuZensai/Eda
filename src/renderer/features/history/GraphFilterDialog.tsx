@@ -227,40 +227,35 @@ export function GraphFilterDialog({
               <span className="min-w-0 flex-1 truncate text-xs" title={ref.name}>
                 {ref.name.replace(/^refs\/(heads|remotes|tags)\//, "")}
               </span>
-              <Checkbox
-                className="flex gap-1 text-xs"
-                aria-label={t("graphFilterDialog.hideReference", { name: ref.name })}
-                checked={filter.hiddenRefs.includes(ref.name)}
-                disabled={!filter.hiddenRefs.includes(ref.name) && filter.hiddenRefs.length >= 256}
-                onChange={(event) =>
-                  setFilter({
-                    ...filter,
-                    refs: [],
-                    hiddenRefs: event.target.checked
-                      ? [...filter.hiddenRefs, ref.name]
-                      : filter.hiddenRefs.filter((name) => name !== ref.name),
-                  })
-                }
-              >
-                {t("graphFilterDialog.hide")}
-              </Checkbox>
-              <Checkbox
-                className="flex gap-1 text-xs"
-                aria-label={t("graphFilterDialog.soloReference", { name: ref.name })}
-                checked={filter.refs.includes(ref.name)}
-                disabled={!filter.refs.includes(ref.name) && filter.refs.length >= 256}
-                onChange={(event) =>
-                  setFilter({
-                    ...filter,
-                    hiddenRefs: [],
-                    refs: event.target.checked
-                      ? [...filter.refs, ref.name]
-                      : filter.refs.filter((name) => name !== ref.name),
-                  })
-                }
-              >
-                {t("graphFilterDialog.solo")}
-              </Checkbox>
+              {(["hiddenRefs", "refs"] as const).map((list) => {
+                const hide = list === "hiddenRefs";
+                const selected = filter[list];
+                const checked = selected.includes(ref.name);
+                return (
+                  <Checkbox
+                    key={list}
+                    className="flex gap-1 text-xs"
+                    aria-label={t(
+                      hide ? "graphFilterDialog.hideReference" : "graphFilterDialog.soloReference",
+                      { name: ref.name },
+                    )}
+                    checked={checked}
+                    disabled={!checked && selected.length >= 256}
+                    onChange={(event) =>
+                      setFilter({
+                        ...filter,
+                        refs: [],
+                        hiddenRefs: [],
+                        [list]: event.target.checked
+                          ? [...selected, ref.name]
+                          : selected.filter((name) => name !== ref.name),
+                      })
+                    }
+                  >
+                    {t(hide ? "graphFilterDialog.hide" : "graphFilterDialog.solo")}
+                  </Checkbox>
+                );
+              })}
               <label className="flex min-h-6 items-center gap-1 text-xs">
                 <Radio
                   name="pinned-reference"

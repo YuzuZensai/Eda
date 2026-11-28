@@ -297,6 +297,7 @@ export const COMPONENT_GROUPS: {
       "CommitMessage",
       ["CommitRow", ["CommitRow", "WorkingTreeRow"]],
       ["ContributorsDialog", ["ContributorRow", "ContributorsDialog"]],
+      "GraphColumnHeader",
       "GraphFilterDialog",
       "GraphVisibilityMenu",
       "HistorySearch",
@@ -351,6 +352,7 @@ export const COMPONENT_GROUPS: {
     files: [
       "BranchDeletePanel",
       "BranchMenu",
+      "DeleteScopeChoices",
       "LocalReferenceFeedback",
       "ManageReferencesDialog",
       "ReferenceMenu",

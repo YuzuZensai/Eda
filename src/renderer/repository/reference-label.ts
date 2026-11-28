@@ -1,13 +1,6 @@
 import { isFullObjectId } from "@shared/repository/object-id";
 import type { HistoryPage } from "@shared/repository/repository-read";
 
-export function referenceLabel(name: string): { name: string; path: string } {
-  const separator = name.lastIndexOf("/");
-  return separator < 0
-    ? { name, path: "" }
-    : { name: name.slice(separator + 1), path: name.slice(0, separator) };
-}
-
 export function revisionLabel(pages: readonly HistoryPage[], revision: string): string {
   if (!isFullObjectId(revision)) return revision;
   for (const page of pages) {
